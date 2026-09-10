@@ -14,7 +14,8 @@ KeuanganApotek/
 │   ├── 03_ACCOUNTING_LOGIC_AND_COA.md# Bagan Akun Standar (CoA), Saldo Awal, & Logika Jurnal
 │   ├── 04_DATABASE_SCHEMA.md         # Rancangan Skema Relasi Database & Integritas Data
 │   ├── 05_DEVELOPMENT_ROADMAP.md     # Rencana Arsitektur Teknologi & Tahapan Implementasi
-│   └── 06_AI_PHASED_DEVELOPMENT_GOALS.md # Panduan Master & Sasaran Pengembangan AI Berkelanjutan
+│   ├── 06_AI_PHASED_DEVELOPMENT_GOALS.md # Panduan Master & Sasaran Pengembangan AI Berkelanjutan
+│   └── 07_TESTING_STRATEGY_AND_TEST_SUITES.md # Strategi Pengujian, Test Runner & Spesifikasi Suite
 └── README.md                         # Ringkasan Proyek & Panduan Memulai
 ```
 

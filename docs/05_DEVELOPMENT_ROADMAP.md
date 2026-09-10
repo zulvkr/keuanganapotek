@@ -36,7 +36,8 @@ KeuanganApotek/
 │   ├── 03_ACCOUNTING_LOGIC_AND_COA.md
 │   ├── 04_DATABASE_SCHEMA.md
 │   ├── 05_DEVELOPMENT_ROADMAP.md
-│   └── 06_AI_PHASED_DEVELOPMENT_GOALS.md
+│   ├── 06_AI_PHASED_DEVELOPMENT_GOALS.md
+│   └── 07_TESTING_STRATEGY_AND_TEST_SUITES.md
 ├── apps/
 │   ├── api/                            # Backend Server (tRPC / Hono + Drizzle + SQLite)
 │   │   ├── src/

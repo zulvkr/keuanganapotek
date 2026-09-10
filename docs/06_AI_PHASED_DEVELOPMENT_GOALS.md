@@ -45,7 +45,8 @@ KeuanganApotek/
 │   ├── 03_ACCOUNTING_LOGIC_AND_COA.md  # Bagan Akun Standar & Logika Jurnal
 │   ├── 04_DATABASE_SCHEMA.md           # DDL Skema SQLite & Drizzle ORM
 │   ├── 05_DEVELOPMENT_ROADMAP.md       # Roadmap Umum
-│   └── 06_AI_PHASED_DEVELOPMENT_GOALS.md # Master AI Execution Playbook (Dokumen Ini)
+│   ├── 06_AI_PHASED_DEVELOPMENT_GOALS.md # Master AI Execution Playbook (Dokumen Ini)
+│   └── 07_TESTING_STRATEGY_AND_TEST_SUITES.md # Strategi Pengujian & Test Suites
 │
 ├── apps/
 │   ├── api/                            # Backend Server (tRPC / Hono + Drizzle ORM + SQLite)
@@ -141,12 +142,16 @@ KeuanganApotek/
 4. **Setup `apps/web`:**
    - Setup Vite + React (TypeScript) + Tailwind CSS + Lucide Icons + TanStack Query + TanStack Table v8.
    - Siapkan shell layout dasar (Sidebar, Top Navigation Bar, Content Container).
+5. **Setup Test Harness (Vitest & Playwright):**
+   - Konfigurasi Vitest di `packages/shared` dan `apps/api` untuk unit & integration tests.
+   - Setup Playwright di `apps/web` untuk E2E testing data grid dan interaksi keyboard.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
 - Jalankan `pnpm install` tanpa error resolusi paket.
 - Jalankan `pnpm --filter shared build` dan pastikan shared types berhasil diimpor oleh `api` dan `web`.
 - Server API dapat menyala dan merespons ping/health check.
 - Aplikasi web dapat di-build dengan `pnpm --filter web build` tanpa error TypeScript.
+- Jalankan `pnpm test` $\rightarrow$ Vitest runner berhasil dieksekusi tanpa error konfigurasi.
 
 ---
 
