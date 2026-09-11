@@ -92,6 +92,29 @@ const migrationStatements = [
     reference_no TEXT, memo TEXT, journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_cash_bank_transfers_time ON cash_bank_transfers(transaction_time)`,
+  `CREATE TABLE IF NOT EXISTS bank_statements (
+    id TEXT PRIMARY KEY NOT NULL,
+    bank_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    statement_date TEXT NOT NULL,
+    description TEXT,
+    debit INTEGER NOT NULL DEFAULT 0 CHECK (debit >= 0),
+    credit INTEGER NOT NULL DEFAULT 0 CHECK (credit >= 0),
+    is_matched INTEGER NOT NULL DEFAULT 0,
+    imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (debit > 0 OR credit > 0),
+    CHECK (NOT (debit > 0 AND credit > 0))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_bank_statements_account_date ON bank_statements(bank_account_id, statement_date)`,
+  `CREATE TABLE IF NOT EXISTS bank_recon_matches (
+    id TEXT PRIMARY KEY NOT NULL,
+    bank_statement_id TEXT NOT NULL REFERENCES bank_statements(id) ON DELETE CASCADE,
+    journal_line_id TEXT NOT NULL REFERENCES journal_lines(id) ON DELETE CASCADE,
+    matched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    match_type TEXT NOT NULL DEFAULT 'MANUAL' CHECK (match_type IN ('AUTO', 'MANUAL')),
+    UNIQUE(bank_statement_id, journal_line_id),
+    UNIQUE(bank_statement_id),
+    UNIQUE(journal_line_id)
+  )`,
 ];
 
 export function runMigrations(sqlite: Database.Database): void {

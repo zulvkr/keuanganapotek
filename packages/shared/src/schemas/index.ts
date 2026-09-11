@@ -140,6 +140,25 @@ export const CashBankTransferSchema = z.object({
   netAmount: NonNegativeMoneySchema.refine(positiveAmount, "Nominal transaksi harus lebih besar dari nol"), adminFee: NonNegativeMoneySchema.default("0"), referenceNo: z.string().trim().optional(), memo: z.string().trim().optional(),
 }).refine((input) => input.sourceAccountId !== input.targetAccountId, { message: "Akun sumber dan tujuan harus berbeda" });
 
+export const BankStatementImportRowSchema = z.object({
+  statementDate: IsoDateSchema,
+  description: z.string().trim().optional(),
+  debit: NonNegativeMoneySchema.default("0"),
+  credit: NonNegativeMoneySchema.default("0"),
+}).refine((row) => positiveAmount(row.debit) !== positiveAmount(row.credit), {
+  message: "Baris rekening koran harus memiliki tepat satu nominal debit atau kredit",
+});
+
+export const BankStatementImportSchema = z.object({
+  bankAccountId: z.string().min(1),
+  rows: z.array(BankStatementImportRowSchema).min(1),
+});
+
+export const BankReconMatchSchema = z.object({
+  bankStatementId: z.string().min(1),
+  journalLineId: z.string().min(1),
+});
+
 export type Account = z.infer<typeof AccountSchema>;
 export type JournalLine = z.infer<typeof JournalLineSchema>;
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
@@ -149,5 +168,8 @@ export type ConsignmentVendor = z.infer<typeof ConsignmentVendorSchema>;
 export type ConsignmentItem = z.infer<typeof ConsignmentItemSchema>;
 export type ConsignmentSettlement = z.infer<typeof ConsignmentSettlementSchema>;
 export type CashBankTransfer = z.infer<typeof CashBankTransferSchema>;
+export type BankStatementImportRow = z.infer<typeof BankStatementImportRowSchema>;
+export type BankStatementImport = z.infer<typeof BankStatementImportSchema>;
+export type BankReconMatch = z.infer<typeof BankReconMatchSchema>;
 export type OpeningBalanceLine = z.infer<typeof OpeningBalanceLineSchema>;
 export type SaveOpeningBalances = z.infer<typeof SaveOpeningBalancesSchema>;

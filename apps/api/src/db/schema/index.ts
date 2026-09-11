@@ -95,6 +95,31 @@ export const cashBankTransfers = sqliteTable("cash_bank_transfers", {
   referenceNo: text("reference_no"), memo: text("memo"), journalId: text("journal_id").references(() => journals.id, { onDelete: "set null" }), createdAt: text("created_at").notNull().default("(datetime('now'))"),
 }, (table) => ({ timeIndex: index("idx_cash_bank_transfers_time").on(table.transactionTime) }));
 
+export const bankStatements = sqliteTable("bank_statements", {
+  id: text("id").primaryKey().notNull(),
+  bankAccountId: text("bank_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  statementDate: text("statement_date").notNull(),
+  description: text("description"),
+  debit: integer("debit").notNull().default(0),
+  credit: integer("credit").notNull().default(0),
+  isMatched: integer("is_matched", { mode: "boolean" }).notNull().default(false),
+  importedAt: text("imported_at").notNull().default("(datetime('now'))"),
+}, (table) => ({
+  accountDateIndex: index("idx_bank_statements_account_date").on(table.bankAccountId, table.statementDate),
+}));
+
+export const bankReconMatches = sqliteTable("bank_recon_matches", {
+  id: text("id").primaryKey().notNull(),
+  bankStatementId: text("bank_statement_id").notNull().references(() => bankStatements.id, { onDelete: "cascade" }),
+  journalLineId: text("journal_line_id").notNull().references(() => journalLines.id, { onDelete: "cascade" }),
+  matchedAt: text("matched_at").notNull().default("(datetime('now'))"),
+  matchType: text("match_type").notNull().default("MANUAL"),
+}, (table) => ({
+  statementLineUnique: uniqueIndex("uq_bank_recon_statement_line").on(table.bankStatementId, table.journalLineId),
+  statementUnique: uniqueIndex("uq_bank_recon_statement").on(table.bankStatementId),
+  journalLineUnique: uniqueIndex("uq_bank_recon_journal_line").on(table.journalLineId),
+}));
+
 export type AccountRow = typeof accounts.$inferSelect;
 export type OpeningBalanceRow = typeof openingBalances.$inferSelect;
 export type JournalRow = typeof journals.$inferSelect;
@@ -104,3 +129,5 @@ export type PbfInvoiceRow = typeof pbfInvoices.$inferSelect;
 export type ConsignmentVendorRow = typeof consignmentVendors.$inferSelect;
 export type ConsignmentItemRow = typeof consignmentItems.$inferSelect;
 export type CashBankTransferRow = typeof cashBankTransfers.$inferSelect;
+export type BankStatementRow = typeof bankStatements.$inferSelect;
+export type BankReconMatchRow = typeof bankReconMatches.$inferSelect;

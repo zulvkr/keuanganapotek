@@ -115,7 +115,7 @@ KeuanganApotek/
 | **1** | **Database Schema, Master CoA & Opening Balance** | SQLite WAL, Drizzle migration, Tree-Grid CoA, Auto-Balancing Equity | `[x] Selesai diverifikasi (schema, seed, API, UI, tests)` |
 | **2** | **Double-Entry Engine & General Journal Grid** | Service Buku Besar, Grid Jurnal Umum, Sticky Balance Bar, Hotkeys | `[x] Selesai diverifikasi (ledger service, API, grid, unit/integration/E2E tests)` |
 | **3** | **Modul Transaksi Operasional Apotek** | POS Clearing + HPP, Faktur PBF (Excel paste), Konsinyasi, Kas & Bank | `[x] Selesai diverifikasi (schema, services, API, UI, integration tests)` |
-| **4** | **Rekonsiliasi Bank Dual-Pane** | Split View, Algoritma Auto-Match tanggal/nominal, Matching manual | `[ ] Belum Mulai` |
+| **4** | **Rekonsiliasi Bank Dual-Pane** | Split View, Algoritma Auto-Match tanggal/nominal, Matching manual | `[x] Selesai diverifikasi (schema, CSV/TSV import, auto-match, manual matching, dual-pane UI, API/integration tests)` |
 | **5** | **Laporan Keuangan Dinamis & Drill-Down Drawer** | Laba Rugi Komparatif, Neraca, Neraca Saldo, Drawer rincian jurnal | `[ ] Belum Mulai` |
 | **6** | **Pengujian Beban, Audit Trail & Penguncian Periode** | Stress test grid >5.000 baris, Lock Period, SQLite backup WAL | `[ ] Belum Mulai` |
 | **7** | **Fitur Ekstensi Lanjutan (Future Scope)** | Ekspor Pajak (e-Faktur), Webhook POS Integration, Multi-Cabang | `[ ] Belum Mulai` |

@@ -94,7 +94,7 @@ KeuanganApotek/
 ### Fase 3: Konsinyasi, Kas/Bank & Rekonsiliasi (Minggu 5-6)
 - [x] Modul 5: Konsinyasi (Perhitungan bagi hasil & batch settlement bar).
 - [x] Modul 6: Kas & Bank Register (Setoran kas toko, transfer bank, pencatatan mutasi ganda).
-- [ ] Modul 7: Rekonsiliasi Bank Dual-Pane Split View & Algoritma *Auto-Match*.
+- [x] Modul 7: Rekonsiliasi Bank Dual-Pane Split View & Algoritma *Auto-Match*.
 
 ### Fase 4: Laporan Keuangan Dinamis, Drill-Down & Finalisasi (Minggu 7-8)
 - [ ] Modul 8: Laporan Laba Rugi Komparatif, Neraca, Neraca Saldo.

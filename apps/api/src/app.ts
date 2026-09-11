@@ -49,6 +49,7 @@ import {
   listPosClearings,
   settleConsignment,
 } from "./services/operational.service.js";
+import { autoMatch, getReconData, importBankStatementCsv, importBankStatements, manualMatch, removeMatch } from "./services/recon.service.js";
 
 export const app = new Hono();
 
@@ -240,6 +241,39 @@ export function createApiApp(client: SqliteClient) {
     const parsed = CashBankTransferSchema.safeParse(await context.req.json());
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
     try { return context.json({ data: createCashBankTransfer(client.db, parsed.data) }, 201); } catch (error) { return errorResponse(context, error); }
+  });
+
+  api.get("/api/bank-recon", (context) => {
+    const bankAccountId = context.req.query("bankAccountId");
+    if (!bankAccountId) return context.json({ error: "bankAccountId wajib diisi" }, 400);
+    try { return context.json({ data: getReconData(client.db, bankAccountId) }); } catch (error) { return errorResponse(context, error); }
+  });
+
+  api.post("/api/bank-recon/import", async (context) => {
+    try {
+      const body = await context.req.json() as { bankAccountId?: string; csv?: string; rows?: unknown };
+      if (!body.bankAccountId) return context.json({ error: "bankAccountId wajib diisi" }, 400);
+      const result = typeof body.csv === "string"
+        ? importBankStatementCsv(client.db, body.bankAccountId, body.csv)
+        : importBankStatements(client.db, { bankAccountId: body.bankAccountId, rows: body.rows as never });
+      return context.json({ data: result }, 201);
+    } catch (error) { return errorResponse(context, error); }
+  });
+
+  api.post("/api/bank-recon/auto-match", async (context) => {
+    try {
+      const body = await context.req.json() as { bankAccountId?: string };
+      if (!body.bankAccountId) return context.json({ error: "bankAccountId wajib diisi" }, 400);
+      return context.json({ data: autoMatch(client.db, body.bankAccountId) });
+    } catch (error) { return errorResponse(context, error); }
+  });
+
+  api.post("/api/bank-recon/matches", async (context) => {
+    try { return context.json({ data: manualMatch(client.db, await context.req.json()) }, 201); } catch (error) { return errorResponse(context, error); }
+  });
+
+  api.delete("/api/bank-recon/matches/:id", (context) => {
+    try { return context.json({ data: removeMatch(client.db, context.req.param("id")) }); } catch (error) { return errorResponse(context, error); }
   });
 
   return api;
