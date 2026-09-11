@@ -229,7 +229,9 @@ export function getBalanceSheet(db: Db, asOfDate: string) {
   const liabilities = rows.filter((row) => (liabilityClassifications as readonly string[]).includes(row.classification));
   const equityAccounts = rows.filter((row) => row.classification === "EKUITAS");
   const incomeRows = rows.filter((row) => (incomeClassifications as readonly string[]).includes(row.classification));
-  const currentEarnings = incomeRows.reduce((total, row) => row.classification === "PENDAPATAN" ? total.minus(row.balance) : total.plus(row.balance), new Decimal(0));
+  // Revenue rows are displayed as negative signed balances; all income-statement
+  // balances therefore invert once when rolled into retained/current earnings.
+  const currentEarnings = incomeRows.reduce((total, row) => total.minus(row.balance), new Decimal(0));
   const totalAssets = sumBalance(assets);
   const totalLiabilities = sumBalance(liabilities);
   const totalEquityAccounts = sumBalance(equityAccounts);

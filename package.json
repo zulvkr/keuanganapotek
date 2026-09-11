@@ -16,6 +16,7 @@
     "db:migrate": "pnpm --filter @keuangan-apotek/api db:migrate",
     "db:push": "pnpm --filter @keuangan-apotek/api db:migrate",
     "db:seed": "pnpm --filter @keuangan-apotek/api db:seed",
+    "db:backup": "pnpm --filter @keuangan-apotek/api db:backup",
     "test": "pnpm -r --if-present run test",
     "test:coverage": "pnpm -r --if-present run test:coverage",
     "typecheck": "pnpm -r --if-present run typecheck"

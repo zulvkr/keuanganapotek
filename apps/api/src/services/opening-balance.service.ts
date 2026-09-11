@@ -5,6 +5,7 @@ import { accountingPeriod, balancingAmount, parseRupiahToSen, rupiahToSen, senTo
 import type { OpeningBalanceLine, SaveOpeningBalances } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "../db/client.js";
 import { accounts, journalLines, journals, openingBalances } from "../db/schema/index.js";
+import { recordAudit } from "./audit.service.js";
 
 type Db = SqliteClient["db"];
 
@@ -139,6 +140,7 @@ export async function saveOpeningBalances(db: Db, input: SaveOpeningBalances): P
         set: { debitAmount: row.debitAmount, creditAmount: row.creditAmount, notes: row.notes ?? null },
       }).run();
     }
+    recordAudit(tx, { entityType: "OPENING_BALANCE", entityId: input.cutoffDate, action: "UPDATE", after: rows });
   });
 }
 
@@ -185,6 +187,7 @@ export async function lockOpeningBalance(db: Db, cutoffDate: string) {
       }).run();
     }
     tx.update(openingBalances).set({ isLocked: true }).where(eq(openingBalances.cutoffDate, cutoffDate)).run();
+    recordAudit(tx, { entityType: "JOURNAL", entityId: journal.id, action: "CREATE", after: { journal, lines: rows } });
     return journal;
   });
 }

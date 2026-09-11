@@ -20,6 +20,8 @@ import {
   IncomeStatementQuerySchema,
   ReportPeriodSchema,
   TrialBalanceQuerySchema,
+  LockPeriodSchema,
+  UnlockPeriodSchema,
 } from "@keuangan-apotek/shared";
 import type { SourceModule } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "./db/client.js";
@@ -56,6 +58,8 @@ import {
 } from "./services/operational.service.js";
 import { autoMatch, getReconData, importBankStatementCsv, importBankStatements, manualMatch, removeMatch } from "./services/recon.service.js";
 import { getAccountJournalDrillDown, getBalanceSheet, getIncomeStatement, getTrialBalance } from "./services/reports.service.js";
+import { listAuditLogs } from "./services/audit.service.js";
+import { listPeriodLocks, lockPeriod, unlockPeriod } from "./services/period-lock.service.js";
 
 export const app = new Hono();
 
@@ -72,7 +76,7 @@ app.notFound((context) => context.json({ error: "Not found" }, 404));
 
 function errorResponse(context: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Permintaan tidak valid";
-  const status = message.includes("tidak ditemukan") ? 404 as const : message.includes("sudah dikunci") || message.includes("sistem") ? 409 as const : 400 as const;
+  const status = message.startsWith("PERIOD_LOCKED") ? 403 as const : message.includes("tidak ditemukan") ? 404 as const : message.includes("sudah dikunci") || message.includes("sistem") ? 409 as const : 400 as const;
   return context.json({ error: message }, status);
 }
 
@@ -162,6 +166,26 @@ export function createApiApp(client: SqliteClient) {
     }
   });
 
+  api.get("/api/period-locks", (context) => context.json({ data: listPeriodLocks(client.db) }));
+
+  api.post("/api/period-locks", async (context) => {
+    const parsed = LockPeriodSchema.safeParse(await context.req.json());
+    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    try { return context.json({ data: lockPeriod(client.db, parsed.data) }, 201); }
+    catch (error) { return errorResponse(context, error); }
+  });
+
+  api.post("/api/period-locks/:lockedThrough/unlock", async (context) => {
+    const parsed = UnlockPeriodSchema.safeParse(await context.req.json());
+    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 403);
+    try { return context.json({ data: unlockPeriod(client.db, context.req.param("lockedThrough"), parsed.data.actor) }); }
+    catch (error) { return errorResponse(context, error); }
+  });
+
+  api.get("/api/audit-logs", (context) => context.json({ data: listAuditLogs(client.db, {
+    entityType: context.req.query("entityType"), entityId: context.req.query("entityId"),
+  }) }));
+
   api.get("/api/journals", (context) => {
     const startDate = context.req.query("startDate");
     const endDate = context.req.query("endDate");
@@ -182,7 +206,7 @@ export function createApiApp(client: SqliteClient) {
     const parsed = JournalEntrySchema.safeParse(await context.req.json());
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
     try {
-      return context.json({ data: createJournalEntry(client.db, { ...parsed.data, sourceModule: "GENERAL" }) }, 201);
+      return context.json({ data: createJournalEntry(client.db, { ...parsed.data, sourceModule: "GENERAL", createdBy: context.req.header("x-user-id") ?? "system" }) }, 201);
     } catch (error) {
       return errorResponse(context, error);
     }
@@ -192,7 +216,7 @@ export function createApiApp(client: SqliteClient) {
     const parsed = JournalEntrySchema.safeParse(await context.req.json());
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
     try {
-      return context.json({ data: updateJournal(client.db, context.req.param("id"), { ...parsed.data, sourceModule: "GENERAL" }) });
+      return context.json({ data: updateJournal(client.db, context.req.param("id"), { ...parsed.data, sourceModule: "GENERAL", createdBy: context.req.header("x-user-id") ?? "system" }) });
     } catch (error) {
       return errorResponse(context, error);
     }

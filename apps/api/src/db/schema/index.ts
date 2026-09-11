@@ -57,6 +57,28 @@ export const journalLines = sqliteTable("journal_lines", {
   journalIndex: index("idx_journal_lines_journal_id").on(table.journalId),
 }));
 
+export const periodLocks = sqliteTable("period_locks", {
+  id: text("id").primaryKey().notNull(),
+  lockedThrough: text("locked_through").notNull().unique(),
+  lockedBy: text("locked_by").notNull(),
+  lockedByRole: text("locked_by_role").notNull(),
+  lockedAt: text("locked_at").notNull(),
+});
+
+export const auditLogs = sqliteTable("audit_logs", {
+  id: text("id").primaryKey().notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  action: text("action").notNull(),
+  actor: text("actor").notNull(),
+  beforeData: text("before_data"),
+  afterData: text("after_data"),
+  occurredAt: text("occurred_at").notNull(),
+}, (table) => ({
+  entityIndex: index("idx_audit_logs_entity").on(table.entityType, table.entityId),
+  occurredIndex: index("idx_audit_logs_occurred_at").on(table.occurredAt),
+}));
+
 export const posClearings = sqliteTable("pos_clearings", {
   id: text("id").primaryKey().notNull(), clearingDate: text("clearing_date").notNull(), shiftName: text("shift_name"), cashierName: text("cashier_name"),
   totalPosOmzet: integer("total_pos_omzet").notNull().default(0), cashReceived: integer("cash_received").notNull().default(0), nonCashReceived: integer("non_cash_received").notNull().default(0),
@@ -124,6 +146,8 @@ export type AccountRow = typeof accounts.$inferSelect;
 export type OpeningBalanceRow = typeof openingBalances.$inferSelect;
 export type JournalRow = typeof journals.$inferSelect;
 export type JournalLineRow = typeof journalLines.$inferSelect;
+export type PeriodLockRow = typeof periodLocks.$inferSelect;
+export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type PosClearingRow = typeof posClearings.$inferSelect;
 export type PbfInvoiceRow = typeof pbfInvoices.$inferSelect;
 export type ConsignmentVendorRow = typeof consignmentVendors.$inferSelect;

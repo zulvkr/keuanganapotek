@@ -4,6 +4,8 @@ import { JournalEntrySchema, accountingPeriod, nowIsoInstant, parseRupiahToSen, 
 import type { JournalEntry, JournalLine, SourceModule } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "../db/client.js";
 import { accounts, journalLines, journals, openingBalances } from "../db/schema/index.js";
+import { recordAudit } from "./audit.service.js";
+import { assertPeriodUnlocked } from "./period-lock.service.js";
 
 type Db = SqliteClient["db"];
 type Executor = Pick<Db, "select" | "insert" | "update" | "delete">;
@@ -35,6 +37,7 @@ function parseEntry(input: JournalEntryInput): JournalEntry {
 }
 
 function assertPeriodOpen(db: Executor, entryDate: string): void {
+  assertPeriodUnlocked(db, entryDate);
   const locked = db.select({ id: openingBalances.id })
     .from(openingBalances)
     .where(and(gte(openingBalances.cutoffDate, entryDate), eq(openingBalances.isLocked, true)))
@@ -104,7 +107,9 @@ export function createJournalEntry(db: Db, input: JournalEntryInput): JournalWit
       accountId: line.accountId, description: line.description,
       debit: line.debit, credit: line.credit,
     }))).run();
-    return getJournalById(tx, journal.id)!;
+    const result = getJournalById(tx, journal.id)!;
+    recordAudit(tx, { entityType: "JOURNAL", entityId: journal.id, action: "CREATE", actor: input.createdBy, after: result });
+    return result;
   });
 }
 
@@ -159,6 +164,7 @@ export function updateJournal(db: Db, id: string, input: JournalEntryInput): Jou
     assertPeriodOpen(tx, entry.entryDate);
     const lines = validateAndConvertLines(entry.lines);
     assertAccounts(tx, lines);
+    const before = getJournalById(tx, id);
     tx.update(journals).set({ entryDate: entry.entryDate, referenceNo: entry.referenceNo || null, memo: entry.memo || null, updatedAt: nowIsoInstant() }).where(eq(journals.id, id)).run();
     tx.delete(journalLines).where(eq(journalLines.journalId, id)).run();
     tx.insert(journalLines).values(lines.map((line, index) => ({
@@ -166,7 +172,9 @@ export function updateJournal(db: Db, id: string, input: JournalEntryInput): Jou
       accountId: line.accountId, description: line.description,
       debit: line.debit, credit: line.credit,
     }))).run();
-    return getJournalById(tx, id)!;
+    const result = getJournalById(tx, id)!;
+    recordAudit(tx, { entityType: "JOURNAL", entityId: id, action: "UPDATE", actor: input.createdBy, before, after: result });
+    return result;
   });
 }
 
@@ -176,6 +184,8 @@ export function deleteJournal(db: Db, id: string): void {
     if (!existing) throw new Error("Jurnal tidak ditemukan");
     if (existing.sourceModule !== "GENERAL") throw new Error("Jurnal sistem tidak dapat dihapus");
     assertPeriodOpen(tx, existing.entryDate);
+    const before = getJournalById(tx, id);
     tx.delete(journals).where(eq(journals.id, id)).run();
+    recordAudit(tx, { entityType: "JOURNAL", entityId: id, action: "DELETE", before });
   });
 }

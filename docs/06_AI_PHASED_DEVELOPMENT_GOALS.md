@@ -117,7 +117,7 @@ KeuanganApotek/
 | **3** | **Modul Transaksi Operasional Apotek** | POS Clearing + HPP, Faktur PBF (Excel paste), Konsinyasi, Kas & Bank | `[x] Selesai diverifikasi (schema, services, API, UI, integration tests)` |
 | **4** | **Rekonsiliasi Bank Dual-Pane** | Split View, Algoritma Auto-Match tanggal/nominal, Matching manual | `[x] Selesai diverifikasi (schema, CSV/TSV import, auto-match, manual matching, dual-pane UI, API/integration tests)` |
 | **5** | **Laporan Keuangan Dinamis & Drill-Down Drawer** | Laba Rugi Komparatif, Neraca, Neraca Saldo, Drawer rincian jurnal | `[x] Selesai diverifikasi (reports engine, API, UI, integration/E2E tests)` |
-| **6** | **Pengujian Beban, Audit Trail & Penguncian Periode** | Stress test grid >5.000 baris, Lock Period, SQLite backup WAL | `[ ] Belum Mulai` |
+| **6** | **Pengujian Beban, Audit Trail & Penguncian Periode** | Stress test grid >5.000 baris, Lock Period, SQLite backup WAL | `[x] Selesai diverifikasi (virtualizer 5.000/2.000 baris, audit trail, lock 403, backup integrity, E2E flow)` |
 | **7** | **Fitur Ekstensi Lanjutan (Future Scope)** | Ekspor Pajak (e-Faktur), Webhook POS Integration, Multi-Cabang | `[ ] Belum Mulai` |
 
 ---

@@ -8,12 +8,14 @@
     "dev": "vite",
     "preview": "vite preview",
     "test:e2e": "playwright test",
+    "test:perf": "playwright test --config=playwright.perf.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@keuangan-apotek/shared": "workspace:*",
     "@tanstack/react-query": "^5.62.7",
     "@tanstack/react-table": "^8.20.5",
+    "@tanstack/react-virtual": "3.11.3",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

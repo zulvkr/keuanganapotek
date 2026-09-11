@@ -53,6 +53,25 @@ const migrationStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_journal_lines_account_id ON journal_lines(account_id)`,
   `CREATE INDEX IF NOT EXISTS idx_journal_lines_journal_id ON journal_lines(journal_id)`,
+  `CREATE TABLE IF NOT EXISTS period_locks (
+    id TEXT PRIMARY KEY NOT NULL,
+    locked_through TEXT NOT NULL UNIQUE,
+    locked_by TEXT NOT NULL,
+    locked_by_role TEXT NOT NULL CHECK (locked_by_role IN ('OWNER', 'APOTEKER_PENGELOLA')),
+    locked_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('CREATE', 'UPDATE', 'DELETE', 'LOCK', 'UNLOCK')),
+    actor TEXT NOT NULL,
+    before_data TEXT,
+    after_data TEXT,
+    occurred_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_logs_occurred_at ON audit_logs(occurred_at)`,
   `CREATE TABLE IF NOT EXISTS pos_clearings (
     id TEXT PRIMARY KEY NOT NULL, clearing_date TEXT NOT NULL, shift_name TEXT, cashier_name TEXT,
     total_pos_omzet INTEGER NOT NULL DEFAULT 0 CHECK (total_pos_omzet >= 0), cash_received INTEGER NOT NULL DEFAULT 0 CHECK (cash_received >= 0),

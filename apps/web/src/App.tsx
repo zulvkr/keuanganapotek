@@ -9,6 +9,7 @@ import PBFInvoicesPage from "./pages/PBFInvoicesPage";
 import POSClearingPage from "./pages/POSClearingPage";
 import BankReconPage from "./pages/BankReconPage";
 import ReportsPage from "./pages/ReportsPage";
+import StressTestPage from "./pages/StressTestPage";
 
 const foundationSourceModule: SourceModule = "GENERAL";
 
@@ -22,6 +23,7 @@ const modules = [
   { label: "Kas & Bank", icon: WalletCards },
   { label: "Rekonsiliasi Bank", icon: WalletCards },
   { label: "Laporan Keuangan", icon: BarChart3 },
+  { label: "Uji Beban", icon: Activity },
 ];
 
 function App() {
@@ -72,7 +74,7 @@ function App() {
         </header>
 
         <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-10">
-          {activeModule === "Bagan Akun" ? <CoAPage /> : activeModule === "Jurnal Umum" ? <GeneralJournalPage /> : activeModule === "POS Clearing" ? <POSClearingPage /> : activeModule === "Faktur PBF" ? <PBFInvoicesPage /> : activeModule === "Konsinyasi" ? <ConsignmentPage /> : activeModule === "Kas & Bank" ? <CashBankPage /> : activeModule === "Rekonsiliasi Bank" ? <BankReconPage /> : activeModule === "Laporan Keuangan" ? <ReportsPage /> : <><section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+          {activeModule === "Bagan Akun" ? <CoAPage /> : activeModule === "Jurnal Umum" ? <GeneralJournalPage /> : activeModule === "POS Clearing" ? <POSClearingPage /> : activeModule === "Faktur PBF" ? <PBFInvoicesPage /> : activeModule === "Konsinyasi" ? <ConsignmentPage /> : activeModule === "Kas & Bank" ? <CashBankPage /> : activeModule === "Rekonsiliasi Bank" ? <BankReconPage /> : activeModule === "Laporan Keuangan" ? <ReportsPage /> : activeModule === "Uji Beban" ? <StressTestPage /> : <><section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
             <div className="max-w-2xl">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand">Phase 0 · Foundation</p>
               <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Ruang kerja finansial apotek yang rapi dan terukur.</h2>

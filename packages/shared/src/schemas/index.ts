@@ -95,6 +95,19 @@ export const LockOpeningBalanceSchema = z.object({
   cutoffDate: IsoDateSchema,
 });
 
+export const UserRoleSchema = z.enum(["OWNER", "APOTEKER_PENGELOLA", "AKUNTAN", "KASIR"]);
+
+export const LockPeriodSchema = z.object({
+  lockedThrough: IsoDateSchema,
+  actor: z.string().trim().min(1).max(120).default("system"),
+  role: z.enum(["OWNER", "APOTEKER_PENGELOLA"]),
+});
+
+export const UnlockPeriodSchema = z.object({
+  actor: z.string().trim().min(1).max(120).default("system"),
+  role: z.literal("OWNER"),
+});
+
 export const PaymentTermsSchema = z.enum(["TUNAI", "TEMPO_14", "TEMPO_30", "TEMPO_45", "TEMPO_60"]);
 const NonNegativeMoneySchema = RupiahAmountSchema.refine((value) => positiveAmount(value) || String(value).trim() === "0", "Nominal tidak boleh negatif");
 
@@ -197,6 +210,8 @@ export type BankStatementImport = z.infer<typeof BankStatementImportSchema>;
 export type BankReconMatch = z.infer<typeof BankReconMatchSchema>;
 export type OpeningBalanceLine = z.infer<typeof OpeningBalanceLineSchema>;
 export type SaveOpeningBalances = z.infer<typeof SaveOpeningBalancesSchema>;
+export type LockPeriod = z.infer<typeof LockPeriodSchema>;
+export type UnlockPeriod = z.infer<typeof UnlockPeriodSchema>;
 export type ReportPeriod = z.infer<typeof ReportPeriodSchema>;
 export type IncomeStatementQuery = z.infer<typeof IncomeStatementQuerySchema>;
 export type BalanceSheetQuery = z.infer<typeof BalanceSheetQuerySchema>;
