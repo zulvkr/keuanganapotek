@@ -14,7 +14,7 @@ type Account = {
 };
 
 type BalanceLine = { accountId: string; debitAmount: string; creditAmount: string; notes?: string };
-type BalanceResponseRow = { accountId: string; debitAmount: number; creditAmount: number; isLocked: boolean; notes: string | null };
+type BalanceResponseRow = { accountId: string; debitAmount: number; creditAmount: number; runningBalance: number; isLocked: boolean; notes: string | null };
 type ApiResponse<T> = { data: T } | { error: string | object };
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -35,11 +35,18 @@ function amountToInput(sen: number): string {
   return senToRupiah(sen).toFixed(2);
 }
 
+function formatSen(sen: number): string {
+  const fixed = senToRupiah(sen).toFixed(2);
+  const [whole, fraction] = fixed.split(".");
+  return `${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${fraction}`;
+}
+
 function CoAPage() {
   const [mode, setMode] = useState<"structure" | "opening">("structure");
   const [cutoffDate, setCutoffDate] = useState(today);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [balances, setBalances] = useState<Record<string, BalanceLine>>({});
+  const [runningBalances, setRunningBalances] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [classification, setClassification] = useState("ALL");
   const [isLocked, setIsLocked] = useState(false);
@@ -58,8 +65,13 @@ function CoAPage() {
       if ("error" in accountResponse || "error" in balanceResponse) throw new Error("Data CoA belum dapat dimuat");
       setAccounts(accountResponse.data);
       const next: Record<string, BalanceLine> = {};
-      for (const row of balanceResponse.data) next[row.accountId] = { accountId: row.accountId, debitAmount: amountToInput(row.debitAmount), creditAmount: amountToInput(row.creditAmount), notes: row.notes ?? "" };
+      const nextRunning: Record<string, number> = {};
+      for (const row of balanceResponse.data) {
+        next[row.accountId] = { accountId: row.accountId, debitAmount: amountToInput(row.debitAmount), creditAmount: amountToInput(row.creditAmount), notes: row.notes ?? "" };
+        nextRunning[row.accountId] = row.runningBalance;
+      }
       setBalances(next);
+      setRunningBalances(nextRunning);
       setIsLocked(balanceResponse.data.some((row) => row.isLocked));
       setMessage("");
     }).catch(() => {
@@ -165,12 +177,11 @@ function CoAPage() {
               {loading && <tr><td className="px-5 py-8 text-center text-muted" colSpan={mode === "opening" ? 7 : 7}>Memuat CoA...</td></tr>}
               {!loading && visibleAccounts.map((account, index) => {
                 const line = balances[account.id] ?? { accountId: account.id, debitAmount: "0", creditAmount: "0", notes: "" };
-                let runningBalance = sumDebitCredit([]).difference;
-                try { runningBalance = sumDebitCredit([{ debit: line.debitAmount, credit: line.creditAmount }]).difference; } catch { runningBalance = sumDebitCredit([{ debit: "1", credit: "0" }]).difference; }
+                const runningBalance = runningBalances[account.id] ?? 0;
                 return <tr className={index % 2 ? "bg-slate-50/60" : "bg-white"} key={account.id}>
                   <td className="sticky left-0 bg-inherit px-5 py-2 font-mono font-semibold tabular-nums text-slate-700"><span className="inline-flex items-center" style={{ paddingLeft: `${(account.level - 1) * 18}px` }}>{account.level > 1 ? <ChevronRight className="mr-1 inline text-slate-300" size={14} /> : null}<input aria-label={`Kode ${account.code}`} className="w-20 rounded-md border border-transparent bg-transparent px-1 py-1 hover:border-slate-200 focus:border-brand focus:outline-none" defaultValue={account.code} onBlur={(event) => { if (/^\d{4}$/.test(event.currentTarget.value) && event.currentTarget.value !== account.code) void updateAccount(account, { code: event.currentTarget.value }); }} /></span></td>
                   <td className="px-4 py-2 font-medium"><input aria-label={`Nama ${account.code}`} className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 hover:border-slate-200 focus:border-brand focus:outline-none" defaultValue={account.name} onBlur={(event) => { if (event.currentTarget.value.trim() && event.currentTarget.value !== account.name) void updateAccount(account, { name: event.currentTarget.value.trim() }); }} /></td><td className="px-4 py-2"><select aria-label={`Klasifikasi ${account.code}`} className="rounded-md border border-transparent bg-transparent px-2 py-1 text-xs hover:border-slate-200" defaultValue={account.classification} onChange={(event) => void updateAccount(account, { classification: event.target.value })}><option value="ASET_LANCAR">ASET LANCAR</option><option value="ASET_TIDAK_LANCAR">ASET TIDAK LANCAR</option><option value="KEWAJIBAN_LANCAR">KEWAJIBAN LANCAR</option><option value="EKUITAS">EKUITAS</option><option value="PENDAPATAN">PENDAPATAN</option><option value="BEBAN_POKOK">BEBAN POKOK</option><option value="BEBAN_OPERASIONAL">BEBAN OPERASIONAL</option><option value="BEBAN_NON_OPERASIONAL">BEBAN NON OPERASIONAL</option></select></td><td className="px-4 py-2"><select aria-label={`Saldo normal ${account.code}`} className={account.normalBalance === "DEBIT" ? "rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-blue-700" : "rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-emerald-700"} defaultValue={account.normalBalance} onChange={(event) => void updateAccount(account, { normalBalance: event.target.value as Account["normalBalance"] })}><option value="DEBIT">DEBIT</option><option value="KREDIT">KREDIT</option></select></td>
-                  {mode === "opening" ? <><td className="px-4 py-2"><input aria-label={`Debit ${account.code}`} className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-right font-mono tabular-nums hover:border-slate-200 focus:border-brand focus:outline-none focus:ring-2 focus:ring-blue-100" disabled={isLocked} onBlur={(event) => updateBalance(account.id, "debitAmount", formatRupiah(event.target.value).replace(/^Rp\s*/, ""))} onChange={(event) => updateBalance(account.id, "debitAmount", event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.closest("tr")?.querySelector<HTMLInputElement>(`[aria-label='Kredit ${account.code}']`)?.focus(); }} value={line.debitAmount} /></td><td className="px-4 py-2"><input aria-label={`Kredit ${account.code}`} className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-right font-mono tabular-nums hover:border-slate-200 focus:border-brand focus:outline-none focus:ring-2 focus:ring-blue-100" disabled={isLocked} onBlur={(event) => updateBalance(account.id, "creditAmount", formatRupiah(event.target.value).replace(/^Rp\s*/, ""))} onChange={(event) => updateBalance(account.id, "creditAmount", event.target.value)} value={line.creditAmount} /></td><td className="px-4 py-2"><input aria-label={`Catatan ${account.code}`} className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-sm hover:border-slate-200 focus:border-brand focus:outline-none" disabled={isLocked} onChange={(event) => updateBalance(account.id, "notes", event.target.value)} value={line.notes ?? ""} /></td></> : <><td className="px-4 py-3 text-right font-mono tabular-nums text-slate-500">Rp {runningBalance.toFixed(2)}</td><td className="px-4 py-3 text-center"><label className="inline-flex items-center gap-2 text-xs text-emerald-700"><input aria-label={`Aktif ${account.code}`} checked={account.isActive} onChange={(event) => void updateAccount(account, { isActive: event.target.checked })} type="checkbox" />Aktif</label></td><td className="px-4 py-3 text-center"><button aria-label={`Hapus ${account.code}`} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => deleteAccount(account.id)} type="button"><Trash2 size={16} /></button></td></>}
+                  {mode === "opening" ? <><td className="px-4 py-2"><input aria-label={`Debit ${account.code}`} className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-right font-mono tabular-nums hover:border-slate-200 focus:border-brand focus:outline-none focus:ring-2 focus:ring-blue-100" disabled={isLocked} onBlur={(event) => updateBalance(account.id, "debitAmount", formatRupiah(event.target.value).replace(/^Rp\s*/, ""))} onChange={(event) => updateBalance(account.id, "debitAmount", event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.closest("tr")?.querySelector<HTMLInputElement>(`[aria-label='Kredit ${account.code}']`)?.focus(); }} value={line.debitAmount} /></td><td className="px-4 py-2"><input aria-label={`Kredit ${account.code}`} className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-right font-mono tabular-nums hover:border-slate-200 focus:border-brand focus:outline-none focus:ring-2 focus:ring-blue-100" disabled={isLocked} onBlur={(event) => updateBalance(account.id, "creditAmount", formatRupiah(event.target.value).replace(/^Rp\s*/, ""))} onChange={(event) => updateBalance(account.id, "creditAmount", event.target.value)} value={line.creditAmount} /></td><td className="px-4 py-2"><input aria-label={`Catatan ${account.code}`} className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-sm hover:border-slate-200 focus:border-brand focus:outline-none" disabled={isLocked} onChange={(event) => updateBalance(account.id, "notes", event.target.value)} value={line.notes ?? ""} /></td></> : <><td className="px-4 py-3 text-right font-mono tabular-nums text-slate-500">Rp {formatSen(runningBalance)}</td><td className="px-4 py-3 text-center"><label className="inline-flex items-center gap-2 text-xs text-emerald-700"><input aria-label={`Aktif ${account.code}`} checked={account.isActive} onChange={(event) => void updateAccount(account, { isActive: event.target.checked })} type="checkbox" />Aktif</label></td><td className="px-4 py-3 text-center"><button aria-label={`Hapus ${account.code}`} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => deleteAccount(account.id)} type="button"><Trash2 size={16} /></button></td></>}
                 </tr>;
               })}
             </tbody>

@@ -73,4 +73,33 @@ describe("Phase 1 database and opening balance flow", () => {
     expect(postedLines.reduce((sum, line) => sum + line.credit, 0)).toBe(100000000);
     expect(client.db.select().from(openingBalances).all().every((row) => row.isLocked)).toBe(true);
   });
+
+  it("returns opening balance plus posted movements without counting the opening journal twice", async () => {
+    const { api } = setup();
+    const openingLines = [
+      { accountId: "coa-1101", debitAmount: "1000000", creditAmount: "0" },
+      { accountId: "coa-3101", debitAmount: "0", creditAmount: "1000000" },
+    ];
+    await api.request("http://localhost/api/opening-balances/save", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01", lines: openingLines }),
+    });
+    await api.request("http://localhost/api/opening-balances/lock", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01" }),
+    });
+    await api.request("http://localhost/api/journals/general", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entryDate: "2026-01-02", lines: [
+        { accountId: "coa-1101", debit: "500000", credit: "0" },
+        { accountId: "coa-4101", debit: "0", credit: "500000" },
+      ] }),
+    });
+
+    const response = await api.request("http://localhost/api/opening-balances?cutoffDate=2026-01-01");
+    const payload = await response.json() as { data: Array<{ accountId: string; runningBalance: number }> };
+    expect(payload.data.find((row) => row.accountId === "coa-1101")?.runningBalance).toBe(150_000_000);
+    expect(payload.data.find((row) => row.accountId === "coa-3101")?.runningBalance).toBe(100_000_000);
+    expect(payload.data.find((row) => row.accountId === "coa-4101")?.runningBalance).toBe(50_000_000);
+  });
 });

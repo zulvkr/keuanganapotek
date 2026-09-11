@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, like, sql } from "drizzle-orm";
+import { and, asc, eq, like, ne, sql } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { accountingPeriod, balancingAmount, parseRupiahToSen, rupiahToSen, senToRupiah, sumDebitCredit } from "@keuangan-apotek/shared";
 import type { OpeningBalanceLine, SaveOpeningBalances } from "@keuangan-apotek/shared";
@@ -66,7 +66,7 @@ export async function listAccounts(db: Db) {
 }
 
 export async function getOpeningBalances(db: Db, cutoffDate: string) {
-  return db
+  const rows = db
     .select({
       id: openingBalances.id,
       cutoffDate: openingBalances.cutoffDate,
@@ -85,7 +85,33 @@ export async function getOpeningBalances(db: Db, cutoffDate: string) {
     .from(accounts)
     .leftJoin(openingBalances, and(eq(openingBalances.accountId, accounts.id), eq(openingBalances.cutoffDate, cutoffDate)))
     .where(eq(accounts.isActive, true))
-    .orderBy(asc(accounts.code));
+    .orderBy(asc(accounts.code))
+    .all();
+
+  // Saldo awal sudah direpresentasikan ulang oleh jurnal OPENING_BALANCE saat
+  // dikunci. Hanya jurnal terposting non-pembuka yang ditambahkan agar saldo
+  // berjalan tidak menghitung saldo awal dua kali.
+  const movements = db
+    .select({ accountId: journalLines.accountId, debit: journalLines.debit, credit: journalLines.credit })
+    .from(journalLines)
+    .innerJoin(journals, eq(journals.id, journalLines.journalId))
+    .where(and(eq(journals.isPosted, true), ne(journals.sourceModule, "OPENING_BALANCE")))
+    .all();
+  const movementByAccount = new Map<string, Decimal>();
+  for (const movement of movements) {
+    const current = movementByAccount.get(movement.accountId) ?? new Decimal(0);
+    movementByAccount.set(movement.accountId, current.plus(movement.debit).minus(movement.credit));
+  }
+
+  return rows.map((row) => {
+    const debitBalance = new Decimal(row.debitAmount)
+      .minus(row.creditAmount)
+      .plus(movementByAccount.get(row.accountId) ?? 0);
+    return {
+      ...row,
+      runningBalance: (row.normalBalance === "KREDIT" ? debitBalance.negated() : debitBalance).toNumber(),
+    };
+  });
 }
 
 export async function saveOpeningBalances(db: Db, input: SaveOpeningBalances): Promise<void> {

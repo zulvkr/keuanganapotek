@@ -117,10 +117,22 @@ export function listJournals(db: Db, filters: { startDate?: string; endDate?: st
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(journals.entryDate), desc(journals.journalNo)).all();
   return rows.map((journal) => {
-    const lines = db.select({ debit: journalLines.debit, credit: journalLines.credit })
-      .from(journalLines).where(eq(journalLines.journalId, journal.id)).all();
+    const lines = db.select({
+      id: journalLines.id,
+      journalId: journalLines.journalId,
+      lineNumber: journalLines.lineNumber,
+      accountId: journalLines.accountId,
+      description: journalLines.description,
+      debit: journalLines.debit,
+      credit: journalLines.credit,
+      accountCode: accounts.code,
+      accountName: accounts.name,
+    }).from(journalLines)
+      .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+      .where(eq(journalLines.journalId, journal.id))
+      .orderBy(asc(journalLines.lineNumber)).all();
     const totals = sumDebitCredit(lines);
-    return { ...journal, totalDebit: totals.debit.toNumber(), totalCredit: totals.credit.toNumber(), lineCount: lines.length };
+    return { ...journal, totalDebit: totals.debit.toNumber(), totalCredit: totals.credit.toNumber(), lineCount: lines.length, lines };
   });
 }
 

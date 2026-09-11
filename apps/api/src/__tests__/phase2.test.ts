@@ -66,7 +66,12 @@ describe("Phase 2 double-entry ledger", () => {
     const id = createdPayload.data.journal.id;
     const listed = await api.request("http://localhost/api/journals?startDate=2026-01-01&endDate=2026-01-31&sourceModule=GENERAL");
     expect(listed.status).toBe(200);
-    expect((await listed.json() as { data: unknown[] }).data).toHaveLength(1);
+    const listedPayload = await listed.json() as { data: Array<{ lines: Array<{ accountCode: string; accountName: string; debit: number; credit: number }> }> };
+    expect(listedPayload.data).toHaveLength(1);
+    expect(listedPayload.data[0]?.lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountCode: "1101", accountName: "Kas Toko / Kasir", debit: 100_000_000, credit: 0 }),
+      expect.objectContaining({ accountCode: "4101", credit: 100_000_000, debit: 0 }),
+    ]));
 
     const updated = await api.request(`http://localhost/api/journals/${id}`, {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...balancedEntry, memo: "Penyesuaian diperbarui", lines: [
