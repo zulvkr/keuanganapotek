@@ -1,20 +1,24 @@
-import { hc, parseResponse, type ClientResponse, type InferRequestType, type InferResponseType } from "hono/client";
-import type { ApiApp } from "@keuangan-apotek/api";
+import { hc, parseResponse, type ClientResponse, type InferRequestType } from "hono/client";
+import type { AppType } from "@keuangan-apotek/api";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 /** The generated Hono RPC client. Route names, params, bodies, and responses are inferred from the API. */
-export const api = hc<ApiApp>(apiBase);
+export const api = hc<AppType>(apiBase);
 
 type RpcCall = (...args: any[]) => Promise<ClientResponse<any, any, any>>;
+type RpcBody<T extends RpcCall> = Awaited<ReturnType<T>> extends infer R
+  ? R extends ClientResponse<infer Body, any, any> ? Body : never
+  : never;
+type RpcSuccess<T extends RpcCall> = Extract<RpcBody<T>, { data: unknown }>;
 
 /**
  * Execute an RPC call and return its successful response body. Hono's
  * `parseResponse` keeps the response type attached to the endpoint function.
  */
-export async function rpc<T extends RpcCall>(call: T) {
+export async function rpc<T extends RpcCall>(call: T): Promise<RpcSuccess<T>> {
   try {
-    return await parseResponse(call());
+    return await parseResponse(call()) as RpcSuccess<T>;
   } catch (error) {
     const detail = error instanceof Error && "detail" in error
       ? (error as Error & { detail?: { data?: { error?: unknown } } }).detail

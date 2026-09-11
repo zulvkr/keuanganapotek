@@ -1,15 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type InferRequestType, type InferResponseType } from "hono/client";
 import { api, rpc } from "../lib/api";
 
 type Data<T> = T extends { data: infer D } ? D : never;
 type AccountsRoute = typeof api.api.accounts.tree.$get;
-type PaymentMethodsRoute = typeof api.api["pos-payment-methods"];
-type SavePaymentRoute = PaymentMethodsRoute["save"];
+type SaveAccount = InferRequestType<typeof api.api.accounts.$post>["json"];
 type Account = Data<InferResponseType<AccountsRoute> >[number];
-type PosPaymentMethod = Data<InferResponseType<PaymentMethodsRoute["$get"]> >[number];
-type SavePaymentMethod = InferRequestType<SavePaymentRoute["$post"]>["json"];
+type PosPaymentMethod = Data<InferResponseType<typeof api.api["pos-payment-methods"]["$get"]> >[number];
+type SavePaymentMethod = InferRequestType<typeof api.api["pos-payment-methods"]["$post"]>["json"];
 
 const inputClass = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
 
@@ -18,6 +17,7 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 function SettingsPage() {
+  const [methods, setMethods] = useState<PosPaymentMethod[]>([]);
   const [newMethod, setNewMethod] = useState({ name: "", accountId: "" });
   const [message, setMessage] = useState("");
   const queryClient = useQueryClient();
@@ -31,12 +31,12 @@ function SettingsPage() {
       return { methods: methodsResponse.data, accounts: accountsResponse.data };
     },
   });
-  const methods = settingsQuery.data?.methods ?? [];
+  useEffect(() => { if (settingsQuery.data) setMethods(settingsQuery.data.methods); }, [settingsQuery.data]);
   const accounts = settingsQuery.data?.accounts ?? [];
   const loading = settingsQuery.isLoading;
   const eligibleAccounts = accounts.filter((account) => account.isActive && !account.isGroup && account.classification === "ASET_LANCAR" && account.normalBalance === "DEBIT" && (account.code.startsWith("11") || account.code.startsWith("12")));
   const saveMutation = useMutation({
-    mutationFn: (input: SavePaymentMethod) => rpc(() => api.api["pos-payment-methods"].save.$post({ json: input })),
+    mutationFn: (input: SavePaymentMethod) => rpc(() => api.api["pos-payment-methods"].$post({ json: input })),
     onSuccess: async (_, input) => {
       setMessage(`Metode ${input.name} berhasil disimpan.`);
       await queryClient.invalidateQueries({ queryKey: ["settings"] });

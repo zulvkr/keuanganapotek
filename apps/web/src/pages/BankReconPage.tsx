@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link2, RefreshCw, Upload, WandSparkles, X } from "lucide-react";
+import { api, rpc } from "../lib/api";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 type Account = { id: string; code: string; name: string };
 type StatementRow = { id: string; statementDate: string; description: string | null; debit: number; credit: number; isMatched: boolean; matchId: string | null; journalLineId: string | null; matchType: string | null };
 type InternalRow = { journalLineId: string; journalId: string; entryDate: string; description: string; referenceNo: string | null; debit: number; credit: number; isMatched: boolean; matchId: string | null; matchType: string | null };
 type ReconData = { account: Account; statements: StatementRow[]; internal: InternalRow[] };
-type Api<T> = { data: T } | { error: string | object };
+type ApiResponse<T> = { data: T } | { error: string | object };
 
 const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
 const money = (value: number) => { const absolute = Math.abs(value); const rupiah = (absolute / 100).toFixed(2); const [whole, fraction] = rupiah.split("."); return `${value < 0 ? "-" : ""}${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${fraction}`; };
-async function request<T>(path: string, init?: RequestInit): Promise<T> { const response = await fetch(`${apiBase}${path}`, init); const body = await response.json() as Api<T>; if (!response.ok || "error" in body) throw new Error(typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "Permintaan rekonsiliasi gagal"); return body.data; }
 
 function PanelHeader({ title, count, matched }: { title: string; count: number; matched: number }) { return <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3"><div><h3 className="font-semibold">{title}</h3><p className="text-xs text-muted">{count} baris · {matched} sudah cocok</p></div></div>; }
 function StatusBadge({ matched, type }: { matched: boolean; type: string | null }) { return matched ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">✓ Cocok {type === "AUTO" ? "otomatis" : "manual"}</span> : <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-500">Belum cocok</span>; }
@@ -25,8 +25,8 @@ export default function BankReconPage() {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function load(accountId = bankAccountId) { if (!accountId) return; try { setData(await request<ReconData>(`/api/bank-recon?bankAccountId=${encodeURIComponent(accountId)}`)); } catch (error) { setMessage(error instanceof Error ? error.message : "Data rekonsiliasi belum tersedia"); } }
-  useEffect(() => { void request<Account[]>("/api/accounts/tree").then((list) => { const bankAccounts = list.filter((account) => ["1111", "1112"].includes(account.code)); setAccounts(bankAccounts); setBankAccountId((current) => current || bankAccounts[0]?.id || ""); }).catch((error) => setMessage(error instanceof Error ? error.message : "Akun bank belum tersedia")); }, []);
+  async function load(accountId = bankAccountId) { if (!accountId) return; try { const response = await fetch(`${apiBase}/api/bank-recon?bankAccountId=${encodeURIComponent(accountId)}`); const body = await response.json() as ApiResponse<ReconData>; if (!response.ok) throw new Error("Data rekonsiliasi belum tersedia"); if ("error" in body) throw new Error(typeof body.error === "string" ? body.error : "Data rekonsiliasi belum tersedia"); setData(body.data); } catch (error) { setMessage(error instanceof Error ? error.message : "Data rekonsiliasi belum tersedia"); } }
+  useEffect(() => { void rpc(() => api.api.accounts.tree.$get()).then((response) => { const bankAccounts = response.data.filter((account) => ["1111", "1112"].includes(account.code)); setAccounts(bankAccounts); setBankAccountId((current) => current || bankAccounts[0]?.id || ""); }).catch((error) => setMessage(error instanceof Error ? error.message : "Akun bank belum tersedia")); }, []);
   useEffect(() => { if (bankAccountId) void load(bankAccountId); }, [bankAccountId]);
 
   const unmatchedInternal = useMemo(() => data?.internal.filter((row) => !row.isMatched) ?? [], [data]);
@@ -35,10 +35,10 @@ export default function BankReconPage() {
   const systemNet = useMemo(() => (data?.internal ?? []).reduce((sum, row) => sum + row.debit - row.credit, 0), [data]);
   const difference = bankNet - systemNet;
 
-  async function autoMatchAll() { if (!bankAccountId) return; setBusy(true); try { const result = await request<{ matchedCount: number }>("/api/bank-recon/auto-match", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bankAccountId }) }); setMessage(`${result.matchedCount} transaksi berhasil dicocokkan otomatis.`); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Auto-match gagal"); } finally { setBusy(false); } }
-  async function importFile(file: File) { setBusy(true); try { const csv = await file.text(); const result = await request<{ imported: StatementRow[] }>("/api/bank-recon/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bankAccountId, csv }) }); setMessage(`${result.imported.length} baris rekening koran diimpor.`); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Impor rekening koran gagal"); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } }
-  async function linkSelected() { if (!selectedInternal || !selectedStatement) return; setBusy(true); try { await request("/api/bank-recon/matches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bankStatementId: selectedStatement, journalLineId: selectedInternal }) }); setMessage("Transaksi berhasil ditautkan secara manual."); setSelectedInternal(""); setSelectedStatement(""); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Manual matching gagal"); } finally { setBusy(false); } }
-  async function unlink(matchId: string) { setBusy(true); try { await request(`/api/bank-recon/matches/${matchId}`, { method: "DELETE" }); setMessage("Pencocokan dibatalkan."); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Pencocokan belum dibatalkan"); } finally { setBusy(false); } }
+  async function autoMatchAll() { if (!bankAccountId) return; setBusy(true); try { const result = await rpc(() => api.api["bank-recon"]["auto-match"].$post({ json: { bankAccountId } })); setMessage(`${result.data.matchedCount} transaksi berhasil dicocokkan otomatis.`); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Auto-match gagal"); } finally { setBusy(false); } }
+  async function importFile(file: File) { setBusy(true); try { const csv = await file.text(); const result = await rpc(() => api.api["bank-recon"].import.$post({ json: { bankAccountId, csv } })); setMessage(`${result.data.imported.length} baris rekening koran diimpor.`); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Impor rekening koran gagal"); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } }
+  async function linkSelected() { if (!selectedInternal || !selectedStatement) return; setBusy(true); try { await rpc(() => api.api["bank-recon"].matches.$post({ json: { bankStatementId: selectedStatement, journalLineId: selectedInternal } })); setMessage("Transaksi berhasil ditautkan secara manual."); setSelectedInternal(""); setSelectedStatement(""); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Manual matching gagal"); } finally { setBusy(false); } }
+  async function unlink(matchId: string) { setBusy(true); try { await rpc(() => api.api["bank-recon"].matches[":id"].$delete({ param: { id: matchId } })); setMessage("Pencocokan dibatalkan."); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Pencocokan belum dibatalkan"); } finally { setBusy(false); } }
 
   return <div className="space-y-5">
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

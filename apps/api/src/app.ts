@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { cors } from "hono/cors";
@@ -69,16 +70,33 @@ import { getAccountJournalDrillDown, getBalanceSheet, getIncomeStatement, getTri
 import { listAuditLogs } from "./services/audit.service.js";
 import { listPeriodLocks, lockPeriod, unlockPeriod } from "./services/period-lock.service.js";
 
-export const app = new Hono();
+function healthHandler(context: Context) {
+  const response: HealthResponse = {
+    status: "ok",
+    service: "api",
+    timestamp: nowIsoInstant(),
+  };
+  return context.json(response);
+}
+
+/** Lightweight health-check app kept for existing API consumers and tests. */
+export const app = new Hono().get("/health", healthHandler);
 
 /** Runtime Zod validation also becomes the JSON input contract exposed by Hono RPC. */
-function validateJson<S extends z.ZodType>(schema: S) {
+type JsonValidator<S extends z.ZodTypeAny> = MiddlewareHandler<
+  any,
+  any,
+  { in: { json: z.input<S> }; out: { json: z.output<S> } },
+  Response
+>;
+
+function validateJson<S extends z.ZodTypeAny>(schema: S, invalidStatus: 400 | 403 = 400): JsonValidator<S> {
   return validator("json", (value, context) => {
     const parsed = schema.safeParse(value);
     return parsed.success
       ? parsed.data
-      : context.json({ error: parsed.error.flatten() }, 400);
-  })
+      : context.json({ error: parsed.error.flatten() }, invalidStatus);
+  }) as unknown as JsonValidator<S>;
 }
 
 function validateQuery<S extends z.ZodType>(schema: S) {
@@ -87,7 +105,12 @@ function validateQuery<S extends z.ZodType>(schema: S) {
     return parsed.success
       ? parsed.data
       : context.json({ error: parsed.error.flatten() }, 400);
-  })
+  }) as unknown as MiddlewareHandler<
+    any,
+    any,
+    { in: { query: z.input<S> }; out: { query: z.output<S> } },
+    any
+  >;
 }
 
 const OpeningBalancesQuerySchema = z.object({ cutoffDate: z.string().min(1) });
@@ -115,17 +138,6 @@ const BankReconImportRequestSchema = z.union([
   BankStatementImportSchema,
 ]);
 
-app.get("/health", (context) => {
-  const response: HealthResponse = {
-    status: "ok",
-    service: "api",
-    timestamp: nowIsoInstant(),
-  };
-  return context.json(response);
-});
-
-app.notFound((context) => context.json({ error: "Not found" }, 404));
-
 function errorResponse(context: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Permintaan tidak valid";
   const status = message.startsWith("PERIOD_LOCKED") ? 403 as const : message.includes("tidak ditemukan") ? 404 as const : message.includes("sudah dikunci") || message.includes("hanya boleh memiliki satu") || message.includes("sistem") || message.includes("grup") ? 409 as const : 400 as const;
@@ -136,7 +148,6 @@ const sourceModules: SourceModule[] = ["GENERAL", "OPENING_BALANCE", "POS_CLEARI
 
 /** Creates the Phase 1 API with a caller-owned database connection. */
 export function createApiApp(client: SqliteClient) {
-  const api = new Hono();
   function readPeriod(context: Context, startKeys: string[] = ["startDate"], endKeys: string[] = ["endDate"]) {
     const startDate = startKeys.map((key) => context.req.query(key)).find(Boolean);
     const endDate = endKeys.map((key) => context.req.query(key)).find(Boolean);
@@ -151,7 +162,35 @@ export function createApiApp(client: SqliteClient) {
     try { return context.json({ data: getAccountJournalDrillDown(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
   };
 
-  const typedApi = api.use("/api/*", cors({ origin: (origin) => origin || "*" })).route("/", app)
+  const reportRoutes = new Hono()
+    .get("/income-statement", validateQuery(ReportQuerySchema), (context) => {
+      const period = readPeriod(context, ["periodStart", "startDate"], ["periodEnd", "endDate"]);
+      if (!period.success) return context.json({ error: period.error.flatten() }, 400);
+      const compareStart = context.req.query("compareStartDate") ?? context.req.query("comparePeriodStart");
+      const compareEnd = context.req.query("compareEndDate") ?? context.req.query("comparePeriodEnd");
+      const comparePeriod = compareStart || compareEnd ? ReportPeriodSchema.safeParse({ startDate: compareStart, endDate: compareEnd }) : undefined;
+      if (comparePeriod && !comparePeriod.success) return context.json({ error: comparePeriod.error.flatten() }, 400);
+      const parsed = IncomeStatementQuerySchema.safeParse({ period: period.data, comparePeriod: comparePeriod?.data });
+      if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+      return context.json({ data: getIncomeStatement(client.db, parsed.data) });
+    })
+    .get("/balance-sheet", validateQuery(ReportQuerySchema), (context) => {
+      const parsed = BalanceSheetQuerySchema.safeParse({ asOfDate: context.req.query("asOfDate") });
+      if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+      return context.json({ data: getBalanceSheet(client.db, parsed.data.asOfDate) });
+    })
+    .get("/trial-balance", validateQuery(ReportQuerySchema), (context) => {
+      const parsed = TrialBalanceQuerySchema.safeParse({ startDate: context.req.query("startDate"), endDate: context.req.query("endDate") });
+      if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+      return context.json({ data: getTrialBalance(client.db, parsed.data) });
+    })
+    .get("/accounts/:id/journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler)
+    .get("/account-journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler);
+
+  const routes = new Hono()
+    .use("/api/*", cors({ origin: (origin) => origin || "*" }))
+    .get("/health", healthHandler)
+    .route("/api/reports", reportRoutes)
 
     .get("/api/accounts/tree", async (context) => context.json({ data: await listAccounts(client.db) }))
 
@@ -241,9 +280,9 @@ export function createApiApp(client: SqliteClient) {
     catch (error) { return errorResponse(context, error); }
   })
 
-    .post("/api/period-locks/:lockedThrough/unlock", validateJson(UnlockPeriodSchema), async (context) => {
+    .post("/api/period-locks/:lockedThrough/unlock", validateJson(UnlockPeriodSchema, 403), async (context) => {
     const parsed = { data: context.req.valid("json") };
-    try { return context.json({ data: unlockPeriod(client.db, context.req.param("lockedThrough"), parsed.data.actor) }); }
+    try { return context.json({ data: unlockPeriod(client.db, context.req.param("lockedThrough")!, parsed.data.actor) }); }
     catch (error) { return errorResponse(context, error); }
   })
 
@@ -279,7 +318,7 @@ export function createApiApp(client: SqliteClient) {
     .put("/api/journals/:id", validateJson(JournalEntrySchema), async (context) => {
     const parsed = { data: context.req.valid("json") };
     try {
-      return context.json({ data: updateJournal(client.db, context.req.param("id"), { ...parsed.data, sourceModule: "GENERAL", createdBy: context.req.header("x-user-id") ?? "system" }) });
+      return context.json({ data: updateJournal(client.db, context.req.param("id")!, { ...parsed.data, sourceModule: "GENERAL", createdBy: context.req.header("x-user-id") ?? "system" }) });
     } catch (error) {
       return errorResponse(context, error);
     }
@@ -295,18 +334,12 @@ export function createApiApp(client: SqliteClient) {
   })
 
     .get("/api/pos-clearings", (context) => context.json({ data: listPosClearings(client.db) }))
-    .get("/api/pos-payment-methods", (context) => {
-    try { return context.json({ data: listPosPaymentMethods(client.db) }); } catch (error) { return errorResponse(context, error); }
-  })
     .post("/api/pos-payment-methods", validateJson(PosPaymentMethodSchema), async (context) => {
     const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: savePosPaymentMethod(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
   })
-    // Separate command path keeps the generated RPC client unambiguous while
-    // retaining the original POST endpoint for backwards compatibility.
-    .post("/api/pos-payment-methods/save", validateJson(PosPaymentMethodSchema), async (context) => {
-    const parsed = { data: context.req.valid("json") };
-    try { return context.json({ data: savePosPaymentMethod(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
+    .get("/api/pos-payment-methods", (context) => {
+    try { return context.json({ data: listPosPaymentMethods(client.db) }); } catch (error) { return errorResponse(context, error); }
   })
     .post("/api/pos-clearings", validateJson(PosClearingSchema), async (context) => {
     const parsed = { data: context.req.valid("json") };
@@ -351,7 +384,7 @@ export function createApiApp(client: SqliteClient) {
     .post("/api/bank-recon/import", validateJson(BankReconImportRequestSchema), async (context) => {
     try {
       const body = context.req.valid("json");
-      const result = typeof body.csv === "string"
+      const result = "csv" in body
         ? importBankStatementCsv(client.db, body.bankAccountId, body.csv)
         : importBankStatements(client.db, body);
       return context.json({ data: result }, 201);
@@ -371,35 +404,12 @@ export function createApiApp(client: SqliteClient) {
 
     .delete("/api/bank-recon/matches/:id", (context) => {
     try { return context.json({ data: removeMatch(client.db, context.req.param("id")) }); } catch (error) { return errorResponse(context, error); }
-  })
+  });
 
-    .get("/api/reports/income-statement", validateQuery(ReportQuerySchema), (context) => {
-    const period = readPeriod(context, ["periodStart", "startDate"], ["periodEnd", "endDate"]);
-    if (!period.success) return context.json({ error: period.error.flatten() }, 400);
-    const compareStart = context.req.query("compareStartDate") ?? context.req.query("comparePeriodStart");
-    const compareEnd = context.req.query("compareEndDate") ?? context.req.query("comparePeriodEnd");
-    const comparePeriod = compareStart || compareEnd ? ReportPeriodSchema.safeParse({ startDate: compareStart, endDate: compareEnd }) : undefined;
-    if (comparePeriod && !comparePeriod.success) return context.json({ error: comparePeriod.error.flatten() }, 400);
-    const parsed = IncomeStatementQuerySchema.safeParse({ period: period.data, comparePeriod: comparePeriod?.data });
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
-    return context.json({ data: getIncomeStatement(client.db, parsed.data) });
-  })
-
-    .get("/api/reports/balance-sheet", validateQuery(ReportQuerySchema), (context) => {
-    const parsed = BalanceSheetQuerySchema.safeParse({ asOfDate: context.req.query("asOfDate") });
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
-    return context.json({ data: getBalanceSheet(client.db, parsed.data.asOfDate) });
-  })
-
-    .get("/api/reports/trial-balance", validateQuery(ReportQuerySchema), (context) => {
-    const parsed = TrialBalanceQuerySchema.safeParse({ startDate: context.req.query("startDate"), endDate: context.req.query("endDate") });
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
-    return context.json({ data: getTrialBalance(client.db, parsed.data) });
-  })
-    .get("/api/reports/accounts/:id/journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler)
-    .get("/api/reports/account-journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler);
-
-  return typedApi;
+  routes.notFound((context) => context.json({ error: "Not found" }, 404));
+  return routes;
 }
 
-export type ApiApp = ReturnType<typeof createApiApp>;
+export type AppType = ReturnType<typeof createApiApp>;
+/** @deprecated Use AppType. Kept as a source-compatible alias for consumers. */
+export type ApiApp = AppType;

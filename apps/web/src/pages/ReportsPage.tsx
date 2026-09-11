@@ -5,6 +5,7 @@ import DrillDownDrawer from "../components/drilldown/DrillDownDrawer";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 type Api<T> = { data: T } | { error: string | object };
+
 type Tab = "income" | "balance" | "trial";
 type Period = { startDate: string; endDate: string };
 type IncomeRow = { accountId: string; code: string; name: string; classification: string; amount: number; compareAmount: number; variance: number; growthPercent: number | null };
@@ -46,13 +47,6 @@ function ReportAmount({ value, onClick }: { value: number; onClick?: () => void 
   return onClick ? <button className="font-mono tabular-nums text-right text-brand underline decoration-blue-200 underline-offset-2 hover:decoration-brand" onClick={onClick} type="button">{content}</button> : <span className="font-mono tabular-nums">{content}</span>;
 }
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(apiBase + path);
-  const body = await response.json() as Api<T>;
-  if (!response.ok || "error" in body) throw new Error(typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "Laporan belum dapat dimuat");
-  return body.data;
-}
-
 function ComparativeTable({ section, openDrillDown }: { section: IncomeSection; openDrillDown: (row: IncomeRow) => void }) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wide text-slate-400"><tr><th className="px-5 py-3">Akun</th><th className="px-3 py-3 text-right">Bulan berjalan</th><th className="px-3 py-3 text-right">Bulan pembanding</th><th className="px-5 py-3 text-right">Varians</th></tr></thead><tbody>{section.rows.map((row, index) => <tr className={index % 2 ? "bg-slate-50/60" : "bg-white"} key={row.accountId}><td className="px-5 py-3"><span className="font-mono font-semibold tabular-nums text-slate-600">{row.code}</span><span className="ml-2">{row.name}</span></td><td className="px-3 py-3 text-right"><ReportAmount onClick={() => openDrillDown(row)} value={row.amount} /></td><td className="px-3 py-3 text-right"><ReportAmount value={row.compareAmount} /></td><td className={"px-5 py-3 text-right font-mono tabular-nums " + (row.variance >= 0 ? "text-emerald-700" : "text-red-700")}>{row.variance >= 0 ? "+" : "−"}Rp {formatAbsoluteMoney(row.variance)} <span className="ml-1 text-xs">({row.growthPercent === null ? "—" : row.growthPercent.toFixed(2) + "%"})</span></td></tr>)}</tbody><tfoot><tr className="border-t border-slate-200 bg-slate-50 font-semibold"><td className="px-5 py-3">Total {section.label}</td><td className="px-3 py-3 text-right"><ReportAmount value={section.total.amount} /></td><td className="px-3 py-3 text-right"><ReportAmount value={section.total.compareAmount} /></td><td className="px-5 py-3 text-right font-mono tabular-nums">{section.total.growthPercent === null ? "—" : section.total.growthPercent.toFixed(2) + "%"}</td></tr></tfoot></table></div>;
 }
@@ -83,7 +77,12 @@ export default function ReportsPage() {
       : tab === "balance"
         ? "/api/reports/balance-sheet?asOfDate=" + periodEnd
         : "/api/reports/trial-balance?startDate=" + periodStart + "&endDate=" + periodEnd;
-    request<IncomeReport | BalanceReport | TrialReport>(query).then((data) => {
+    fetch(apiBase + query).then(async (response) => {
+      const body = await response.json() as Api<IncomeReport | BalanceReport | TrialReport>;
+      if (!response.ok) throw new Error("Laporan belum dapat dimuat");
+      if ("error" in body) throw new Error(typeof body.error === "string" ? body.error : "Laporan belum dapat dimuat");
+      return body.data;
+    }).then((data) => {
       if (cancelled) return;
       if (tab === "income") setIncome(data as IncomeReport);
       else if (tab === "balance") setBalance(data as BalanceReport);
@@ -98,7 +97,7 @@ export default function ReportsPage() {
     setDrillLoading(true);
     setDrillError("");
     setDrillDown(null);
-    try { setDrillDown(await request<DrillDown>("/api/reports/accounts/" + encodeURIComponent(accountId) + "/journal-drill-down?startDate=" + period.startDate + "&endDate=" + period.endDate)); }
+    try { const response = await fetch(apiBase + "/api/reports/accounts/" + encodeURIComponent(accountId) + "/journal-drill-down?startDate=" + period.startDate + "&endDate=" + period.endDate); const body = await response.json() as Api<DrillDown>; if (!response.ok) throw new Error("Rincian jurnal belum dapat dimuat"); if ("error" in body) throw new Error(typeof body.error === "string" ? body.error : "Rincian jurnal belum dapat dimuat"); setDrillDown(body.data); }
     catch (error) { setDrillError(error instanceof Error ? error.message : "Rincian jurnal belum dapat dimuat"); }
     finally { setDrillLoading(false); }
   }

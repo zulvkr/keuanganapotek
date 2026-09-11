@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronRight, LockKeyhole, Plus, Save, Search, SlidersHorizontal, Trash2, WandSparkles } from "lucide-react";
 import { parseRupiahToSen, senToRupiah, sumDebitCredit, todayIsoDate } from "@keuangan-apotek/shared";
+import { api, rpc } from "../lib/api";
 
 type Account = {
   id: string;
@@ -17,10 +18,9 @@ type Account = {
 type BalanceLine = { accountId: string; debitAmount: string; creditAmount: string; notes?: string };
 type BalanceResponseRow = { accountId: string; debitAmount: number; creditAmount: number; runningBalance: number; isGroup: boolean; isLocked: boolean; notes: string | null };
 type OpeningBalanceMeta = { cutoffDate: string | null };
-type ApiResponse<T> = { data: T } | { error: string | object };
-
-const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 const today = todayIsoDate();
+const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+type ApiResponse<T> = { data: T } | { error: string | object };
 
 function formatRupiah(value: string): string {
   try {
@@ -60,21 +60,20 @@ function CoAPage() {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      fetch(`${apiBase}/api/accounts/tree`).then((response) => response.json() as Promise<ApiResponse<Account[]>>),
+      rpc(() => api.api.accounts.tree.$get()),
       fetch(`${apiBase}/api/opening-balances/meta`).then((response) => response.json() as Promise<ApiResponse<OpeningBalanceMeta>>),
     ]).then(([accountResponse, metaResponse]) => {
       if (cancelled) return;
-      if ("error" in accountResponse) throw new Error(typeof accountResponse.error === "string" ? accountResponse.error : "Data akun belum dapat dimuat");
       if ("error" in metaResponse) throw new Error(typeof metaResponse.error === "string" ? metaResponse.error : "Metadata saldo awal belum dapat dimuat");
       const effectiveCutoffDate = metaResponse.data.cutoffDate ?? cutoffDate;
       if (effectiveCutoffDate !== cutoffDate) {
         setCutoffDate(effectiveCutoffDate);
         return;
       }
-      return fetch(`${apiBase}/api/opening-balances?cutoffDate=${cutoffDate}`).then((response) => response.json() as Promise<ApiResponse<BalanceResponseRow[]>>).then((balanceResponse) => {
+      return fetch(`${apiBase}/api/opening-balances?cutoffDate=${encodeURIComponent(cutoffDate)}`).then((response) => response.json() as Promise<ApiResponse<BalanceResponseRow[]>>).then((balanceResponse) => {
         if (cancelled) return;
         if ("error" in balanceResponse) throw new Error(typeof balanceResponse.error === "string" ? balanceResponse.error : "Data saldo awal belum dapat dimuat");
-      setAccounts(accountResponse.data);
+      setAccounts(accountResponse.data as Account[]);
       const next: Record<string, BalanceLine> = {};
       const nextRunning: Record<string, number> = {};
       for (const row of balanceResponse.data) {
@@ -114,49 +113,48 @@ function CoAPage() {
 
   async function autoBalance() {
     const lines = accounts.map((account) => balances[account.id] ?? { accountId: account.id, debitAmount: "0", creditAmount: "0" });
-    const response = await fetch(`${apiBase}/api/opening-balances/auto-balance`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cutoffDate, lines }) });
-    const payload = await response.json() as ApiResponse<{ lines: BalanceLine[] }>;
-    if ("error" in payload) { setMessage(typeof payload.error === "string" ? payload.error : "Auto-balancing gagal"); return; }
+    try {
+    const payload = await rpc(() => api.api["opening-balances"]["auto-balance"].$post({ json: { cutoffDate, lines } }));
     const next: Record<string, BalanceLine> = {};
-    for (const line of payload.data.lines) next[line.accountId] = line;
+    for (const line of payload.data.lines as BalanceLine[]) next[line.accountId] = line;
     setBalances((current) => ({ ...current, ...next }));
     setMessage("Selisih dialokasikan ke Ekuitas Saldo Awal (3101).");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Auto-balancing gagal"); }
   }
 
   async function saveAndLock() {
     const lines = accounts.map((account) => balances[account.id] ?? { accountId: account.id, debitAmount: "0", creditAmount: "0" });
-    const saveResponse = await fetch(`${apiBase}/api/opening-balances/save`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cutoffDate, lines }) });
-    if (!saveResponse.ok) { setMessage("Saldo awal belum dapat disimpan."); return; }
-    const lockResponse = await fetch(`${apiBase}/api/opening-balances/lock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cutoffDate }) });
-    const payload = await lockResponse.json() as ApiResponse<{ journal: { journalNo: string } }>;
-    if ("error" in payload) { setMessage(typeof payload.error === "string" ? payload.error : "Saldo awal belum dapat dikunci."); return; }
-    setIsLocked(true);
-    setMessage(`Saldo awal terkunci. Jurnal pembuka ${payload.data.journal.journalNo} terbentuk.`);
+    try {
+      await rpc(() => api.api["opening-balances"].save.$post({ json: { cutoffDate, lines } }));
+      const payload = await rpc(() => api.api["opening-balances"].lock.$post({ json: { cutoffDate } }));
+      setIsLocked(true);
+      setMessage(`Saldo awal terkunci. Jurnal pembuka ${payload.data.journal.journalNo} terbentuk.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Saldo awal belum dapat disimpan."); }
   }
 
   async function addAccount() {
-    const response = await fetch(`${apiBase}/api/accounts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(newAccount) });
-    if (!response.ok) { setMessage("Akun baru tidak dapat disimpan."); return; }
-    const payload = await response.json() as ApiResponse<Account>;
-    if ("error" in payload) return;
-    setAccounts((current) => [...current, payload.data].sort((a, b) => a.code.localeCompare(b.code)));
+    try {
+    const payload = await rpc(() => api.api.accounts.$post({ json: newAccount as Parameters<typeof api.api.accounts.$post>[0]["json"] }));
+    setAccounts((current) => [...current, payload.data as Account].sort((a, b) => a.code.localeCompare(b.code)));
     setNewAccount({ code: "", name: "", classification: "ASET_LANCAR", normalBalance: "DEBIT", parentId: "", level: 1 });
     setMessage("Akun baru ditambahkan.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Akun baru tidak dapat disimpan."); }
   }
 
   async function updateAccount(account: Account, patch: Partial<Account>) {
     const next = { ...account, ...patch };
-    const response = await fetch(`${apiBase}/api/accounts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
-    if (!response.ok) { setMessage(`Perubahan akun ${account.code} tidak tersimpan.`); return; }
-    const payload = await response.json() as ApiResponse<Account>;
-    if ("error" in payload) return;
-    setAccounts((current) => current.map((item) => item.id === account.id ? payload.data : item).sort((a, b) => a.code.localeCompare(b.code)));
+    try {
+    const payload = await rpc(() => api.api.accounts.$post({ json: next as Parameters<typeof api.api.accounts.$post>[0]["json"] }));
+    setAccounts((current) => current.map((item) => item.id === account.id ? payload.data as Account : item).sort((a, b) => a.code.localeCompare(b.code)));
+    } catch { setMessage(`Perubahan akun ${account.code} tidak tersimpan.`); }
   }
 
   async function deleteAccount(id: string) {
-    const response = await fetch(`${apiBase}/api/accounts/${id}`, { method: "DELETE" });
-    if (!response.ok) { setMessage("Akun tidak dapat dihapus. Hapus sub-akun atau referensi terkait terlebih dahulu."); return; }
-    setAccounts((current) => current.filter((account) => account.id !== id));
+    try {
+      const response = await api.api.accounts[":id"].$delete({ param: { id } });
+      if (!response.ok) throw new Error("Akun tidak dapat dihapus. Hapus sub-akun atau referensi terkait terlebih dahulu.");
+      setAccounts((current) => current.filter((account) => account.id !== id));
+    } catch { setMessage("Akun tidak dapat dihapus. Hapus sub-akun atau referensi terkait terlebih dahulu."); }
   }
 
   return (
