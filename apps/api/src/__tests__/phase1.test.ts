@@ -3,7 +3,7 @@ import { createApiApp } from "../app.js";
 import { createSqliteClient } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import { seedAccounts } from "../db/seed.js";
-import { journalLines, journals, openingBalances } from "../db/schema/index.js";
+import { accounts, journalLines, journals, openingBalances } from "../db/schema/index.js";
 import { autoBalanceOpeningBalances } from "../services/opening-balance.service.js";
 import { eq } from "drizzle-orm";
 
@@ -28,7 +28,32 @@ describe("Phase 1 database and opening balance flow", () => {
     expect(tables.map((table) => table.name)).toEqual(expect.arrayContaining(["accounts", "opening_balances", "journals", "journal_lines"]));
     expect(client.db.select().from(journals).all()).toHaveLength(0);
     expect((client.sqlite.prepare("SELECT count(*) AS count FROM accounts").get() as { count: number }).count).toBeGreaterThanOrEqual(30);
+    expect(client.db.select().from(accounts).where(eq(accounts.code, "1100")).get()?.isGroup).toBe(true);
+    expect(client.db.select().from(accounts).where(eq(accounts.code, "1200")).get()?.isGroup).toBe(true);
+    expect(client.db.select().from(accounts).where(eq(accounts.code, "1113")).get()?.name).toBe("Saldo Shopee (Kas)");
+    expect(client.db.select().from(accounts).where(eq(accounts.code, "1201")).get()?.name).toBe("Dana Pending Shopee (Piutang)");
     expect(client.db.select().from(openingBalances).all()).toHaveLength(0);
+  });
+
+  it("protects system groups and prevents them from receiving balances or journals", async () => {
+    const { api } = setup();
+    expect((await api.request("http://localhost/api/accounts/coa-1100", { method: "DELETE" })).status).toBe(409);
+    const opening = await api.request("http://localhost/api/opening-balances/save", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01", lines: [
+        { accountId: "coa-1100", debitAmount: "1000000", creditAmount: "0" },
+        { accountId: "coa-3101", debitAmount: "0", creditAmount: "1000000" },
+      ] }),
+    });
+    expect(opening.status).toBe(409);
+    const journal = await api.request("http://localhost/api/journals/general", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entryDate: "2026-01-02", lines: [
+        { accountId: "coa-1100", debit: "1000000", credit: "0" },
+        { accountId: "coa-4101", debit: "0", credit: "1000000" },
+      ] }),
+    });
+    expect(journal.status).toBe(409);
   });
 
   it("adds the debit/credit difference to opening balance equity", () => {
@@ -101,5 +126,24 @@ describe("Phase 1 database and opening balance flow", () => {
     expect(payload.data.find((row) => row.accountId === "coa-1101")?.runningBalance).toBe(150_000_000);
     expect(payload.data.find((row) => row.accountId === "coa-3101")?.runningBalance).toBe(100_000_000);
     expect(payload.data.find((row) => row.accountId === "coa-4101")?.runningBalance).toBe(50_000_000);
+  });
+
+  it("allows only one opening-balance cut-off date", async () => {
+    const { api } = setup();
+    const lines = [
+      { accountId: "coa-1101", debitAmount: "1000000", creditAmount: "0" },
+      { accountId: "coa-3101", debitAmount: "0", creditAmount: "1000000" },
+    ];
+    const first = await api.request("http://localhost/api/opening-balances/save", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01", lines }),
+    });
+    expect(first.status).toBe(200);
+
+    const second = await api.request("http://localhost/api/opening-balances/save", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-02-01", lines }),
+    });
+    expect(second.status).toBe(409);
   });
 });

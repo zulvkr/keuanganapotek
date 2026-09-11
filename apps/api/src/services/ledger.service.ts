@@ -63,10 +63,12 @@ function validateAndConvertLines(lines: readonly JournalLine[]) {
 
 function assertAccounts(tx: Executor, lines: readonly ReturnType<typeof validateAndConvertLines>[number][]) {
   const ids = [...new Set(lines.map((line) => line.accountId))];
-  const found = tx.select({ id: accounts.id, isActive: accounts.isActive }).from(accounts).where(inArray(accounts.id, ids)).all() as Array<{ id: string; isActive: boolean }>;
+  const found = tx.select({ id: accounts.id, isActive: accounts.isActive, isGroup: accounts.isGroup }).from(accounts).where(inArray(accounts.id, ids)).all() as Array<{ id: string; isActive: boolean; isGroup: boolean }>;
   const foundIds = new Set(found.filter((account) => account.isActive).map((account) => account.id));
   const missing = ids.filter((id) => !foundIds.has(id));
   if (missing.length > 0) throw new Error(`Akun tidak ditemukan atau tidak aktif: ${missing.join(", ")}`);
+  const groups = found.filter((account) => account.isActive && account.isGroup).map((account) => account.id);
+  if (groups.length > 0) throw new Error(`Akun grup tidak boleh menerima saldo atau jurnal: ${groups.join(", ")}`);
 }
 
 function nextJournalNo(tx: Executor, entryDate: string): string {

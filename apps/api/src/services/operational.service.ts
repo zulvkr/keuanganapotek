@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
 import {
   CashBankTransferSchema, ConsignmentItemSchema, ConsignmentSettlementSchema, ConsignmentVendorSchema,
-  PbfInvoiceSchema, PosClearingSchema, calculatePpn, parseRupiahToSen, rupiahToSen, senToRupiah,
+  PbfInvoiceSchema, PosClearingSchema, PosPaymentMethodSchema, calculatePpn, parseRupiahToSen, rupiahToSen, senToRupiah,
 } from "@keuangan-apotek/shared";
-import type { CashBankTransfer, ConsignmentItem, ConsignmentSettlement, ConsignmentVendor, PbfInvoice, PosClearing } from "@keuangan-apotek/shared";
+import type { CashBankTransfer, ConsignmentItem, ConsignmentSettlement, ConsignmentVendor, PbfInvoice, PosClearing, PosPaymentMethod } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "../db/client.js";
-import { accounts, cashBankTransfers, consignmentItems, consignmentSettlementItems, consignmentSettlements, consignmentVendors, journalLines, journals, pbfInvoices, posClearings } from "../db/schema/index.js";
+import { accounts, cashBankTransfers, consignmentItems, consignmentSettlementItems, consignmentSettlements, consignmentVendors, journalLines, journals, pbfInvoices, posClearingPayments, posClearings, posPaymentMethods } from "../db/schema/index.js";
 import { createJournalEntry } from "./ledger.service.js";
 
 type Db = SqliteClient["db"];
@@ -32,6 +32,94 @@ function accountCode(db: Db, id: string): string {
   return account.code;
 }
 
+function posReceiptAccountId(db: Db, requestedId: string | undefined, fallbackCode: string): string {
+  const account = requestedId
+    ? db.select({ id: accounts.id, code: accounts.code, classification: accounts.classification, normalBalance: accounts.normalBalance, level: accounts.level, isActive: accounts.isActive }).from(accounts).where(eq(accounts.id, requestedId)).get()
+    : db.select({ id: accounts.id, code: accounts.code, classification: accounts.classification, normalBalance: accounts.normalBalance, level: accounts.level, isActive: accounts.isActive }).from(accounts).where(eq(accounts.code, fallbackCode)).get();
+  if (!account) throw new Error("Akun penerimaan POS tidak ditemukan");
+  if (!account.isActive || account.classification !== "ASET_LANCAR" || account.normalBalance !== "DEBIT" || account.level < 3 || !account.code.startsWith("11")) {
+    throw new Error("Akun penerimaan POS harus berupa akun kas/bank aktif pada kelompok 11");
+  }
+  return account.id;
+}
+
+export function ensurePosPaymentMethods(db: Db) {
+  const cash = db.select({ id: posPaymentMethods.id }).from(posPaymentMethods).where(eq(posPaymentMethods.code, "TUNAI")).get();
+  if (!cash) db.insert(posPaymentMethods).values({ id: "pos-method-cash", code: "TUNAI", name: "Tunai", accountId: accountIdByCode(db, "1101"), isCash: true, isActive: true, sortOrder: 10 }).run();
+  const nonCash = db.select({ id: posPaymentMethods.id }).from(posPaymentMethods).where(eq(posPaymentMethods.code, "QRIS_EDC")).get();
+  if (!nonCash) db.insert(posPaymentMethods).values({ id: "pos-method-noncash", code: "QRIS_EDC", name: "QRIS / EDC", accountId: accountIdByCode(db, "1120"), isCash: false, isActive: true, sortOrder: 20 }).run();
+}
+
+function accountGroupCode(db: Db, accountId: string): "1100" | "1200" | null {
+  let currentId: string | null = accountId;
+  const visited = new Set<string>();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const current = db.select({ code: accounts.code, parentId: accounts.parentId }).from(accounts).where(eq(accounts.id, currentId)).get();
+    if (!current) return null;
+    if (current.code === "1100" || current.code === "1200") return current.code;
+    currentId = current.parentId;
+  }
+  return null;
+}
+
+function paymentDestinationAccount(db: Db, accountId: string) {
+  const account = db.select({ id: accounts.id, code: accounts.code, name: accounts.name, parentId: accounts.parentId, classification: accounts.classification, normalBalance: accounts.normalBalance, level: accounts.level, isGroup: accounts.isGroup, isActive: accounts.isActive })
+    .from(accounts).where(eq(accounts.id, accountId)).get();
+  if (!account) throw new Error("Akun tujuan pembayaran POS tidak ditemukan");
+  const groupCode = accountGroupCode(db, accountId);
+  if (!account.isActive || account.isGroup || account.classification !== "ASET_LANCAR" || account.normalBalance !== "DEBIT" || !groupCode) {
+    throw new Error("Akun tujuan POS harus berupa akun anak aktif di grup Kas/Bank (1100) atau Piutang (1200)");
+  }
+  return { ...account, groupCode };
+}
+
+export function listPosPaymentMethods(db: Db) {
+  ensurePosPaymentMethods(db);
+  return db.select({
+    id: posPaymentMethods.id, code: posPaymentMethods.code, name: posPaymentMethods.name, accountId: posPaymentMethods.accountId,
+    accountCode: accounts.code, accountName: accounts.name, isCash: posPaymentMethods.isCash, isActive: posPaymentMethods.isActive, sortOrder: posPaymentMethods.sortOrder,
+  }).from(posPaymentMethods).innerJoin(accounts, eq(accounts.id, posPaymentMethods.accountId))
+    .orderBy(asc(posPaymentMethods.sortOrder), asc(posPaymentMethods.name)).all()
+    .map((method) => ({ ...method, isCash: accountGroupCode(db, method.accountId) === "1100", isReceivable: accountGroupCode(db, method.accountId) === "1200" }));
+}
+
+export function savePosPaymentMethod(db: Db, input: PosPaymentMethod) {
+  const parsed = PosPaymentMethodSchema.parse(input);
+  const id = parsed.id ?? randomUUID();
+  const destination = paymentDestinationAccount(db, parsed.accountId);
+  const existing = db.select({ code: posPaymentMethods.code }).from(posPaymentMethods).where(eq(posPaymentMethods.id, id)).get();
+  const code = existing?.code ?? "POS_" + id.replaceAll("-", "_").toUpperCase();
+  db.insert(posPaymentMethods).values({
+    id, code, name: parsed.name, accountId: parsed.accountId, isCash: destination.groupCode === "1100", isActive: parsed.isActive, sortOrder: parsed.sortOrder,
+  }).onConflictDoUpdate({
+    target: posPaymentMethods.id,
+    set: { name: parsed.name, accountId: parsed.accountId, isCash: destination.groupCode === "1100", isActive: parsed.isActive, sortOrder: parsed.sortOrder, updatedAt: new Date().toISOString() },
+  }).run();
+  return listPosPaymentMethods(db).find((method) => method.id === id)!;
+}
+
+function configuredPayments(db: Db, parsed: PosClearing) {
+  ensurePosPaymentMethods(db);
+  const methods = db.select().from(posPaymentMethods).all().map((method) => ({ ...method, isCash: accountGroupCode(db, method.accountId) === "1100" }));
+  const cashMethod = methods.find((method) => method.code === "TUNAI");
+  const nonCashMethod = methods.find((method) => method.code === "QRIS_EDC");
+  const requested = parsed.payments?.map((payment) => ({ method: methods.find((method) => method.id === payment.paymentMethodId), amount: amountToSen(payment.amount) })) ?? [
+    { method: cashMethod && { ...cashMethod, accountId: parsed.cashAccountId ?? cashMethod.accountId }, amount: amountToSen(parsed.cashReceived) },
+    { method: nonCashMethod && { ...nonCashMethod, accountId: parsed.nonCashAccountId ?? nonCashMethod.accountId }, amount: amountToSen(parsed.nonCashReceived) },
+  ];
+  if (requested.some((payment) => !payment.method)) throw new Error("Metode pembayaran POS tidak ditemukan");
+  const seen = new Set<string>();
+  return requested.map((payment) => {
+    const method = payment.method!;
+    if (seen.has(method.id)) throw new Error("Metode pembayaran POS tidak boleh diulang");
+    seen.add(method.id);
+    paymentDestinationAccount(db, method.accountId);
+    if (parsed.payments && !method.isActive) throw new Error("Metode pembayaran POS yang tidak aktif tidak dapat dipakai");
+    return { method, amount: payment.amount };
+  });
+}
+
 export function listPosClearings(db: Db) {
   return db.select().from(posClearings).orderBy(desc(posClearings.clearingDate)).all();
 }
@@ -39,22 +127,26 @@ export function listPosClearings(db: Db) {
 export function createPosClearing(db: Db, input: PosClearing) {
   const parsed = PosClearingSchema.parse(input);
   const id = parsed.id ?? randomUUID();
-  const omzet = amountToSen(parsed.totalPosOmzet); const cash = amountToSen(parsed.cashReceived); const nonCash = amountToSen(parsed.nonCashReceived); const cogs = amountToSen(parsed.cogsAmount);
-  const difference = new Decimal(cash).minus(new Decimal(omzet).minus(nonCash));
-  const diffSen = signedSen(difference.div(100));
-  const cashId = accountIdByCode(db, "1101"); const nonCashId = accountIdByCode(db, "1120"); const salesId = accountIdByCode(db, parsed.salesAccountCode); const cogsId = accountIdByCode(db, parsed.cogsAccountCode); const inventoryId = accountIdByCode(db, parsed.cogsAccountCode === "5102" ? "1302" : "1301");
-  const lines = [
-    { accountId: cashId, description: "Penerimaan tunai POS", debit: money(cash), credit: "0" },
-    { accountId: nonCashId, description: "Penerimaan QRIS / EDC", debit: money(nonCash), credit: "0" },
-    ...(diffSen < 0 ? [{ accountId: accountIdByCode(db, "6106"), description: "Selisih kasir minus", debit: money(Math.abs(diffSen)), credit: "0" }] : []),
-    ...(diffSen > 0 ? [{ accountId: accountIdByCode(db, "4900"), description: "Selisih kasir plus", debit: "0", credit: money(diffSen) }] : []),
-    { accountId: salesId, description: "Omzet penjualan POS", debit: "0", credit: money(omzet) },
-    ...(cogs > 0 ? [
-      { accountId: cogsId, description: "Pengakuan HPP harian", debit: money(cogs), credit: "0" },
-      { accountId: inventoryId, description: "Pengurangan persediaan", debit: "0", credit: money(cogs) },
-    ] : []),
-  ];
-  db.insert(posClearings).values({ id, clearingDate: parsed.clearingDate, shiftName: parsed.shiftName ?? null, cashierName: parsed.cashierName ?? null, totalPosOmzet: omzet, cashReceived: cash, nonCashReceived: nonCash, physicalCashDiff: diffSen, cogsAmount: cogs, status: "DRAFT" }).run();
+  const omzet = amountToSen(parsed.totalPosOmzet);
+  const cogs = amountToSen(parsed.cogsAmount);
+  const payments = configuredPayments(db, parsed);
+  const paymentTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const diffSen = paymentTotal - omzet;
+  const legacyCash = amountToSen(parsed.cashReceived);
+  const legacyNonCash = amountToSen(parsed.nonCashReceived);
+
+  db.transaction((tx) => {
+    tx.insert(posClearings).values({
+      id, clearingDate: parsed.clearingDate, shiftName: parsed.shiftName ?? null, cashierName: parsed.cashierName ?? null,
+      totalPosOmzet: omzet, cashReceived: legacyCash, nonCashReceived: legacyNonCash,
+      cashAccountId: payments.find((payment) => payment.method.code === "TUNAI")?.method.accountId ?? null,
+      nonCashAccountId: payments.find((payment) => payment.method.code === "QRIS_EDC")?.method.accountId ?? null,
+      physicalCashDiff: diffSen, cogsAmount: cogs, status: "DRAFT",
+    }).run();
+    if (parsed.payments) tx.insert(posClearingPayments).values(payments.map((payment) => ({
+      id: randomUUID(), clearingId: id, paymentMethodId: payment.method.id, amount: payment.amount,
+    }))).run();
+  });
   return { id, clearing: db.select().from(posClearings).where(eq(posClearings.id, id)).get()! };
 }
 
@@ -62,20 +154,30 @@ export function generatePosJournal(db: Db, id: string) {
   const clearing = db.select().from(posClearings).where(eq(posClearings.id, id)).get();
   if (!clearing) throw new Error("Rekap POS tidak ditemukan");
   if (clearing.status === "POSTED" || clearing.journalId) throw new Error("Rekap POS sudah diposting");
-  const salesCode = clearing.cogsAmount > 0 ? "4101" : "4101";
-  const cogsCode = "5101";
+
+  let paymentLines = db.select({
+    amount: posClearingPayments.amount, accountId: posPaymentMethods.accountId, methodName: posPaymentMethods.name,
+  }).from(posClearingPayments)
+    .innerJoin(posPaymentMethods, eq(posPaymentMethods.id, posClearingPayments.paymentMethodId))
+    .where(eq(posClearingPayments.clearingId, id)).all();
+
+  if (paymentLines.length === 0) {
+    paymentLines = [
+      { amount: clearing.cashReceived, accountId: clearing.cashAccountId ?? accountIdByCode(db, "1101"), methodName: "Tunai" },
+      { amount: clearing.nonCashReceived, accountId: clearing.nonCashAccountId ?? accountIdByCode(db, "1120"), methodName: "QRIS / EDC" },
+    ];
+  }
   const lines = [
-    { accountId: accountIdByCode(db, "1101"), description: "Penerimaan tunai POS", debit: money(clearing.cashReceived), credit: "0" },
-    { accountId: accountIdByCode(db, "1120"), description: "Penerimaan QRIS / EDC", debit: money(clearing.nonCashReceived), credit: "0" },
-    ...(clearing.physicalCashDiff < 0 ? [{ accountId: accountIdByCode(db, "6106"), description: "Selisih kasir minus", debit: money(Math.abs(clearing.physicalCashDiff)), credit: "0" }] : []),
-    ...(clearing.physicalCashDiff > 0 ? [{ accountId: accountIdByCode(db, "4900"), description: "Selisih kasir plus", debit: "0", credit: money(clearing.physicalCashDiff) }] : []),
-    { accountId: accountIdByCode(db, salesCode), description: "Omzet penjualan POS", debit: "0", credit: money(clearing.totalPosOmzet) },
+    ...paymentLines.map((payment) => ({ accountId: payment.accountId, description: "Penerimaan POS - " + payment.methodName, debit: money(payment.amount), credit: "0" })),
+    ...(clearing.physicalCashDiff < 0 ? [{ accountId: accountIdByCode(db, "6106"), description: "Selisih penerimaan POS minus", debit: money(Math.abs(clearing.physicalCashDiff)), credit: "0" }] : []),
+    ...(clearing.physicalCashDiff > 0 ? [{ accountId: accountIdByCode(db, "4900"), description: "Selisih penerimaan POS plus", debit: "0", credit: money(clearing.physicalCashDiff) }] : []),
+    { accountId: accountIdByCode(db, "4101"), description: "Omzet penjualan POS", debit: "0", credit: money(clearing.totalPosOmzet) },
     ...(clearing.cogsAmount > 0 ? [
-      { accountId: accountIdByCode(db, cogsCode), description: "Pengakuan HPP harian", debit: money(clearing.cogsAmount), credit: "0" },
+      { accountId: accountIdByCode(db, "5101"), description: "Pengakuan HPP harian", debit: money(clearing.cogsAmount), credit: "0" },
       { accountId: accountIdByCode(db, "1301"), description: "Pengurangan persediaan", debit: "0", credit: money(clearing.cogsAmount) },
     ] : []),
   ];
-  const journal = createJournalEntry(db, { entryDate: clearing.clearingDate, referenceNo: `POS-${clearing.clearingDate}`, memo: "POS Clearing & pengakuan HPP harian", lines: lines.filter((line) => parseRupiahToSen(line.debit) > 0 || parseRupiahToSen(line.credit) > 0), sourceModule: "POS_CLEARING", sourceId: id });
+  const journal = createJournalEntry(db, { entryDate: clearing.clearingDate, referenceNo: "POS-" + clearing.clearingDate, memo: "POS Clearing & pengakuan HPP harian", lines: lines.filter((line) => parseRupiahToSen(line.debit) > 0 || parseRupiahToSen(line.credit) > 0), sourceModule: "POS_CLEARING", sourceId: id });
   db.update(posClearings).set({ journalId: journal.journal.id, status: "POSTED" }).where(eq(posClearings.id, id)).run();
   return { clearing: db.select().from(posClearings).where(eq(posClearings.id, id)).get()!, journal };
 }

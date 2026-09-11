@@ -26,6 +26,40 @@ describe("Phase 3 operational transaction modules", () => {
     expect(client.db.select().from(posClearings).get()?.status).toBe("POSTED");
   });
 
+  it("posts POS receipts to the configured cash accounts", async () => {
+    const { api, client } = setup();
+    const created = await api.request("http://localhost/api/pos-clearings", { method: "POST", headers: json, body: JSON.stringify({
+      clearingDate: "2026-09-10", totalPosOmzet: "100.000", cashReceived: "60.000", nonCashReceived: "40.000", cogsAmount: "0",
+      cashAccountId: "coa-1102", nonCashAccountId: "coa-1111",
+    }) });
+    expect(created.status).toBe(201);
+    const id = (await created.json() as { data: { clearing: { id: string } } }).data.clearing.id;
+    expect((await api.request(`http://localhost/api/pos-clearings/${id}/generate-journal`, { method: "POST" })).status).toBe(200);
+    const journal = client.db.select().from(journals).where(eq(journals.sourceModule, "POS_CLEARING")).get()!;
+    const lines = client.db.select().from(journalLines).where(eq(journalLines.journalId, journal.id)).all();
+    expect(lines.find((line) => line.accountId === "coa-1102")?.debit).toBe(6_000_000);
+    expect(lines.find((line) => line.accountId === "coa-1111")?.debit).toBe(4_000_000);
+  });
+
+  it("supports a dynamic marketplace receivable payment method", async () => {
+    const { api, client } = setup();
+    const methodResponse = await api.request("http://localhost/api/pos-payment-methods", { method: "POST", headers: json, body: JSON.stringify({ name: "Marketplace", accountId: "coa-1201", isCash: false, isActive: true, sortOrder: 30 }) });
+    expect(methodResponse.status).toBe(200);
+    const marketplaceId = (await methodResponse.json() as { data: { id: string } }).data.id;
+    const methods = await api.request("http://localhost/api/pos-payment-methods");
+    const cashId = ((await methods.json()) as { data: Array<{ id: string; code: string }> }).data.find((method) => method.code === "TUNAI")!.id;
+    const created = await api.request("http://localhost/api/pos-clearings", { method: "POST", headers: json, body: JSON.stringify({
+      clearingDate: "2026-09-10", totalPosOmzet: "100.000", cogsAmount: "0",
+      payments: [{ paymentMethodId: cashId, amount: "60.000" }, { paymentMethodId: marketplaceId, amount: "40.000" }],
+    }) });
+    expect(created.status).toBe(201);
+    const id = (await created.json() as { data: { clearing: { id: string } } }).data.clearing.id;
+    expect((await api.request(`http://localhost/api/pos-clearings/${id}/generate-journal`, { method: "POST" })).status).toBe(200);
+    const journal = client.db.select().from(journals).where(eq(journals.sourceModule, "POS_CLEARING")).get()!;
+    const lines = client.db.select().from(journalLines).where(eq(journalLines.journalId, journal.id)).all();
+    expect(lines.find((line) => line.accountId === "coa-1201")?.debit).toBe(4_000_000);
+  });
+
   it("calculates 11% PPN, posts the PBF journal, and rejects duplicate supplier invoice numbers", async () => {
     const { api, client } = setup();
     const body = { invoiceDate: "2026-09-10", dueDate: "2026-10-10", pbfName: "Enseval", invoiceNumber: "INV-001", dppAmount: "100.000", paymentTerms: "TEMPO_30" };

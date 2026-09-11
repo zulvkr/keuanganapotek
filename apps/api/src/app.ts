@@ -15,6 +15,7 @@ import {
   ConsignmentVendorSchema,
   PbfInvoiceSchema,
   PosClearingSchema,
+  PosPaymentMethodSchema,
   AccountJournalDrillDownQuerySchema,
   BalanceSheetQuerySchema,
   IncomeStatementQuerySchema,
@@ -30,6 +31,7 @@ import {
   autoBalanceOpeningBalances,
   calculateOpeningBalanceTotals,
   getOpeningBalances,
+  getOpeningBalanceCutoff,
   listAccounts,
   lockOpeningBalance,
   saveOpeningBalances,
@@ -50,10 +52,12 @@ import {
   createPosClearing,
   generatePosJournal,
   getCashBankSummary,
+  listPosPaymentMethods,
   listCashBankTransfers,
   listConsignmentItems,
   listPbfInvoices,
   listPosClearings,
+  savePosPaymentMethod,
   settleConsignment,
 } from "./services/operational.service.js";
 import { autoMatch, getReconData, importBankStatementCsv, importBankStatements, manualMatch, removeMatch } from "./services/recon.service.js";
@@ -76,7 +80,7 @@ app.notFound((context) => context.json({ error: "Not found" }, 404));
 
 function errorResponse(context: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Permintaan tidak valid";
-  const status = message.startsWith("PERIOD_LOCKED") ? 403 as const : message.includes("tidak ditemukan") ? 404 as const : message.includes("sudah dikunci") || message.includes("sistem") ? 409 as const : 400 as const;
+  const status = message.startsWith("PERIOD_LOCKED") ? 403 as const : message.includes("tidak ditemukan") ? 404 as const : message.includes("sudah dikunci") || message.includes("hanya boleh memiliki satu") || message.includes("sistem") || message.includes("grup") ? 409 as const : 400 as const;
   return context.json({ error: message }, status);
 }
 
@@ -96,6 +100,8 @@ export function createApiApp(client: SqliteClient) {
     const account = parsed.data;
     const id = account.id ?? randomUUID();
     try {
+      const existing = client.db.select({ isGroup: accounts.isGroup }).from(accounts).where(eq(accounts.id, id)).get();
+      if (existing?.isGroup) throw new Error("Akun grup sistem bersifat tetap dan tidak dapat diubah");
       client.db.insert(accounts).values({
         id,
         code: account.code,
@@ -104,6 +110,7 @@ export function createApiApp(client: SqliteClient) {
         classification: account.classification,
         normalBalance: account.normalBalance,
         level: account.level,
+        isGroup: false,
         isActive: account.isActive,
       }).onConflictDoUpdate({
         target: accounts.id,
@@ -113,7 +120,7 @@ export function createApiApp(client: SqliteClient) {
           level: account.level, isActive: account.isActive, updatedAt: nowIsoInstant(),
         },
       }).run();
-      return context.json({ data: { ...account, id } });
+      return context.json({ data: { ...account, id, isGroup: false } });
     } catch (error) {
       return errorResponse(context, error);
     }
@@ -121,6 +128,8 @@ export function createApiApp(client: SqliteClient) {
 
   api.delete("/api/accounts/:id", async (context) => {
     try {
+      const account = client.db.select({ isGroup: accounts.isGroup }).from(accounts).where(eq(accounts.id, context.req.param("id"))).get();
+      if (account?.isGroup) throw new Error("Akun grup sistem tidak boleh dihapus");
       const result = client.db.delete(accounts).where(eq(accounts.id, context.req.param("id"))).run();
       if (result.changes === 0) return context.json({ error: "Akun tidak ditemukan" }, 404);
       return context.body(null, 204);
@@ -132,8 +141,11 @@ export function createApiApp(client: SqliteClient) {
   api.get("/api/opening-balances", async (context) => {
     const cutoffDate = context.req.query("cutoffDate");
     if (!cutoffDate) return context.json({ error: "cutoffDate wajib diisi" }, 400);
-    return context.json({ data: await getOpeningBalances(client.db, cutoffDate) });
+    try { return context.json({ data: await getOpeningBalances(client.db, cutoffDate) }); }
+    catch (error) { return errorResponse(context, error); }
   });
+
+  api.get("/api/opening-balances/meta", (context) => context.json({ data: { cutoffDate: getOpeningBalanceCutoff(client.db) } }));
 
   api.post("/api/opening-balances/auto-balance", async (context) => {
     const parsed = SaveOpeningBalancesSchema.safeParse(await context.req.json());
@@ -232,6 +244,14 @@ export function createApiApp(client: SqliteClient) {
   });
 
   api.get("/api/pos-clearings", (context) => context.json({ data: listPosClearings(client.db) }));
+  api.get("/api/pos-payment-methods", (context) => {
+    try { return context.json({ data: listPosPaymentMethods(client.db) }); } catch (error) { return errorResponse(context, error); }
+  });
+  api.post("/api/pos-payment-methods", async (context) => {
+    const parsed = PosPaymentMethodSchema.safeParse(await context.req.json());
+    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    try { return context.json({ data: savePosPaymentMethod(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
+  });
   api.post("/api/pos-clearings", async (context) => {
     const parsed = PosClearingSchema.safeParse(await context.req.json());
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);

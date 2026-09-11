@@ -26,6 +26,7 @@ export const AccountSchema = z.object({
   classification: AccountClassificationSchema,
   normalBalance: NormalBalanceSchema,
   level: z.number().int().min(1).max(9).default(1),
+  isGroup: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });
 
@@ -132,8 +133,15 @@ export const PbfInvoiceSchema = z
 
 export const PosClearingSchema = z.object({
   id: z.string().optional(), clearingDate: IsoDateSchema, shiftName: z.string().trim().optional(), cashierName: z.string().trim().optional(),
-  totalPosOmzet: NonNegativeMoneySchema, cashReceived: NonNegativeMoneySchema, nonCashReceived: NonNegativeMoneySchema, cogsAmount: NonNegativeMoneySchema,
+  totalPosOmzet: NonNegativeMoneySchema, cashReceived: NonNegativeMoneySchema.default("0"), nonCashReceived: NonNegativeMoneySchema.default("0"), cogsAmount: NonNegativeMoneySchema.default("0"),
+  cashAccountId: z.string().min(1).optional(), nonCashAccountId: z.string().min(1).optional(),
+  payments: z.array(z.object({ paymentMethodId: z.string().min(1), amount: NonNegativeMoneySchema })).min(1).optional(),
   salesAccountCode: z.enum(["4101", "4102"]).default("4101"), cogsAccountCode: z.enum(["5101", "5102"]).default("5101"),
+});
+
+export const PosPaymentMethodSchema = z.object({
+  id: z.string().optional(), name: z.string().trim().min(1), accountId: z.string().min(1),
+  isCash: z.boolean().default(false), isActive: z.boolean().default(true), sortOrder: z.number().int().nonnegative().default(0),
 });
 
 export const ConsignmentVendorSchema = z.object({
@@ -201,6 +209,7 @@ export type JournalLine = z.infer<typeof JournalLineSchema>;
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 export type PbfInvoice = z.infer<typeof PbfInvoiceSchema>;
 export type PosClearing = z.infer<typeof PosClearingSchema>;
+export type PosPaymentMethod = z.infer<typeof PosPaymentMethodSchema>;
 export type ConsignmentVendor = z.infer<typeof ConsignmentVendorSchema>;
 export type ConsignmentItem = z.infer<typeof ConsignmentItemSchema>;
 export type ConsignmentSettlement = z.infer<typeof ConsignmentSettlementSchema>;

@@ -9,6 +9,7 @@ type SeedAccount = {
   normalBalance: "DEBIT" | "KREDIT";
   parentCode?: string;
   level: number;
+  isGroup: boolean;
 };
 
 type SeedTuple = [string, string, string, "DEBIT" | "KREDIT", string | undefined, number];
@@ -20,8 +21,10 @@ const seedRows: SeedTuple[] = [
   ["1102", "Kas Kecil (Petty Cash)", "ASET_LANCAR", "DEBIT", "1100", 3],
   ["1111", "Bank BCA Operasional", "ASET_LANCAR", "DEBIT", "1100", 3],
   ["1112", "Bank Mandiri Operasional", "ASET_LANCAR", "DEBIT", "1100", 3],
+  ["1113", "Saldo Shopee (Kas)", "ASET_LANCAR", "DEBIT", "1100", 3],
   ["1120", "Kliring QRIS & EDC", "ASET_LANCAR", "DEBIT", "1100", 3],
   ["1200", "Piutang Usaha", "ASET_LANCAR", "DEBIT", "1000", 2],
+  ["1201", "Dana Pending Shopee (Piutang)", "ASET_LANCAR", "DEBIT", "1200", 3],
   ["1300", "Persediaan Barang Dagang", "ASET_LANCAR", "DEBIT", "1000", 2],
   ["1301", "Persediaan Obat Resep (Etikal)", "ASET_LANCAR", "DEBIT", "1300", 3],
   ["1302", "Persediaan Obat Bebas (OTC) & Herbal", "ASET_LANCAR", "DEBIT", "1300", 3],
@@ -61,7 +64,8 @@ const seedRows: SeedTuple[] = [
   ["6201", "Beban Administrasi Bank & EDC Merchant", "BEBAN_NON_OPERASIONAL", "DEBIT", "6000", 2],
 ];
 
-export const pharmacyAccounts: SeedAccount[] = seedRows.map(([code, name, classification, normalBalance, parentCode, level]) => ({ code, name, classification, normalBalance, parentCode, level }));
+const systemGroupCodes = new Set(seedRows.map(([, , , , parentCode]) => parentCode).filter((code): code is string => Boolean(code)));
+export const pharmacyAccounts: SeedAccount[] = seedRows.map(([code, name, classification, normalBalance, parentCode, level]) => ({ code, name, classification, normalBalance, parentCode, level, isGroup: systemGroupCodes.has(code) }));
 
 export function seedAccounts(client: ReturnType<typeof createSqliteClient>): number {
   const ids = new Map(pharmacyAccounts.map((account) => [account.code, `coa-${account.code}`]));
@@ -71,11 +75,11 @@ export function seedAccounts(client: ReturnType<typeof createSqliteClient>): num
         id: ids.get(account.code)!, code: account.code, name: account.name,
         parentId: account.parentCode ? ids.get(account.parentCode)! : null,
         classification: account.classification, normalBalance: account.normalBalance,
-        level: account.level, isActive: true,
+        level: account.level, isGroup: account.isGroup, isActive: true,
       }).onConflictDoUpdate({
         target: accounts.code,
         set: { name: account.name, parentId: account.parentCode ? ids.get(account.parentCode)! : null,
-          classification: account.classification, normalBalance: account.normalBalance, level: account.level, isActive: true },
+          classification: account.classification, normalBalance: account.normalBalance, level: account.level, isGroup: account.isGroup, isActive: true },
       }).run();
     }
   });

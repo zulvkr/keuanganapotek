@@ -8,6 +8,7 @@ export const accounts = sqliteTable("accounts", {
   classification: text("classification").notNull(),
   normalBalance: text("normal_balance").notNull(),
   level: integer("level").notNull().default(1),
+  isGroup: integer("is_group", { mode: "boolean" }).notNull().default(false),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull().default("(datetime('now'))"),
   updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
@@ -82,9 +83,22 @@ export const auditLogs = sqliteTable("audit_logs", {
 export const posClearings = sqliteTable("pos_clearings", {
   id: text("id").primaryKey().notNull(), clearingDate: text("clearing_date").notNull(), shiftName: text("shift_name"), cashierName: text("cashier_name"),
   totalPosOmzet: integer("total_pos_omzet").notNull().default(0), cashReceived: integer("cash_received").notNull().default(0), nonCashReceived: integer("non_cash_received").notNull().default(0),
+  cashAccountId: text("cash_account_id").references(() => accounts.id, { onDelete: "restrict" }), nonCashAccountId: text("non_cash_account_id").references(() => accounts.id, { onDelete: "restrict" }),
   physicalCashDiff: integer("physical_cash_diff").notNull().default(0), cogsAmount: integer("cogs_amount").notNull().default(0), journalId: text("journal_id").references(() => journals.id, { onDelete: "set null" }),
   status: text("status").notNull().default("DRAFT"), createdAt: text("created_at").notNull().default("(datetime('now'))"),
 }, (table) => ({ dateIndex: index("idx_pos_clearings_date").on(table.clearingDate) }));
+
+export const posPaymentMethods = sqliteTable("pos_payment_methods", {
+  id: text("id").primaryKey().notNull(), code: text("code").notNull().unique(), name: text("name").notNull(),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }), isCash: integer("is_cash", { mode: "boolean" }).notNull().default(false),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true), sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: text("created_at").notNull().default("(datetime('now'))"), updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
+}, (table) => ({ activeOrderIndex: index("idx_pos_payment_methods_active_order").on(table.isActive, table.sortOrder) }));
+
+export const posClearingPayments = sqliteTable("pos_clearing_payments", {
+  id: text("id").primaryKey().notNull(), clearingId: text("clearing_id").notNull().references(() => posClearings.id, { onDelete: "cascade" }),
+  paymentMethodId: text("payment_method_id").notNull().references(() => posPaymentMethods.id, { onDelete: "restrict" }), amount: integer("amount").notNull().default(0),
+}, (table) => ({ clearingMethodUnique: uniqueIndex("uq_pos_clearing_payments_method").on(table.clearingId, table.paymentMethodId), clearingIndex: index("idx_pos_clearing_payments_clearing").on(table.clearingId) }));
 
 export const pbfInvoices = sqliteTable("pbf_invoices", {
   id: text("id").primaryKey().notNull(), invoiceDate: text("invoice_date").notNull(), dueDate: text("due_date").notNull(), pbfName: text("pbf_name").notNull(), invoiceNumber: text("invoice_number").notNull(),
@@ -149,6 +163,8 @@ export type JournalLineRow = typeof journalLines.$inferSelect;
 export type PeriodLockRow = typeof periodLocks.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type PosClearingRow = typeof posClearings.$inferSelect;
+export type PosPaymentMethodRow = typeof posPaymentMethods.$inferSelect;
+export type PosClearingPaymentRow = typeof posClearingPayments.$inferSelect;
 export type PbfInvoiceRow = typeof pbfInvoices.$inferSelect;
 export type ConsignmentVendorRow = typeof consignmentVendors.$inferSelect;
 export type ConsignmentItemRow = typeof consignmentItems.$inferSelect;

@@ -10,6 +10,7 @@ const migrationStatements = [
     classification TEXT NOT NULL,
     normal_balance TEXT NOT NULL,
     level INTEGER NOT NULL DEFAULT 1,
+    is_group INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -76,10 +77,24 @@ const migrationStatements = [
     id TEXT PRIMARY KEY NOT NULL, clearing_date TEXT NOT NULL, shift_name TEXT, cashier_name TEXT,
     total_pos_omzet INTEGER NOT NULL DEFAULT 0 CHECK (total_pos_omzet >= 0), cash_received INTEGER NOT NULL DEFAULT 0 CHECK (cash_received >= 0),
     non_cash_received INTEGER NOT NULL DEFAULT 0 CHECK (non_cash_received >= 0), physical_cash_diff INTEGER NOT NULL DEFAULT 0,
+    cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT, non_cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT,
     cogs_amount INTEGER NOT NULL DEFAULT 0 CHECK (cogs_amount >= 0), journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'DRAFT', created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_pos_clearings_date ON pos_clearings(clearing_date)`,
+  `CREATE TABLE IF NOT EXISTS pos_payment_methods (
+    id TEXT PRIMARY KEY NOT NULL, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT, is_cash INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_pos_payment_methods_active_order ON pos_payment_methods(is_active, sort_order)`,
+  `CREATE TABLE IF NOT EXISTS pos_clearing_payments (
+    id TEXT PRIMARY KEY NOT NULL, clearing_id TEXT NOT NULL REFERENCES pos_clearings(id) ON DELETE CASCADE,
+    payment_method_id TEXT NOT NULL REFERENCES pos_payment_methods(id) ON DELETE RESTRICT, amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),
+    UNIQUE(clearing_id, payment_method_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_pos_clearing_payments_clearing ON pos_clearing_payments(clearing_id)`,
   `CREATE TABLE IF NOT EXISTS pbf_invoices (
     id TEXT PRIMARY KEY NOT NULL, invoice_date TEXT NOT NULL, due_date TEXT NOT NULL, pbf_name TEXT NOT NULL, invoice_number TEXT NOT NULL,
     dpp_amount INTEGER NOT NULL DEFAULT 0 CHECK (dpp_amount >= 0), ppn_amount INTEGER NOT NULL DEFAULT 0 CHECK (ppn_amount >= 0), total_amount INTEGER NOT NULL DEFAULT 0 CHECK (total_amount >= 0),
@@ -140,6 +155,11 @@ export function runMigrations(sqlite: Database.Database): void {
   sqlite.exec("PRAGMA foreign_keys = ON");
   const migrate = sqlite.transaction(() => {
     for (const statement of migrationStatements) sqlite.exec(statement);
+    const accountColumns = new Set((sqlite.prepare("PRAGMA table_info(accounts)").all() as Array<{ name: string }>).map((column) => column.name));
+    if (!accountColumns.has("is_group")) sqlite.exec("ALTER TABLE accounts ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0");
+    const posColumns = new Set((sqlite.prepare("PRAGMA table_info(pos_clearings)").all() as Array<{ name: string }>).map((column) => column.name));
+    if (!posColumns.has("cash_account_id")) sqlite.exec("ALTER TABLE pos_clearings ADD COLUMN cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT");
+    if (!posColumns.has("non_cash_account_id")) sqlite.exec("ALTER TABLE pos_clearings ADD COLUMN non_cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT");
   });
   migrate();
 }

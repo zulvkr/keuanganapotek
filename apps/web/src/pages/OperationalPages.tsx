@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { calculatePpn, parseRupiahToSen, senToRupiah, todayIsoDate } from "@keuangan-apotek/shared";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-type Account = { id: string; code: string; name: string };
+type Account = { id: string; code: string; name: string; classification?: string; normalBalance?: string; level?: number; isGroup?: boolean; isActive?: boolean };
 type Api<T> = { data: T } | { error: string | object };
 const money = (value: number | string) => { try { const fixed = senToRupiah(typeof value === "number" ? value : parseRupiahToSen(value)).toFixed(2); const [whole, fraction] = fixed.split("."); return `${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${fraction}`; } catch { return String(value); } };
 const amount = (value: string) => { try { return parseRupiahToSen(value); } catch { return 0; } };
@@ -13,16 +13,138 @@ function Card({ children }: { children: React.ReactNode }) { return <section cla
 function Header({ eyebrow, title, note }: { eyebrow: string; title: string; note: string }) { return <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">{eyebrow}</p><h2 className="mt-1 text-2xl font-bold tracking-tight">{title}</h2><p className="mt-1 text-sm text-muted">{note}</p></div>; }
 function ErrorMessage({ message }: { message: string }) { return message ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">{message}</p> : null; }
 
-type PosRow = { id: string; clearingDate: string; shiftName: string | null; cashierName: string | null; totalPosOmzet: number; cashReceived: number; nonCashReceived: number; physicalCashDiff: number; cogsAmount: number; status: string };
+type PosRow = { id: string; clearingDate: string; shiftName: string | null; cashierName: string | null; totalPosOmzet: number; physicalCashDiff: number; cogsAmount: number; status: string };
+type PosPaymentMethod = { id: string; code: string; name: string; accountId: string; accountCode: string; accountName: string; isCash: boolean; isReceivable: boolean; isActive: boolean; sortOrder: number };
 export function POSClearingPage() {
-  const [rows, setRows] = useState<PosRow[]>([]); const [message, setMessage] = useState("");
-  const [form, setForm] = useState({ clearingDate: todayIsoDate(), shiftName: "", cashierName: "", totalPosOmzet: "", cashReceived: "", nonCashReceived: "", cogsAmount: "" });
-  const diff = amount(form.cashReceived) - (amount(form.totalPosOmzet) - amount(form.nonCashReceived));
-  const load = () => request<PosRow[]>("/api/pos-clearings").then(setRows).catch((error) => setMessage(error.message));
+  const [rows, setRows] = useState<PosRow[]>([]);
+  const [methods, setMethods] = useState<PosPaymentMethod[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({ clearingDate: todayIsoDate(), shiftName: "", cashierName: "", totalPosOmzet: "", cogsAmount: "", payments: {} as Record<string, string> });
+  const [newMethod, setNewMethod] = useState({ name: "", accountId: "" });
+  const activeMethods = methods.filter((method) => method.isActive).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  const paymentTotal = activeMethods.reduce((sum, method) => sum + amount(form.payments[method.id] ?? ""), 0);
+  const diff = paymentTotal - amount(form.totalPosOmzet);
+  const eligibleAccounts = accounts.filter((account) => account.isActive !== false && !account.isGroup && account.classification === "ASET_LANCAR" && account.normalBalance === "DEBIT" && (account.code.startsWith("11") || account.code.startsWith("12")));
+
+  const load = async () => {
+    try {
+      const [posRows, configuredMethods, coa] = await Promise.all([
+        request<PosRow[]>("/api/pos-clearings"),
+        request<PosPaymentMethod[]>("/api/pos-payment-methods"),
+        request<Account[]>("/api/accounts/tree"),
+      ]);
+      setRows(posRows);
+      setMethods(configuredMethods);
+      setAccounts(coa);
+      const nextMethods = configuredMethods.filter((method) => method.isActive);
+      setForm((current) => ({
+        ...current,
+        payments: Object.fromEntries(nextMethods.map((method) => [method.id, current.payments[method.id] ?? ""])),
+      }));
+      setNewMethod((current) => ({ ...current, accountId: current.accountId || coa.find((account) => account.code === "1101")?.id || "" }));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Data POS belum tersedia");
+    }
+  };
+
   useEffect(() => { void load(); }, []);
-  async function save() { try { await request("/api/pos-clearings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) }); setMessage("Rekap POS tersimpan sebagai draft."); setForm({ ...form, totalPosOmzet: "", cashReceived: "", nonCashReceived: "", cogsAmount: "" }); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Rekap belum tersimpan"); } }
-  async function post(id: string) { try { await request(`/api/pos-clearings/${id}/generate-journal`, { method: "POST" }); setMessage("Jurnal POS dan HPP berhasil dibuat."); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Jurnal belum dibuat"); } }
-  return <div className="space-y-5"><Card><Header eyebrow="Phase 3 · Modul Operasional" title="POS Clearing & HPP Harian" note="Rekap omzet kasir, selisih kas fisik, dan pengakuan HPP tanpa input debit-kredit manual." /><div className="mt-5 grid gap-3 md:grid-cols-4"><label className="text-xs font-semibold text-slate-500">Tanggal<input className={inputClass} type="date" value={form.clearingDate} onChange={(e) => setForm({ ...form, clearingDate: e.target.value })} /></label><label className="text-xs font-semibold text-slate-500">Kasir / shift<input className={inputClass} value={form.cashierName} placeholder="Nama kasir" onChange={(e) => setForm({ ...form, cashierName: e.target.value })} /></label><label className="text-xs font-semibold text-slate-500">Shift<input className={inputClass} value={form.shiftName} placeholder="Shift 1" onChange={(e) => setForm({ ...form, shiftName: e.target.value })} /></label><label className="text-xs font-semibold text-slate-500">Omzet POS<input className={`${inputClass} text-right font-mono tabular-nums`} value={form.totalPosOmzet} placeholder="0" onChange={(e) => setForm({ ...form, totalPosOmzet: e.target.value })} /></label><label className="text-xs font-semibold text-slate-500">Tunai<input className={`${inputClass} text-right font-mono tabular-nums`} value={form.cashReceived} placeholder="0" onChange={(e) => setForm({ ...form, cashReceived: e.target.value })} /></label><label className="text-xs font-semibold text-slate-500">QRIS / EDC<input className={`${inputClass} text-right font-mono tabular-nums`} value={form.nonCashReceived} placeholder="0" onChange={(e) => setForm({ ...form, nonCashReceived: e.target.value })} /></label><label className="text-xs font-semibold text-slate-500">HPP harian<input className={`${inputClass} text-right font-mono tabular-nums`} value={form.cogsAmount} placeholder="0" onChange={(e) => setForm({ ...form, cogsAmount: e.target.value })} /></label><div className="flex items-end gap-2"><div className={`flex-1 rounded-lg px-3 py-2 text-sm font-mono tabular-nums ${diff === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>Selisih: Rp {money(diff)}</div><button className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={() => void save()} type="button">Simpan</button></div></div></Card><ErrorMessage message={message} /><Card><div className="mb-4 flex items-center justify-between"><div><h3 className="font-semibold">Rekap harian</h3><p className="text-xs text-muted">Selisih minus otomatis masuk Beban Selisih Kasir 6106.</p></div></div><div className="overflow-x-auto"><table className={tableClass}><thead className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400"><tr><th className="px-3 py-3">Tanggal</th><th className="px-3 py-3">Kasir</th><th className="px-3 py-3 text-right">Omzet</th><th className="px-3 py-3 text-right">Tunai</th><th className="px-3 py-3 text-right">QRIS/EDC</th><th className="px-3 py-3 text-right">Selisih</th><th className="px-3 py-3 text-right">HPP</th><th className="px-3 py-3">Status</th><th className="px-3 py-3" /></tr></thead><tbody>{rows.map((row) => <tr className="border-b border-slate-50" key={row.id}><td className="px-3 py-3 tabular-nums">{row.clearingDate}</td><td className="px-3 py-3">{row.cashierName || row.shiftName || "—"}</td><td className="px-3 py-3 text-right font-mono tabular-nums">Rp {money(row.totalPosOmzet)}</td><td className="px-3 py-3 text-right font-mono tabular-nums">Rp {money(row.cashReceived)}</td><td className="px-3 py-3 text-right font-mono tabular-nums">Rp {money(row.nonCashReceived)}</td><td className={`px-3 py-3 text-right font-mono tabular-nums ${row.physicalCashDiff < 0 ? "text-red-600" : "text-emerald-600"}`}>Rp {money(row.physicalCashDiff)}</td><td className="px-3 py-3 text-right font-mono tabular-nums">Rp {money(row.cogsAmount)}</td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs ${row.status === "POSTED" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{row.status}</span></td><td className="px-3 py-3 text-right"><button className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40" disabled={row.status === "POSTED"} onClick={() => void post(row.id)} type="button">Generate Jurnal</button></td></tr>)}</tbody></table></div></Card></div>;
+
+  async function saveMethod(method: PosPaymentMethod) {
+    try {
+      await request("/api/pos-payment-methods", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: method.id, name: method.name, accountId: method.accountId, isActive: method.isActive, sortOrder: method.sortOrder }),
+      });
+      setMessage("Konfigurasi metode pembayaran disimpan.");
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Konfigurasi metode belum tersimpan"); }
+  }
+
+  async function addMethod() {
+    if (!newMethod.name.trim() || !newMethod.accountId) {
+      setMessage("Nama metode dan akun tujuan wajib diisi.");
+      return;
+    }
+    try {
+      await request("/api/pos-payment-methods", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: newMethod.name.trim(), accountId: newMethod.accountId, isActive: true, sortOrder: methods.length * 10 + 10 }),
+      });
+      setNewMethod({ name: "", accountId: newMethod.accountId });
+      setMessage("Metode pembayaran baru ditambahkan.");
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Metode pembayaran belum ditambahkan"); }
+  }
+
+  async function save() {
+    if (activeMethods.length === 0) {
+      setMessage("Aktifkan minimal satu metode pembayaran POS.");
+      return;
+    }
+    try {
+      await request("/api/pos-clearings", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          clearingDate: form.clearingDate, shiftName: form.shiftName, cashierName: form.cashierName,
+          totalPosOmzet: form.totalPosOmzet, cogsAmount: form.cogsAmount,
+          payments: activeMethods.map((method) => ({ paymentMethodId: method.id, amount: form.payments[method.id] || "0" })),
+        }),
+      });
+      setMessage("Rekap POS tersimpan sebagai draft.");
+      setForm((current) => ({ ...current, totalPosOmzet: "", cogsAmount: "", payments: Object.fromEntries(activeMethods.map((method) => [method.id, ""])) }));
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Rekap belum tersimpan"); }
+  }
+
+  async function post(id: string) {
+    try { await request("/api/pos-clearings/" + id + "/generate-journal", { method: "POST" }); setMessage("Jurnal POS dan HPP berhasil dibuat."); await load(); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Jurnal belum dibuat"); }
+  }
+
+  return <div className="space-y-5">
+    <Card>
+      <Header eyebrow="Phase 3 · Modul Operasional" title="POS Clearing & HPP Harian" note="Pilih metode pembayaran yang aktif; jurnal akan mendebit akun tujuan masing-masing metode." />
+      <div className="mt-5 space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div><h3 className="font-semibold">Metode pembayaran aktif</h3><p className="text-xs text-muted">Nonaktifkan metode yang tidak dipakai agar tidak muncul di form input.</p></div>
+          </div>
+          <div className="space-y-2">
+            {methods.map((method) => <div className="grid gap-2 rounded-lg bg-white p-3 md:grid-cols-[1.2fr_1.5fr_auto_auto]" key={method.id}>
+              <input className={inputClass} value={method.name} onChange={(e) => setMethods((current) => current.map((item) => item.id === method.id ? { ...item, name: e.target.value } : item))} />
+              <select className={inputClass} value={method.accountId} onChange={(e) => setMethods((current) => current.map((item) => item.id === method.id ? { ...item, accountId: e.target.value } : item))}>
+                {eligibleAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
+              </select>
+              <span className="px-2 text-xs font-medium text-slate-500">{method.isReceivable ? "Piutang" : "Kas / Bank"}</span>
+              <button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600" onClick={() => void saveMethod(method)} type="button">Simpan</button>
+            </div>)}
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-[1.2fr_1.5fr_auto_auto]">
+            <input className={inputClass} placeholder="Contoh Marketplace" value={newMethod.name} onChange={(e) => setNewMethod({ ...newMethod, name: e.target.value })} />
+            <select className={inputClass} value={newMethod.accountId} onChange={(e) => setNewMethod({ ...newMethod, accountId: e.target.value })}>
+              <option value="">Pilih akun tujuan</option>
+              {eligibleAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
+            </select>
+            <span className="px-2 text-xs text-slate-500">Kategori otomatis dari akun</span>
+            <button className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white" onClick={() => void addMethod()} type="button">+ Tambah metode</button>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          <label className="text-xs font-semibold text-slate-500">Tanggal<input className={inputClass} type="date" value={form.clearingDate} onChange={(e) => setForm({ ...form, clearingDate: e.target.value })} /></label>
+          <label className="text-xs font-semibold text-slate-500">Kasir / shift<input className={inputClass} value={form.cashierName} placeholder="Nama kasir" onChange={(e) => setForm({ ...form, cashierName: e.target.value })} /></label>
+          <label className="text-xs font-semibold text-slate-500">Shift<input className={inputClass} value={form.shiftName} placeholder="Shift 1" onChange={(e) => setForm({ ...form, shiftName: e.target.value })} /></label>
+          <label className="text-xs font-semibold text-slate-500">Omzet POS<input className={inputClass + " text-right font-mono tabular-nums"} value={form.totalPosOmzet} placeholder="0" onChange={(e) => setForm({ ...form, totalPosOmzet: e.target.value })} /></label>
+          {activeMethods.map((method) => <label className="text-xs font-semibold text-slate-500" key={method.id}>{method.name}<span className="mt-1 block text-[10px] font-normal text-slate-400">{method.accountCode} · {method.accountName}</span><input className={inputClass + " text-right font-mono tabular-nums"} value={form.payments[method.id] ?? ""} placeholder="0" onChange={(e) => setForm((current) => ({ ...current, payments: { ...current.payments, [method.id]: e.target.value } }))} /></label>)}
+          <label className="text-xs font-semibold text-slate-500">HPP harian<input className={inputClass + " text-right font-mono tabular-nums"} value={form.cogsAmount} placeholder="0" onChange={(e) => setForm({ ...form, cogsAmount: e.target.value })} /></label>
+          <div className="flex items-end gap-2"><div className={"flex-1 rounded-lg px-3 py-2 text-sm font-mono tabular-nums " + (diff === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>Selisih penerimaan: Rp {money(diff)}</div><button className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={() => void save()} type="button">Simpan</button></div>
+        </div>
+        <p className="text-xs text-muted">Metode marketplace dapat diarahkan ke akun piutang; metode bank/QRIS dapat diarahkan ke akun bank atau kliring yang sesuai.</p>
+      </div>
+    </Card>
+    <ErrorMessage message={message} />
+    <Card><div className="mb-4 flex items-center justify-between"><div><h3 className="font-semibold">Rekap harian</h3><p className="text-xs text-muted">Selisih penerimaan minus otomatis masuk Beban Selisih Kasir 6106.</p></div></div><div className="overflow-x-auto"><table className={tableClass}><thead className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400"><tr><th className="px-3 py-3">Tanggal</th><th className="px-3 py-3">Kasir</th><th className="px-3 py-3 text-right">Omzet</th><th className="px-3 py-3 text-right">Selisih</th><th className="px-3 py-3 text-right">HPP</th><th className="px-3 py-3">Status</th><th className="px-3 py-3" /></tr></thead><tbody>{rows.map((row) => <tr className="border-b border-slate-50" key={row.id}><td className="px-3 py-3 tabular-nums">{row.clearingDate}</td><td className="px-3 py-3">{row.cashierName || row.shiftName || "—"}</td><td className="px-3 py-3 text-right font-mono tabular-nums">Rp {money(row.totalPosOmzet)}</td><td className={"px-3 py-3 text-right font-mono tabular-nums " + (row.physicalCashDiff < 0 ? "text-red-600" : "text-emerald-600")}>Rp {money(row.physicalCashDiff)}</td><td className="px-3 py-3 text-right font-mono tabular-nums">Rp {money(row.cogsAmount)}</td><td className="px-3 py-3"><span className={"rounded-full px-2 py-1 text-xs " + (row.status === "POSTED" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>{row.status}</span></td><td className="px-3 py-3 text-right"><button className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40" disabled={row.status === "POSTED"} onClick={() => void post(row.id)} type="button">Generate Jurnal</button></td></tr>)}</tbody></table></div></Card>
+  </div>;
 }
 
 type PbfRow = { id: string; invoiceDate: string; dueDate: string; pbfName: string; invoiceNumber: string; dppAmount: number; ppnAmount: number; totalAmount: number; paymentTerms: string; paymentStatus: string };

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, like, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, like, ne, sql } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { accountingPeriod, balancingAmount, parseRupiahToSen, rupiahToSen, senToRupiah, sumDebitCredit } from "@keuangan-apotek/shared";
 import type { OpeningBalanceLine, SaveOpeningBalances } from "@keuangan-apotek/shared";
@@ -8,6 +8,26 @@ import { accounts, journalLines, journals, openingBalances } from "../db/schema/
 import { recordAudit } from "./audit.service.js";
 
 type Db = SqliteClient["db"];
+
+function assertOpeningBalanceCutoff(db: Db, cutoffDate: string) {
+  const existingCutoffs = db
+    .select({ cutoffDate: openingBalances.cutoffDate })
+    .from(openingBalances)
+    .groupBy(openingBalances.cutoffDate)
+    .all()
+    .map((row) => row.cutoffDate);
+  if (existingCutoffs.some((existing) => existing !== cutoffDate)) {
+    throw new Error(`Saldo awal hanya boleh memiliki satu tanggal cut-off (${existingCutoffs[0]}). Gunakan tanggal tersebut dan koreksi draft yang ada sebelum dikunci.`);
+  }
+}
+
+export function getOpeningBalanceCutoff(db: Db): string | null {
+  return db
+    .select({ cutoffDate: openingBalances.cutoffDate })
+    .from(openingBalances)
+    .orderBy(asc(openingBalances.cutoffDate))
+    .get()?.cutoffDate ?? null;
+}
 
 function toSen(value: string | number): number {
   if (typeof value === "number") return rupiahToSen(String(value));
@@ -22,6 +42,13 @@ function openingRows(lines: readonly OpeningBalanceLine[]) {
     debitAmount: toSen(line.debitAmount),
     creditAmount: toSen(line.creditAmount),
   }));
+}
+
+function assertOpeningBalancePostingAccounts(db: Db, rows: readonly { accountId: string; debitAmount: number; creditAmount: number }[]) {
+  const ids = rows.filter((row) => row.debitAmount > 0 || row.creditAmount > 0).map((row) => row.accountId);
+  if (ids.length === 0) return;
+  const groups = db.select({ id: accounts.id }).from(accounts).where(and(inArray(accounts.id, ids), eq(accounts.isGroup, true))).all();
+  if (groups.length > 0) throw new Error(`Akun grup tidak boleh memiliki saldo awal: ${groups.map((group) => group.id).join(", ")}`);
 }
 
 export function calculateOpeningBalanceTotals(lines: readonly OpeningBalanceLine[]) {
@@ -67,6 +94,7 @@ export async function listAccounts(db: Db) {
 }
 
 export async function getOpeningBalances(db: Db, cutoffDate: string) {
+  assertOpeningBalanceCutoff(db, cutoffDate);
   const rows = db
     .select({
       id: openingBalances.id,
@@ -78,6 +106,7 @@ export async function getOpeningBalances(db: Db, cutoffDate: string) {
       classification: accounts.classification,
       normalBalance: accounts.normalBalance,
       level: accounts.level,
+      isGroup: accounts.isGroup,
       debitAmount: sql<number>`coalesce(${openingBalances.debitAmount}, 0)`,
       creditAmount: sql<number>`coalesce(${openingBalances.creditAmount}, 0)`,
       notes: openingBalances.notes,
@@ -119,8 +148,10 @@ export async function saveOpeningBalances(db: Db, input: SaveOpeningBalances): P
   const rows = openingRows(input.lines);
   const totals = sumDebitCredit(rows.map((row) => ({ debit: row.debitAmount, credit: row.creditAmount })));
   if (!totals.difference.isZero()) throw new Error("Saldo awal belum seimbang");
+  assertOpeningBalancePostingAccounts(db, rows);
 
   db.transaction((tx) => {
+    assertOpeningBalanceCutoff(tx as unknown as Db, input.cutoffDate);
     const locked = tx.select({ id: openingBalances.id }).from(openingBalances)
       .where(and(eq(openingBalances.cutoffDate, input.cutoffDate), eq(openingBalances.isLocked, true))).get();
     if (locked) throw new Error("Saldo awal pada tanggal cut-off sudah dikunci");
@@ -146,10 +177,12 @@ export async function saveOpeningBalances(db: Db, input: SaveOpeningBalances): P
 
 export async function lockOpeningBalance(db: Db, cutoffDate: string) {
   return db.transaction((tx) => {
+    assertOpeningBalanceCutoff(tx as unknown as Db, cutoffDate);
     const rows = tx.select().from(openingBalances).where(eq(openingBalances.cutoffDate, cutoffDate)).all();
     if (rows.length === 0) throw new Error("Tidak ada saldo awal untuk dikunci");
     const totals = sumDebitCredit(rows.map((row) => ({ debit: row.debitAmount, credit: row.creditAmount })));
     if (!totals.difference.isZero()) throw new Error("Saldo awal belum seimbang");
+    assertOpeningBalancePostingAccounts(tx as unknown as Db, rows);
 
     const existing = tx.select().from(journals)
       .where(and(eq(journals.sourceModule, "OPENING_BALANCE"), eq(journals.sourceId, cutoffDate))).get();

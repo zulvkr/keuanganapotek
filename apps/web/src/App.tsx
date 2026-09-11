@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, BarChart3, BookOpen, ChevronRight, CircleDollarSign, LayoutDashboard, Settings2, WalletCards } from "lucide-react";
 import type { SourceModule } from "@keuangan-apotek/shared";
 import CoAPage from "./pages/CoAPage";
@@ -26,8 +26,41 @@ const modules = [
   { label: "Uji Beban", icon: Activity },
 ];
 
+const modulePaths: Record<string, string> = {
+  Ringkasan: "/",
+  "Bagan Akun": "/coa",
+  "Jurnal Umum": "/jurnal",
+  "POS Clearing": "/pos-clearing",
+  "Faktur PBF": "/faktur-pbf",
+  Konsinyasi: "/konsinyasi",
+  "Kas & Bank": "/kas-bank",
+  "Rekonsiliasi Bank": "/rekonsiliasi-bank",
+  "Laporan Keuangan": "/laporan-keuangan",
+  "Uji Beban": "/uji-beban",
+};
+
+const moduleByPath = new Map(Object.entries(modulePaths).map(([label, path]) => [path, label]));
+
+function routeForPath(pathname: string): string {
+  return moduleByPath.get(pathname) ?? "Ringkasan";
+}
+
+function navigateTo(pathname: string) {
+  window.history.pushState({}, "", pathname);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 function App() {
-  const [activeModule, setActiveModule] = useState("Ringkasan");
+  const [activeModule, setActiveModule] = useState(() => routeForPath(window.location.pathname));
+
+  useEffect(() => {
+    const handlePopState = () => setActiveModule(routeForPath(window.location.pathname));
+    window.addEventListener("popstate", handlePopState);
+    if (!moduleByPath.has(window.location.pathname)) {
+      window.history.replaceState({}, "", modulePaths.Ringkasan);
+    }
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   return (
     <div className="min-h-screen bg-canvas text-ink">
@@ -45,7 +78,7 @@ function App() {
             <button
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${activeModule === label ? "bg-blue-50 font-semibold text-brand" : "text-slate-600 hover:bg-slate-50"}`}
               key={label}
-              onClick={() => setActiveModule(label)}
+              onClick={() => navigateTo(modulePaths[label]!)}
               type="button"
             >
               <Icon size={17} strokeWidth={activeModule === label ? 2.4 : 1.8} />
