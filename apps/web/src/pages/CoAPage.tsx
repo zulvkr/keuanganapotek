@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight, LockKeyhole, Plus, Save, Search, SlidersHorizontal, Trash2, WandSparkles } from "lucide-react";
 import { parseRupiahToSen, senToRupiah, sumDebitCredit, todayIsoDate } from "@keuangan-apotek/shared";
-import { api, rpc } from "../lib/api";
+import { autoBalanceOpeningBalances, deleteAccount, invalidateAccountingQueries, lockOpeningBalances, saveAccount, saveOpeningBalances } from "../lib/mutations";
+import { getAccounts, getOpeningBalanceMeta, getOpeningBalances, queryKeys } from "../lib/queries";
 
 type Account = {
   id: string;
@@ -19,8 +21,6 @@ type BalanceLine = { accountId: string; debitAmount: string; creditAmount: strin
 type BalanceResponseRow = { accountId: string; debitAmount: number; creditAmount: number; runningBalance: number; isGroup: boolean; isLocked: boolean; notes: string | null };
 type OpeningBalanceMeta = { cutoffDate: string | null };
 const today = todayIsoDate();
-const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-type ApiResponse<T> = { data: T } | { error: string | object };
 
 function formatRupiah(value: string): string {
   try {
@@ -52,44 +52,27 @@ function CoAPage() {
   const [search, setSearch] = useState("");
   const [classification, setClassification] = useState("ALL");
   const [isLocked, setIsLocked] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [newAccount, setNewAccount] = useState({ code: "", name: "", classification: "ASET_LANCAR", normalBalance: "DEBIT", parentId: "", level: 1 });
 
+  const queryClient = useQueryClient();
+  const accountsQuery = useQuery({ queryKey: queryKeys.accounts, queryFn: getAccounts });
+  const metaQuery = useQuery({ queryKey: queryKeys.openingBalanceMeta, queryFn: getOpeningBalanceMeta });
+  const effectiveCutoffDate = metaQuery.data?.cutoffDate ?? cutoffDate;
+  const balancesQuery = useQuery({ queryKey: queryKeys.openingBalances(effectiveCutoffDate), queryFn: () => getOpeningBalances(effectiveCutoffDate), enabled: Boolean(metaQuery.data) });
+  const loading = accountsQuery.isLoading || metaQuery.isLoading || balancesQuery.isLoading;
+  useEffect(() => { if (metaQuery.data?.cutoffDate && metaQuery.data.cutoffDate !== cutoffDate) setCutoffDate(metaQuery.data.cutoffDate); }, [metaQuery.data, cutoffDate]);
+  useEffect(() => { setAccounts((accountsQuery.data ?? []) as Account[]); }, [accountsQuery.data]);
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      rpc(() => api.api.accounts.tree.$get()),
-      fetch(`${apiBase}/api/opening-balances/meta`).then((response) => response.json() as Promise<ApiResponse<OpeningBalanceMeta>>),
-    ]).then(([accountResponse, metaResponse]) => {
-      if (cancelled) return;
-      if ("error" in metaResponse) throw new Error(typeof metaResponse.error === "string" ? metaResponse.error : "Metadata saldo awal belum dapat dimuat");
-      const effectiveCutoffDate = metaResponse.data.cutoffDate ?? cutoffDate;
-      if (effectiveCutoffDate !== cutoffDate) {
-        setCutoffDate(effectiveCutoffDate);
-        return;
-      }
-      return fetch(`${apiBase}/api/opening-balances?cutoffDate=${encodeURIComponent(cutoffDate)}`).then((response) => response.json() as Promise<ApiResponse<BalanceResponseRow[]>>).then((balanceResponse) => {
-        if (cancelled) return;
-        if ("error" in balanceResponse) throw new Error(typeof balanceResponse.error === "string" ? balanceResponse.error : "Data saldo awal belum dapat dimuat");
-      setAccounts(accountResponse.data as Account[]);
-      const next: Record<string, BalanceLine> = {};
-      const nextRunning: Record<string, number> = {};
-      for (const row of balanceResponse.data) {
-        next[row.accountId] = { accountId: row.accountId, debitAmount: amountToInput(row.debitAmount), creditAmount: amountToInput(row.creditAmount), notes: row.notes ?? "" };
-        nextRunning[row.accountId] = row.runningBalance;
-      }
-      setBalances(next);
-      setRunningBalances(nextRunning);
-      setIsLocked(balanceResponse.data.some((row) => row.isLocked));
-      setMessage("");
-      });
-    }).catch(() => {
-      if (!cancelled) setMessage("API belum terhubung. Jalankan server untuk membuka data CoA.");
-    }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [cutoffDate]);
+    if (!balancesQuery.data) return;
+    const next: Record<string, BalanceLine> = {}; const nextRunning: Record<string, number> = {};
+    for (const row of balancesQuery.data) { next[row.accountId] = { accountId: row.accountId, debitAmount: amountToInput(row.debitAmount), creditAmount: amountToInput(row.creditAmount), notes: row.notes ?? "" }; nextRunning[row.accountId] = row.runningBalance; }
+    setBalances(next); setRunningBalances(nextRunning); setIsLocked(balancesQuery.data.some((row) => row.isLocked));
+  }, [balancesQuery.data]);
+  const autoBalanceMutation = useMutation({ mutationFn: autoBalanceOpeningBalances, onSuccess: (payload) => { const next: Record<string, BalanceLine> = {}; for (const line of payload.lines as BalanceLine[]) next[line.accountId] = line; setBalances((current) => ({ ...current, ...next })); setMessage("Selisih dialokasikan ke Ekuitas Saldo Awal (3101)."); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Auto-balancing gagal") });
+  const saveLockMutation = useMutation({ mutationFn: async (lines: BalanceLine[]) => { await saveOpeningBalances({ cutoffDate, lines }); return lockOpeningBalances(cutoffDate); }, onSuccess: async (payload) => { setIsLocked(true); setMessage(`Saldo awal terkunci. Jurnal pembuka ${payload.journal.journalNo} terbentuk.`); await invalidateAccountingQueries(queryClient); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Saldo awal belum dapat disimpan.") });
+  const accountMutation = useMutation({ mutationFn: saveAccount, onSuccess: async () => { setMessage("Akun berhasil disimpan."); await queryClient.invalidateQueries({ queryKey: queryKeys.accounts }); await queryClient.invalidateQueries({ queryKey: ["reports"] }); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Perubahan akun belum tersimpan.") });
+  const deleteMutation = useMutation({ mutationFn: deleteAccount, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: queryKeys.accounts }); }, onError: () => setMessage("Akun tidak dapat dihapus. Hapus sub-akun atau referensi terkait terlebih dahulu.") });
 
   const visibleAccounts = useMemo(() => accounts.filter((account) => {
     const matchesText = `${account.code} ${account.name}`.toLowerCase().includes(search.toLowerCase());
@@ -113,48 +96,26 @@ function CoAPage() {
 
   async function autoBalance() {
     const lines = accounts.map((account) => balances[account.id] ?? { accountId: account.id, debitAmount: "0", creditAmount: "0" });
-    try {
-    const payload = await rpc(() => api.api["opening-balances"]["auto-balance"].$post({ json: { cutoffDate, lines } }));
-    const next: Record<string, BalanceLine> = {};
-    for (const line of payload.data.lines as BalanceLine[]) next[line.accountId] = line;
-    setBalances((current) => ({ ...current, ...next }));
-    setMessage("Selisih dialokasikan ke Ekuitas Saldo Awal (3101).");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Auto-balancing gagal"); }
+    autoBalanceMutation.mutate({ cutoffDate, lines });
   }
 
   async function saveAndLock() {
     const lines = accounts.map((account) => balances[account.id] ?? { accountId: account.id, debitAmount: "0", creditAmount: "0" });
-    try {
-      await rpc(() => api.api["opening-balances"].save.$post({ json: { cutoffDate, lines } }));
-      const payload = await rpc(() => api.api["opening-balances"].lock.$post({ json: { cutoffDate } }));
-      setIsLocked(true);
-      setMessage(`Saldo awal terkunci. Jurnal pembuka ${payload.data.journal.journalNo} terbentuk.`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Saldo awal belum dapat disimpan."); }
+    saveLockMutation.mutate(lines);
   }
 
   async function addAccount() {
-    try {
-    const payload = await rpc(() => api.api.accounts.$post({ json: newAccount as Parameters<typeof api.api.accounts.$post>[0]["json"] }));
-    setAccounts((current) => [...current, payload.data as Account].sort((a, b) => a.code.localeCompare(b.code)));
+    accountMutation.mutate(newAccount as Parameters<typeof saveAccount>[0]);
     setNewAccount({ code: "", name: "", classification: "ASET_LANCAR", normalBalance: "DEBIT", parentId: "", level: 1 });
-    setMessage("Akun baru ditambahkan.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Akun baru tidak dapat disimpan."); }
   }
 
   async function updateAccount(account: Account, patch: Partial<Account>) {
     const next = { ...account, ...patch };
-    try {
-    const payload = await rpc(() => api.api.accounts.$post({ json: next as Parameters<typeof api.api.accounts.$post>[0]["json"] }));
-    setAccounts((current) => current.map((item) => item.id === account.id ? payload.data as Account : item).sort((a, b) => a.code.localeCompare(b.code)));
-    } catch { setMessage(`Perubahan akun ${account.code} tidak tersimpan.`); }
+    accountMutation.mutate(next as Parameters<typeof saveAccount>[0]);
   }
 
   async function deleteAccount(id: string) {
-    try {
-      const response = await api.api.accounts[":id"].$delete({ param: { id } });
-      if (!response.ok) throw new Error("Akun tidak dapat dihapus. Hapus sub-akun atau referensi terkait terlebih dahulu.");
-      setAccounts((current) => current.filter((account) => account.id !== id));
-    } catch { setMessage("Akun tidak dapat dihapus. Hapus sub-akun atau referensi terkait terlebih dahulu."); }
+    deleteMutation.mutate(id);
   }
 
   return (

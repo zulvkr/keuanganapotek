@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type InferRequestType, type InferResponseType } from "hono/client";
-import { api, rpc } from "../lib/api";
+import { savePaymentMethod } from "../lib/mutations";
+import { getAccounts, getPaymentMethods, queryKeys } from "../lib/queries";
 
-type Data<T> = T extends { data: infer D } ? D : never;
-type AccountsRoute = typeof api.api.accounts.tree.$get;
-type SaveAccount = InferRequestType<typeof api.api.accounts.$post>["json"];
-type Account = Data<InferResponseType<AccountsRoute> >[number];
-type PosPaymentMethod = Data<InferResponseType<typeof api.api["pos-payment-methods"]["$get"]> >[number];
-type SavePaymentMethod = InferRequestType<typeof api.api["pos-payment-methods"]["$post"]>["json"];
+type Account = Awaited<ReturnType<typeof getAccounts>>[number];
+type PosPaymentMethod = Awaited<ReturnType<typeof getPaymentMethods>>[number];
+type SavePaymentMethodInput = Parameters<typeof savePaymentMethod>[0];
 
 const inputClass = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
 
@@ -23,23 +20,21 @@ function SettingsPage() {
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({
     queryKey: ["settings"],
-    queryFn: async () => {
-      const [methodsResponse, accountsResponse] = await Promise.all([
-        rpc(() => api.api["pos-payment-methods"].$get()),
-        rpc(() => api.api.accounts.tree.$get()),
-      ]);
-      return { methods: methodsResponse.data, accounts: accountsResponse.data };
-    },
+    queryFn: async () => { const [methods, accounts] = await Promise.all([getPaymentMethods(), getAccounts()]); return { methods, accounts }; },
   });
   useEffect(() => { if (settingsQuery.data) setMethods(settingsQuery.data.methods); }, [settingsQuery.data]);
   const accounts = settingsQuery.data?.accounts ?? [];
   const loading = settingsQuery.isLoading;
   const eligibleAccounts = accounts.filter((account) => account.isActive && !account.isGroup && account.classification === "ASET_LANCAR" && account.normalBalance === "DEBIT" && (account.code.startsWith("11") || account.code.startsWith("12")));
   const saveMutation = useMutation({
-    mutationFn: (input: SavePaymentMethod) => rpc(() => api.api["pos-payment-methods"].$post({ json: input })),
+    mutationFn: (input: SavePaymentMethodInput) => savePaymentMethod(input),
     onSuccess: async (_, input) => {
       setMessage(`Metode ${input.name} berhasil disimpan.`);
-      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.paymentMethods }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.posClearings }),
+      ]);
     },
     onError: (error) => setMessage(error instanceof Error ? error.message : "Konfigurasi metode belum tersimpan"),
   });
@@ -57,7 +52,11 @@ function SettingsPage() {
       onSuccess: async () => {
         setNewMethod({ name: "", accountId: newMethod.accountId });
         setMessage("Metode pembayaran baru ditambahkan.");
-        await queryClient.invalidateQueries({ queryKey: ["settings"] });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["settings"] }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.paymentMethods }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.posClearings }),
+        ]);
       },
     });
   }

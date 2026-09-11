@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ClipboardPaste, Pencil, Plus, RotateCcw, Save, Trash2, Undo2 } from "lucide-react";
 import { JournalEntrySchema, parseRupiahToSen, senToRupiah, sumDebitCredit, todayIsoDate } from "@keuangan-apotek/shared";
-import { api, rpc } from "../lib/api";
+import { createJournal, deleteJournal, updateJournal } from "../lib/mutations";
+import { getAccounts, getJournal, getJournals, queryKeys } from "../lib/queries";
 
 type Account = { id: string; code: string; name: string; isActive: boolean };
 type DraftLine = { accountId: string; accountQuery: string; description: string; debit: string; credit: string };
@@ -9,9 +11,7 @@ type JournalLineSummary = { accountId: string; accountCode: string; accountName:
 type JournalSummary = { id: string; journalNo: string; entryDate: string; referenceNo: string | null; memo: string | null; sourceModule: string; totalDebit: number; totalCredit: number; lineCount: number; lines: JournalLineSummary[] };
 type JournalDetail = { journal: JournalSummary; lines: JournalLineSummary[] };
 
-const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 const emptyLine = (): DraftLine => ({ accountId: "", accountQuery: "", description: "", debit: "", credit: "" });
-type ApiResponse<T> = { data: T } | { error: string | object };
 
 function formatAmount(value: string): string {
   try {
@@ -45,37 +45,32 @@ function GeneralJournalPage() {
   const [rows, setRows] = useState<DraftLine[]>([emptyLine(), emptyLine()]);
   const [history, setHistory] = useState<DraftLine[][]>([]);
   const [future, setFuture] = useState<DraftLine[][]>([]);
-  const [journals, setJournals] = useState<JournalSummary[]>([]);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  async function loadJournals() {
-    const response = await fetch(`${apiBase}/api/journals?${new URLSearchParams({ ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) })}`);
-    const payload = await response.json() as ApiResponse<JournalSummary[]>;
-    if (!response.ok) throw new Error("Daftar jurnal tidak dapat dimuat");
-    if ("error" in payload) throw new Error(typeof payload.error === "string" ? payload.error : "Daftar jurnal tidak dapat dimuat");
-    setJournals(payload.data);
-  }
-
+  const queryClient = useQueryClient();
+  const accountsQuery = useQuery({ queryKey: queryKeys.accounts, queryFn: getAccounts });
+  const journalsQuery = useQuery({ queryKey: queryKeys.journals({ startDate: startDate || undefined, endDate: endDate || undefined }), queryFn: () => getJournals({ ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) }) });
+  const detailQuery = useQuery({ queryKey: detailId ? queryKeys.journal(detailId) : ["journal", "inactive"], queryFn: () => getJournal(detailId!), enabled: Boolean(detailId) });
+  const journals = journalsQuery.data ?? [];
+  const loading = journalsQuery.isLoading;
+  useEffect(() => { setAccounts((accountsQuery.data ?? []).filter((account) => account.isActive)); }, [accountsQuery.data]);
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      rpc(() => api.api.accounts.tree.$get()),
-      loadJournals(),
-    ]).then(([accountResponse]) => {
-      if (cancelled) return;
-      setAccounts(accountResponse.data.filter((account) => account.isActive));
-      setMessage("");
-    }).catch((error: unknown) => {
-      if (!cancelled) setMessage(error instanceof Error ? error.message : "API belum terhubung");
-    }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [startDate, endDate]);
+    const payload = detailQuery.data;
+    if (!payload) return;
+    setEditingId(payload.journal.id); setEntryDate(payload.journal.entryDate); setReferenceNo(payload.journal.referenceNo ?? ""); setMemo(payload.journal.memo ?? "");
+    setRows(payload.lines.map((line) => ({ accountId: line.accountId, accountQuery: `${line.accountCode} · ${line.accountName}`, description: line.description ?? "", debit: line.debit ? formatSen(line.debit) : "", credit: line.credit ? formatSen(line.credit) : "" })));
+    setHistory([]); setFuture([]); setMessage("Jurnal dimuat untuk diedit.");
+  }, [detailQuery.data]);
+  const saveMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string | null; input: Parameters<typeof createJournal>[0] }) => id ? updateJournal(id, input) : createJournal(input),
+    onSuccess: async (_, variables) => { setMessage(variables.id ? "Jurnal berhasil diperbarui." : "Jurnal berhasil diposting."); setEditingId(null); setRows([emptyLine(), emptyLine()]); setReferenceNo(""); setMemo(""); setHistory([]); setFuture([]); await queryClient.invalidateQueries({ queryKey: ["journals"] }); await queryClient.invalidateQueries({ queryKey: ["reports"] }); },
+    onError: (error) => setMessage(error instanceof Error ? error.message : "Jurnal belum dapat disimpan"),
+  });
+  const removeMutation = useMutation({ mutationFn: deleteJournal, onSuccess: async () => { setMessage("Jurnal dihapus."); await queryClient.invalidateQueries({ queryKey: ["journals"] }); await queryClient.invalidateQueries({ queryKey: ["reports"] }); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Jurnal belum dapat dihapus") });
 
   const totals = useMemo(() => {
     try {
@@ -176,18 +171,7 @@ function GeneralJournalPage() {
   }
 
   async function openForEdit(id: string) {
-    try {
-      const response = await fetch(`${apiBase}/api/journals/${encodeURIComponent(id)}`);
-      const payload = await response.json() as ApiResponse<JournalDetail>;
-      if (!response.ok) throw new Error("Jurnal tidak dapat dibuka");
-      if ("error" in payload) throw new Error(typeof payload.error === "string" ? payload.error : "Jurnal tidak dapat dibuka");
-      setEditingId(id);
-      setEntryDate(payload.data.journal.entryDate);
-      setReferenceNo(payload.data.journal.referenceNo ?? "");
-      setMemo(payload.data.journal.memo ?? "");
-      setRows(payload.data.lines.map((line) => ({ accountId: line.accountId, accountQuery: `${line.accountCode} · ${line.accountName}`, description: line.description ?? "", debit: line.debit ? formatSen(line.debit) : "", credit: line.credit ? formatSen(line.credit) : "" })));
-      setHistory([]); setFuture([]); setMessage("Jurnal dimuat untuk diedit.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Jurnal tidak dapat dibuka"); }
+    setDetailId(id);
   }
 
   async function submitJournal() {
@@ -197,22 +181,11 @@ function GeneralJournalPage() {
     });
     const parsed = JournalEntrySchema.safeParse({ entryDate, referenceNo, memo, lines: resolvedRows });
     if (!parsed.success) { setMessage(parsed.error.issues.map((issue) => issue.message).join("; ")); return; }
-    try {
-      if (editingId) await rpc(() => api.api.journals[":id"].$put({ param: { id: editingId }, json: parsed.data }));
-      else await rpc(() => api.api.journals.general.$post({ json: parsed.data }));
-      setMessage(editingId ? "Jurnal berhasil diperbarui." : "Jurnal berhasil diposting.");
-      setEditingId(null); setRows([emptyLine(), emptyLine()]); setReferenceNo(""); setMemo(""); setHistory([]); setFuture([]);
-      await loadJournals();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Jurnal belum dapat disimpan"); }
+    saveMutation.mutate({ id: editingId, input: parsed.data });
   }
 
   async function removeJournal(id: string) {
-    try {
-      const response = await api.api.journals[":id"].$delete({ param: { id } });
-      if (!response.ok) throw new Error("Jurnal belum dapat dihapus");
-      setMessage("Jurnal dihapus.");
-      await loadJournals();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Jurnal belum dapat dihapus"); }
+    removeMutation.mutate(id);
   }
 
   return <div className="space-y-5">

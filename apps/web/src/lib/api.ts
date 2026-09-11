@@ -28,4 +28,14 @@ export async function rpc<T extends RpcCall>(call: T): Promise<RpcSuccess<T>> {
   }
 }
 
+export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiBase}${path}`, init);
+  if (response.status === 204) return undefined as T;
+  const body = await response.json() as { data?: T; error?: unknown };
+  if (!response.ok || body.error !== undefined) {
+    throw new Error(typeof body.error === "string" ? body.error : "Permintaan API gagal");
+  }
+  return body.data as T;
+}
+
 export type RpcRequest<T extends RpcCall> = InferRequestType<T>;

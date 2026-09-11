@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { BarChart3, BookOpen, FileText, RefreshCw } from "lucide-react";
 import { senToRupiah, todayIsoDate } from "@keuangan-apotek/shared";
 import DrillDownDrawer from "../components/drilldown/DrillDownDrawer";
-
-const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-type Api<T> = { data: T } | { error: string | object };
+import { getBalanceReport, getDrillDown, getIncomeReport, getTrialReport, queryKeys } from "../lib/queries";
 
 type Tab = "income" | "balance" | "trial";
 type Period = { startDate: string; endDate: string };
@@ -59,48 +58,25 @@ export default function ReportsPage() {
   const [periodEnd, setPeriodEnd] = useState(today);
   const [compareStart, setCompareStart] = useState(() => previousMonthPeriod(monthStart).startDate);
   const [compareEnd, setCompareEnd] = useState(() => previousMonthPeriod(monthStart).endDate);
-  const [income, setIncome] = useState<IncomeReport | null>(null);
-  const [balance, setBalance] = useState<BalanceReport | null>(null);
-  const [trial, setTrial] = useState<TrialReport | null>(null);
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [drillDown, setDrillDown] = useState<DrillDown | null>(null);
-  const [drillLoading, setDrillLoading] = useState(false);
-  const [drillError, setDrillError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setMessage("");
-    const query = tab === "income"
-      ? "/api/reports/income-statement?periodStart=" + periodStart + "&periodEnd=" + periodEnd + "&compareStartDate=" + compareStart + "&compareEndDate=" + compareEnd
-      : tab === "balance"
-        ? "/api/reports/balance-sheet?asOfDate=" + periodEnd
-        : "/api/reports/trial-balance?startDate=" + periodStart + "&endDate=" + periodEnd;
-    fetch(apiBase + query).then(async (response) => {
-      const body = await response.json() as Api<IncomeReport | BalanceReport | TrialReport>;
-      if (!response.ok) throw new Error("Laporan belum dapat dimuat");
-      if ("error" in body) throw new Error(typeof body.error === "string" ? body.error : "Laporan belum dapat dimuat");
-      return body.data;
-    }).then((data) => {
-      if (cancelled) return;
-      if (tab === "income") setIncome(data as IncomeReport);
-      else if (tab === "balance") setBalance(data as BalanceReport);
-      else setTrial(data as TrialReport);
-    }).catch((error: unknown) => { if (!cancelled) setMessage(error instanceof Error ? error.message : "Laporan belum dapat dimuat"); }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [tab, periodStart, periodEnd, compareStart, compareEnd]);
+  const [drillTarget, setDrillTarget] = useState<{ accountId: string; period: Period } | null>(null);
+  const incomeQuery = useQuery({ queryKey: queryKeys.incomeReport({ periodStart, periodEnd, compareStartDate: compareStart, compareEndDate: compareEnd }), queryFn: () => getIncomeReport({ periodStart, periodEnd, compareStartDate: compareStart, compareEndDate: compareEnd }), enabled: tab === "income" });
+  const balanceQuery = useQuery({ queryKey: queryKeys.balanceReport(periodEnd), queryFn: () => getBalanceReport(periodEnd), enabled: tab === "balance" });
+  const trialQuery = useQuery({ queryKey: queryKeys.trialReport({ startDate: periodStart, endDate: periodEnd }), queryFn: () => getTrialReport({ startDate: periodStart, endDate: periodEnd }), enabled: tab === "trial" });
+  const reportQuery = tab === "income" ? incomeQuery : tab === "balance" ? balanceQuery : trialQuery;
+  const income = incomeQuery.data as IncomeReport | undefined;
+  const balance = balanceQuery.data as BalanceReport | undefined;
+  const trial = trialQuery.data as TrialReport | undefined;
+  const loading = reportQuery.isLoading;
+  const reportError = reportQuery.error instanceof Error ? reportQuery.error.message : "";
+  const drillQuery = useQuery({ queryKey: drillTarget ? queryKeys.drillDown(drillTarget.accountId, drillTarget.period) : ["reports", "drill-down", "inactive"], queryFn: () => getDrillDown(drillTarget!.accountId, drillTarget!.period), enabled: Boolean(drillTarget) });
+  const drillDown = drillQuery.data as DrillDown | undefined;
+  const drillLoading = drillQuery.isFetching;
+  const drillError = drillQuery.error instanceof Error ? drillQuery.error.message : "";
 
   const currentPeriod = useMemo(() => ({ startDate: periodStart, endDate: periodEnd }), [periodStart, periodEnd]);
 
-  async function openDrillDown(accountId: string, period = currentPeriod) {
-    setDrillLoading(true);
-    setDrillError("");
-    setDrillDown(null);
-    try { const response = await fetch(apiBase + "/api/reports/accounts/" + encodeURIComponent(accountId) + "/journal-drill-down?startDate=" + period.startDate + "&endDate=" + period.endDate); const body = await response.json() as Api<DrillDown>; if (!response.ok) throw new Error("Rincian jurnal belum dapat dimuat"); if ("error" in body) throw new Error(typeof body.error === "string" ? body.error : "Rincian jurnal belum dapat dimuat"); setDrillDown(body.data); }
-    catch (error) { setDrillError(error instanceof Error ? error.message : "Rincian jurnal belum dapat dimuat"); }
-    finally { setDrillLoading(false); }
-  }
+  function openDrillDown(accountId: string, period = currentPeriod) { setDrillTarget({ accountId, period }); }
 
   function incomeView() {
     if (!income) return null;
@@ -121,8 +97,8 @@ export default function ReportsPage() {
   return <div className="space-y-5">
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Phase 5 · Modul 8</p><h2 className="mt-1 text-2xl font-bold tracking-tight">Laporan Keuangan</h2><p className="mt-1 text-sm text-muted">Analisis real-time dengan rincian sampai ke jurnal pembentuk nominal.</p></div><div className="flex flex-wrap items-end gap-2\"><label className="text-xs font-semibold text-slate-500">Mulai<input className={inputClass + " mt-1 block"} onChange={(event) => setPeriodStart(event.target.value)} type="date" value={periodStart} /></label><label className="text-xs font-semibold text-slate-500">Sampai<input className={inputClass + " mt-1 block"} onChange={(event) => setPeriodEnd(event.target.value)} type="date" value={periodEnd} /></label>{tab === "income" && <><label className="text-xs font-semibold text-slate-500">Bandingkan dari<input className={inputClass + " mt-1 block"} onChange={(event) => setCompareStart(event.target.value)} type="date" value={compareStart} /></label><label className="text-xs font-semibold text-slate-500">Bandingkan sampai<input className={inputClass + " mt-1 block"} onChange={(event) => setCompareEnd(event.target.value)} type="date" value={compareEnd} /></label></>}</div></div></section>
     <nav aria-label="Jenis laporan" className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><button className={"inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " + (tab === "income" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50")} onClick={() => setTab("income")} type="button"><BarChart3 size={16} /> Laba Rugi Komparatif</button><button className={"inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " + (tab === "balance" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50")} onClick={() => setTab("balance")} type="button"><BookOpen size={16} /> Neraca</button><button className={"inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " + (tab === "trial" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50")} onClick={() => setTab("trial")} type="button"><FileText size={16} /> Neraca Saldo</button></nav>
-    {message && <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status"><span>{message}</span><button aria-label="Tutup pesan laporan" onClick={() => setMessage("")} type="button"><RefreshCw size={16} /></button></div>}
+    {(message || reportError) && <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status"><span>{message || reportError}</span><button aria-label="Tutup pesan laporan" onClick={() => setMessage("")} type="button"><RefreshCw size={16} /></button></div>}
     {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm text-muted">Memuat laporan...</div> : tab === "income" ? incomeView() : tab === "balance" ? balanceView() : trialView()}
-    <DrillDownDrawer data={drillDown} error={drillError} formatMoney={formatMoney} loading={drillLoading} onClose={() => { setDrillDown(null); setDrillError(""); }} />
+    <DrillDownDrawer data={drillDown ?? null} error={drillError} formatMoney={formatMoney} loading={drillLoading} onClose={() => setDrillTarget(null)} />
   </div>;
 }
