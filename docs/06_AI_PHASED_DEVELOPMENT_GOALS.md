@@ -111,7 +111,7 @@ KeuanganApotek/
 
 | Fase | Nama Fase | Fokus Utama | Status |
 | :---: | :--- | :--- | :---: |
-| **0** | **Monorepo Foundation & Tooling Setup** | Workspace pnpm, TypeScript, Tailwind, Drizzle, tRPC/Hono scaffold | `[ ] Belum Mulai` |
+| **0** | **Monorepo Foundation & Tooling Setup** | Workspace pnpm, TypeScript, Tailwind, Drizzle, tRPC/Hono scaffold | `[x] Selesai diverifikasi (Node 22)` |
 | **1** | **Database Schema, Master CoA & Opening Balance** | SQLite WAL, Drizzle migration, Tree-Grid CoA, Auto-Balancing Equity | `[ ] Belum Mulai` |
 | **2** | **Double-Entry Engine & General Journal Grid** | Service Buku Besar, Grid Jurnal Umum, Sticky Balance Bar, Hotkeys | `[ ] Belum Mulai` |
 | **3** | **Modul Transaksi Operasional Apotek** | POS Clearing + HPP, Faktur PBF (Excel paste), Konsinyasi, Kas & Bank | `[ ] Belum Mulai` |
