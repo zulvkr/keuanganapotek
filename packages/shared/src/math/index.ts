@@ -59,6 +59,11 @@ export function rupiahToSen(value: MoneyInput): number {
   return result;
 }
 
+/** Returns the absolute amount needed to balance an opening-balance batch. */
+export function balancingAmount(debit: MoneyInput, credit: MoneyInput): Decimal {
+  return asDecimal(debit).minus(asDecimal(credit)).abs();
+}
+
 /** Parses Indonesian rupiah display text and converts it to integer sen. */
 export function parseRupiahToSen(value: string): number {
   const normalized = value
@@ -70,9 +75,12 @@ export function parseRupiahToSen(value: string): number {
     return 0;
   }
 
+  const thousandGroups = /^\d{1,3}(?:\.\d{3})+$/.test(normalized);
   const canonical = normalized.includes(",")
     ? normalized.replace(/\./g, "").replace(",", ".")
-    : normalized.replace(/\./g, "");
+    : thousandGroups
+      ? normalized.replace(/\./g, "")
+      : normalized;
 
   return rupiahToSen(canonical);
 }

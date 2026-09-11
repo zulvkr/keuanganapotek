@@ -112,9 +112,9 @@ KeuanganApotek/
 | Fase | Nama Fase | Fokus Utama | Status |
 | :---: | :--- | :--- | :---: |
 | **0** | **Monorepo Foundation & Tooling Setup** | Workspace pnpm, TypeScript, Tailwind, Drizzle, tRPC/Hono scaffold | `[x] Selesai diverifikasi (Node 22)` |
-| **1** | **Database Schema, Master CoA & Opening Balance** | SQLite WAL, Drizzle migration, Tree-Grid CoA, Auto-Balancing Equity | `[ ] Belum Mulai` |
-| **2** | **Double-Entry Engine & General Journal Grid** | Service Buku Besar, Grid Jurnal Umum, Sticky Balance Bar, Hotkeys | `[ ] Belum Mulai` |
-| **3** | **Modul Transaksi Operasional Apotek** | POS Clearing + HPP, Faktur PBF (Excel paste), Konsinyasi, Kas & Bank | `[ ] Belum Mulai` |
+| **1** | **Database Schema, Master CoA & Opening Balance** | SQLite WAL, Drizzle migration, Tree-Grid CoA, Auto-Balancing Equity | `[x] Selesai diverifikasi (schema, seed, API, UI, tests)` |
+| **2** | **Double-Entry Engine & General Journal Grid** | Service Buku Besar, Grid Jurnal Umum, Sticky Balance Bar, Hotkeys | `[x] Selesai diverifikasi (ledger service, API, grid, unit/integration/E2E tests)` |
+| **3** | **Modul Transaksi Operasional Apotek** | POS Clearing + HPP, Faktur PBF (Excel paste), Konsinyasi, Kas & Bank | `[x] Selesai diverifikasi (schema, services, API, UI, integration tests)` |
 | **4** | **Rekonsiliasi Bank Dual-Pane** | Split View, Algoritma Auto-Match tanggal/nominal, Matching manual | `[ ] Belum Mulai` |
 | **5** | **Laporan Keuangan Dinamis & Drill-Down Drawer** | Laba Rugi Komparatif, Neraca, Neraca Saldo, Drawer rincian jurnal | `[ ] Belum Mulai` |
 | **6** | **Pengujian Beban, Audit Trail & Penguncian Periode** | Stress test grid >5.000 baris, Lock Period, SQLite backup WAL | `[ ] Belum Mulai` |

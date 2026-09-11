@@ -17,6 +17,10 @@
     "./schemas": {
       "types": "./dist/schemas/index.d.ts",
       "import": "./dist/schemas/index.js"
+    },
+    "./date": {
+      "types": "./dist/date/index.d.ts",
+      "import": "./dist/date/index.js"
     }
   },
   "scripts": {
@@ -26,6 +30,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "^0.4.4",
     "decimal.js": "^10.4.3",
     "zod": "^3.23.8"
   },

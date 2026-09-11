@@ -32,6 +32,8 @@ describe("financial math", () => {
 
   it("converts Indonesian rupiah display values to integer sen", () => {
     expect(parseRupiahToSen("Rp 1.500.000,00")).toBe(150000000);
+    expect(parseRupiahToSen("1000000.00")).toBe(100000000);
+    expect(parseRupiahToSen("1.000")).toBe(100000);
     expect(rupiahToSen("12345.67")).toBe(1234567);
   });
 });

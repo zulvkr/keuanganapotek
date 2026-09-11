@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { Activity, BookOpen, ChevronRight, CircleDollarSign, LayoutDashboard, Settings2, WalletCards } from "lucide-react";
 import type { SourceModule } from "@keuangan-apotek/shared";
+import CoAPage from "./pages/CoAPage";
+import GeneralJournalPage from "./pages/GeneralJournalPage";
+import CashBankPage from "./pages/CashBankPage";
+import ConsignmentPage from "./pages/ConsignmentPage";
+import PBFInvoicesPage from "./pages/PBFInvoicesPage";
+import POSClearingPage from "./pages/POSClearingPage";
 
 const foundationSourceModule: SourceModule = "GENERAL";
 
@@ -9,6 +15,8 @@ const modules = [
   { label: "Bagan Akun", icon: BookOpen },
   { label: "Jurnal Umum", icon: Activity },
   { label: "POS Clearing", icon: CircleDollarSign },
+  { label: "Faktur PBF", icon: CircleDollarSign },
+  { label: "Konsinyasi", icon: CircleDollarSign },
   { label: "Kas & Bank", icon: WalletCards },
 ];
 
@@ -60,7 +68,7 @@ function App() {
         </header>
 
         <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-10">
-          <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+          {activeModule === "Bagan Akun" ? <CoAPage /> : activeModule === "Jurnal Umum" ? <GeneralJournalPage /> : activeModule === "POS Clearing" ? <POSClearingPage /> : activeModule === "Faktur PBF" ? <PBFInvoicesPage /> : activeModule === "Konsinyasi" ? <ConsignmentPage /> : activeModule === "Kas & Bank" ? <CashBankPage /> : <><section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
             <div className="max-w-2xl">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand">Phase 0 · Foundation</p>
               <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Ruang kerja finansial apotek yang rapi dan terukur.</h2>
@@ -85,7 +93,7 @@ function App() {
           <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
             <p className="text-sm font-semibold">Modul {activeModule} siap dikembangkan</p>
             <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted">Shell navigasi ini menjadi titik awal implementasi modul sesuai roadmap. Data nyata akan muncul setelah database dan alur transaksi diaktifkan.</p>
-          </section>
+          </section></>}
         </div>
       </main>
     </div>

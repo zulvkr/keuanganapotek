@@ -82,22 +82,21 @@ KeuanganApotek/
 
 ### Fase 1: Fondasi Inti & Master Akun (Minggu 1-2)
 - [ ] Setup monorepo `pnpm`, Vite React, Tailwind CSS, tRPC backend, dan Drizzle ORM dengan SQLite.
-- [ ] Implementasi Database Schema SQLite (Drizzle ORM) & Migrasi.
-- [ ] Modul 1: Bagan Akun (CoA) Tree-Grid (tambah, edit inline, hapus sub-akun).
-- [ ] Modul 1: Fitur Mode Saldo Awal, Sticky Balance Bar, dan Auto-Balancing Equity.
+- [x] Implementasi Database Schema SQLite (Drizzle ORM) & Migrasi.
+- [x] Modul 1: Bagan Akun (CoA) Tree-Grid (tambah, edit inline, hapus sub-akun).
+- [x] Modul 1: Fitur Mode Saldo Awal, Sticky Balance Bar, dan Auto-Balancing Equity.
 
 ### Fase 2: Mesin Jurnal & Transaksi Operasional Kasir/PBF (Minggu 3-4)
-- [ ] Modul 2: Jurnal Umum Multi-Row Grid dengan validasi keseimbangan real-time.
-- [ ] Modul 3: POS Clearing (Rekap omzet kasir, penerimaan tunai/non-tunai, perhitungan selisih kas fisik, dan HPP).
-- [ ] Modul 4: PBF Batch Ledger (Fitur paste Excel `Ctrl+V`, kalkulasi DPP + PPN 11%, deteksi duplikasi nomor faktur).
+- [x] Modul 2: Jurnal Umum Multi-Row Grid dengan validasi keseimbangan real-time.
+- [x] Modul 3: POS Clearing (Rekap omzet kasir, penerimaan tunai/non-tunai, perhitungan selisih kas fisik, dan HPP).
+- [x] Modul 4: PBF Batch Ledger (Fitur paste Excel `Ctrl+V`, kalkulasi DPP + PPN 11%, deteksi duplikasi nomor faktur).
 
 ### Fase 3: Konsinyasi, Kas/Bank & Rekonsiliasi (Minggu 5-6)
-- [ ] Modul 5: Konsinyasi (Perhitungan bagi hasil & batch settlement bar).
-- [ ] Modul 6: Kas & Bank Register (Setoran kas toko, transfer bank, pencatatan mutasi ganda).
+- [x] Modul 5: Konsinyasi (Perhitungan bagi hasil & batch settlement bar).
+- [x] Modul 6: Kas & Bank Register (Setoran kas toko, transfer bank, pencatatan mutasi ganda).
 - [ ] Modul 7: Rekonsiliasi Bank Dual-Pane Split View & Algoritma *Auto-Match*.
 
 ### Fase 4: Laporan Keuangan Dinamis, Drill-Down & Finalisasi (Minggu 7-8)
 - [ ] Modul 8: Laporan Laba Rugi Komparatif, Neraca, Neraca Saldo.
 - [ ] Implementasi Slide-Over Drawer untuk drill-down jurnal pembentuk angka laporan.
 - [ ] Pengujian performa data grid (> 5.000 baris) dan pengujian audit trail pembukuan.
-
