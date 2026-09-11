@@ -18,64 +18,30 @@ type PosPaymentMethod = { id: string; code: string; name: string; accountId: str
 export function POSClearingPage() {
   const [rows, setRows] = useState<PosRow[]>([]);
   const [methods, setMethods] = useState<PosPaymentMethod[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({ clearingDate: todayIsoDate(), shiftName: "", cashierName: "", totalPosOmzet: "", cogsAmount: "", payments: {} as Record<string, string> });
-  const [newMethod, setNewMethod] = useState({ name: "", accountId: "" });
   const activeMethods = methods.filter((method) => method.isActive).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
   const paymentTotal = activeMethods.reduce((sum, method) => sum + amount(form.payments[method.id] ?? ""), 0);
   const diff = paymentTotal - amount(form.totalPosOmzet);
-  const eligibleAccounts = accounts.filter((account) => account.isActive !== false && !account.isGroup && account.classification === "ASET_LANCAR" && account.normalBalance === "DEBIT" && (account.code.startsWith("11") || account.code.startsWith("12")));
-
   const load = async () => {
     try {
-      const [posRows, configuredMethods, coa] = await Promise.all([
+      const [posRows, configuredMethods] = await Promise.all([
         request<PosRow[]>("/api/pos-clearings"),
         request<PosPaymentMethod[]>("/api/pos-payment-methods"),
-        request<Account[]>("/api/accounts/tree"),
       ]);
       setRows(posRows);
       setMethods(configuredMethods);
-      setAccounts(coa);
       const nextMethods = configuredMethods.filter((method) => method.isActive);
       setForm((current) => ({
         ...current,
         payments: Object.fromEntries(nextMethods.map((method) => [method.id, current.payments[method.id] ?? ""])),
       }));
-      setNewMethod((current) => ({ ...current, accountId: current.accountId || coa.find((account) => account.code === "1101")?.id || "" }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Data POS belum tersedia");
     }
   };
 
   useEffect(() => { void load(); }, []);
-
-  async function saveMethod(method: PosPaymentMethod) {
-    try {
-      await request("/api/pos-payment-methods", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: method.id, name: method.name, accountId: method.accountId, isActive: method.isActive, sortOrder: method.sortOrder }),
-      });
-      setMessage("Konfigurasi metode pembayaran disimpan.");
-      await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Konfigurasi metode belum tersimpan"); }
-  }
-
-  async function addMethod() {
-    if (!newMethod.name.trim() || !newMethod.accountId) {
-      setMessage("Nama metode dan akun tujuan wajib diisi.");
-      return;
-    }
-    try {
-      await request("/api/pos-payment-methods", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: newMethod.name.trim(), accountId: newMethod.accountId, isActive: true, sortOrder: methods.length * 10 + 10 }),
-      });
-      setNewMethod({ name: "", accountId: newMethod.accountId });
-      setMessage("Metode pembayaran baru ditambahkan.");
-      await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Metode pembayaran belum ditambahkan"); }
-  }
 
   async function save() {
     if (activeMethods.length === 0) {
@@ -104,32 +70,8 @@ export function POSClearingPage() {
 
   return <div className="space-y-5">
     <Card>
-      <Header eyebrow="Phase 3 · Modul Operasional" title="POS Clearing & HPP Harian" note="Pilih metode pembayaran yang aktif; jurnal akan mendebit akun tujuan masing-masing metode." />
+      <Header eyebrow="Phase 3 · Modul Operasional" title="POS Clearing & HPP Harian" note="Masukkan rekap harian dan nilai HPP. Pengaturan metode pembayaran tersedia di menu Pengaturan." />
       <div className="mt-5 space-y-4">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div><h3 className="font-semibold">Metode pembayaran aktif</h3><p className="text-xs text-muted">Nonaktifkan metode yang tidak dipakai agar tidak muncul di form input.</p></div>
-          </div>
-          <div className="space-y-2">
-            {methods.map((method) => <div className="grid gap-2 rounded-lg bg-white p-3 md:grid-cols-[1.2fr_1.5fr_auto_auto]" key={method.id}>
-              <input className={inputClass} value={method.name} onChange={(e) => setMethods((current) => current.map((item) => item.id === method.id ? { ...item, name: e.target.value } : item))} />
-              <select className={inputClass} value={method.accountId} onChange={(e) => setMethods((current) => current.map((item) => item.id === method.id ? { ...item, accountId: e.target.value } : item))}>
-                {eligibleAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
-              </select>
-              <span className="px-2 text-xs font-medium text-slate-500">{method.isReceivable ? "Piutang" : "Kas / Bank"}</span>
-              <button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600" onClick={() => void saveMethod(method)} type="button">Simpan</button>
-            </div>)}
-          </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-[1.2fr_1.5fr_auto_auto]">
-            <input className={inputClass} placeholder="Contoh Marketplace" value={newMethod.name} onChange={(e) => setNewMethod({ ...newMethod, name: e.target.value })} />
-            <select className={inputClass} value={newMethod.accountId} onChange={(e) => setNewMethod({ ...newMethod, accountId: e.target.value })}>
-              <option value="">Pilih akun tujuan</option>
-              {eligibleAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
-            </select>
-            <span className="px-2 text-xs text-slate-500">Kategori otomatis dari akun</span>
-            <button className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white" onClick={() => void addMethod()} type="button">+ Tambah metode</button>
-          </div>
-        </div>
         <div className="grid gap-3 md:grid-cols-4">
           <label className="text-xs font-semibold text-slate-500">Tanggal<input className={inputClass} type="date" value={form.clearingDate} onChange={(e) => setForm({ ...form, clearingDate: e.target.value })} /></label>
           <label className="text-xs font-semibold text-slate-500">Kasir / shift<input className={inputClass} value={form.cashierName} placeholder="Nama kasir" onChange={(e) => setForm({ ...form, cashierName: e.target.value })} /></label>
@@ -139,7 +81,7 @@ export function POSClearingPage() {
           <label className="text-xs font-semibold text-slate-500">HPP harian<input className={inputClass + " text-right font-mono tabular-nums"} value={form.cogsAmount} placeholder="0" onChange={(e) => setForm({ ...form, cogsAmount: e.target.value })} /></label>
           <div className="flex items-end gap-2"><div className={"flex-1 rounded-lg px-3 py-2 text-sm font-mono tabular-nums " + (diff === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>Selisih penerimaan: Rp {money(diff)}</div><button className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white" onClick={() => void save()} type="button">Simpan</button></div>
         </div>
-        <p className="text-xs text-muted">Metode marketplace dapat diarahkan ke akun piutang; metode bank/QRIS dapat diarahkan ke akun bank atau kliring yang sesuai.</p>
+        <p className="text-xs text-muted">Metode marketplace dapat diarahkan ke akun piutang; metode bank/QRIS dapat diarahkan ke akun bank atau kliring yang sesuai. Ubah pemetaannya di Pengaturan.</p>
       </div>
     </Card>
     <ErrorMessage message={message} />

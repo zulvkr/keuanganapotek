@@ -10,6 +10,7 @@ import POSClearingPage from "./pages/POSClearingPage";
 import BankReconPage from "./pages/BankReconPage";
 import ReportsPage from "./pages/ReportsPage";
 import StressTestPage from "./pages/StressTestPage";
+import SettingsPage from "./pages/SettingsPage";
 
 const foundationSourceModule: SourceModule = "GENERAL";
 
@@ -37,6 +38,7 @@ const modulePaths: Record<string, string> = {
   "Rekonsiliasi Bank": "/rekonsiliasi-bank",
   "Laporan Keuangan": "/laporan-keuangan",
   "Uji Beban": "/uji-beban",
+  Pengaturan: "/pengaturan",
 };
 
 const moduleByPath = new Map(Object.entries(modulePaths).map(([label, path]) => [path, label]));
@@ -88,8 +90,9 @@ function App() {
           ))}
         </nav>
         <div className="absolute bottom-5 left-3 right-3">
-          <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50" type="button">
-            <Settings2 size={17} /> Pengaturan
+          <button className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeModule === "Pengaturan" ? "bg-blue-50 font-semibold text-brand" : "text-slate-600 hover:bg-slate-50"}`} onClick={() => navigateTo(modulePaths.Pengaturan!)} type="button">
+            <Settings2 size={17} strokeWidth={activeModule === "Pengaturan" ? 2.4 : 1.8} /> Pengaturan
+            {activeModule === "Pengaturan" && <ChevronRight className="ml-auto" size={15} />}
           </button>
         </div>
       </aside>
@@ -107,7 +110,7 @@ function App() {
         </header>
 
         <div className="mx-auto max-w-7xl space-y-6 p-6 lg:p-10">
-          {activeModule === "Bagan Akun" ? <CoAPage /> : activeModule === "Jurnal Umum" ? <GeneralJournalPage /> : activeModule === "POS Clearing" ? <POSClearingPage /> : activeModule === "Faktur PBF" ? <PBFInvoicesPage /> : activeModule === "Konsinyasi" ? <ConsignmentPage /> : activeModule === "Kas & Bank" ? <CashBankPage /> : activeModule === "Rekonsiliasi Bank" ? <BankReconPage /> : activeModule === "Laporan Keuangan" ? <ReportsPage /> : activeModule === "Uji Beban" ? <StressTestPage /> : <><section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+          {activeModule === "Pengaturan" ? <SettingsPage /> : activeModule === "Bagan Akun" ? <CoAPage /> : activeModule === "Jurnal Umum" ? <GeneralJournalPage /> : activeModule === "POS Clearing" ? <POSClearingPage /> : activeModule === "Faktur PBF" ? <PBFInvoicesPage /> : activeModule === "Konsinyasi" ? <ConsignmentPage /> : activeModule === "Kas & Bank" ? <CashBankPage /> : activeModule === "Rekonsiliasi Bank" ? <BankReconPage /> : activeModule === "Laporan Keuangan" ? <ReportsPage /> : activeModule === "Uji Beban" ? <StressTestPage /> : <><section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
             <div className="max-w-2xl">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand">Phase 0 · Foundation</p>
               <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Ruang kerja finansial apotek yang rapi dan terukur.</h2>

@@ -1,77 +1,65 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type InferRequestType, type InferResponseType } from "hono/client";
+import { api, rpc } from "../lib/api";
 
-const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-type Account = { id: string; code: string; name: string; classification?: string; normalBalance?: string; isGroup?: boolean; isActive?: boolean };
-type Api<T> = { data: T } | { error: string | object };
-type PosPaymentMethod = { id: string; code: string; name: string; accountId: string; accountCode: string; accountName: string; isReceivable: boolean; isActive: boolean; sortOrder: number };
+type Data<T> = T extends { data: infer D } ? D : never;
+type AccountsRoute = typeof api.api.accounts.tree.$get;
+type PaymentMethodsRoute = typeof api.api["pos-payment-methods"];
+type SavePaymentRoute = PaymentMethodsRoute["save"];
+type Account = Data<InferResponseType<AccountsRoute> >[number];
+type PosPaymentMethod = Data<InferResponseType<PaymentMethodsRoute["$get"]> >[number];
+type SavePaymentMethod = InferRequestType<SavePaymentRoute["$post"]>["json"];
 
 const inputClass = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBase}${path}`, init);
-  const body = await response.json() as Api<T>;
-  if (!response.ok || "error" in body) {
-    const error = "error" in body ? body.error : undefined;
-    throw new Error(typeof error === "string" ? error : "Permintaan tidak valid");
-  }
-  return body.data;
-}
 
 function Card({ children }: { children: React.ReactNode }) {
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">{children}</section>;
 }
 
 function SettingsPage() {
-  const [methods, setMethods] = useState<PosPaymentMethod[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [newMethod, setNewMethod] = useState({ name: "", accountId: "" });
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
-  const eligibleAccounts = accounts.filter((account) => account.isActive !== false && !account.isGroup && account.classification === "ASET_LANCAR" && account.normalBalance === "DEBIT" && (account.code.startsWith("11") || account.code.startsWith("12")));
-
-  async function load() {
-    try {
-      const [configuredMethods, coa] = await Promise.all([
-        request<PosPaymentMethod[]>("/api/pos-payment-methods"),
-        request<Account[]>("/api/accounts/tree"),
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => {
+      const [methodsResponse, accountsResponse] = await Promise.all([
+        rpc(() => api.api["pos-payment-methods"].$get()),
+        rpc(() => api.api.accounts.tree.$get()),
       ]);
-      setMethods(configuredMethods);
-      setAccounts(coa);
-      setNewMethod((current) => ({ ...current, accountId: current.accountId || coa.find((account) => account.code === "1101")?.id || "" }));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Pengaturan belum tersedia");
-    } finally {
-      setLoading(false);
-    }
+      return { methods: methodsResponse.data, accounts: accountsResponse.data };
+    },
+  });
+  const methods = settingsQuery.data?.methods ?? [];
+  const accounts = settingsQuery.data?.accounts ?? [];
+  const loading = settingsQuery.isLoading;
+  const eligibleAccounts = accounts.filter((account) => account.isActive && !account.isGroup && account.classification === "ASET_LANCAR" && account.normalBalance === "DEBIT" && (account.code.startsWith("11") || account.code.startsWith("12")));
+  const saveMutation = useMutation({
+    mutationFn: (input: SavePaymentMethod) => rpc(() => api.api["pos-payment-methods"].save.$post({ json: input })),
+    onSuccess: async (_, input) => {
+      setMessage(`Metode ${input.name} berhasil disimpan.`);
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (error) => setMessage(error instanceof Error ? error.message : "Konfigurasi metode belum tersimpan"),
+  });
+
+  function saveMethod(method: PosPaymentMethod) {
+    saveMutation.mutate({ id: method.id, name: method.name, accountId: method.accountId, isActive: method.isActive, sortOrder: method.sortOrder });
   }
 
-  useEffect(() => { void load(); }, []);
-
-  async function saveMethod(method: PosPaymentMethod) {
-    try {
-      await request("/api/pos-payment-methods", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: method.id, name: method.name, accountId: method.accountId, isActive: method.isActive, sortOrder: method.sortOrder }),
-      });
-      setMessage(`Metode ${method.name} berhasil disimpan.`);
-      await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Konfigurasi metode belum tersimpan"); }
-  }
-
-  async function addMethod() {
+  function addMethod() {
     if (!newMethod.name.trim() || !newMethod.accountId) {
       setMessage("Nama metode dan akun tujuan wajib diisi.");
       return;
     }
-    try {
-      await request("/api/pos-payment-methods", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: newMethod.name.trim(), accountId: newMethod.accountId, isActive: true, sortOrder: methods.length * 10 + 10 }),
-      });
-      setNewMethod({ name: "", accountId: newMethod.accountId });
-      setMessage("Metode pembayaran baru ditambahkan.");
-      await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Metode pembayaran belum ditambahkan"); }
+    saveMutation.mutate({ name: newMethod.name.trim(), accountId: newMethod.accountId, isActive: true, sortOrder: methods.length * 10 + 10 }, {
+      onSuccess: async () => {
+        setNewMethod({ name: "", accountId: newMethod.accountId });
+        setMessage("Metode pembayaran baru ditambahkan.");
+        await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      },
+    });
   }
 
   return <div className="space-y-5">

@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { validator } from "hono/validator";
+import { z } from "zod";
 import { cors } from "hono/cors";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -23,6 +25,8 @@ import {
   TrialBalanceQuerySchema,
   LockPeriodSchema,
   UnlockPeriodSchema,
+  BankReconMatchSchema,
+  BankStatementImportSchema,
 } from "@keuangan-apotek/shared";
 import type { SourceModule } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "./db/client.js";
@@ -67,6 +71,50 @@ import { listPeriodLocks, lockPeriod, unlockPeriod } from "./services/period-loc
 
 export const app = new Hono();
 
+/** Runtime Zod validation also becomes the JSON input contract exposed by Hono RPC. */
+function validateJson<S extends z.ZodType>(schema: S) {
+  return validator("json", (value, context) => {
+    const parsed = schema.safeParse(value);
+    return parsed.success
+      ? parsed.data
+      : context.json({ error: parsed.error.flatten() }, 400);
+  })
+}
+
+function validateQuery<S extends z.ZodType>(schema: S) {
+  return validator("query", (value, context) => {
+    const parsed = schema.safeParse(value);
+    return parsed.success
+      ? parsed.data
+      : context.json({ error: parsed.error.flatten() }, 400);
+  })
+}
+
+const OpeningBalancesQuerySchema = z.object({ cutoffDate: z.string().min(1) });
+const JournalListQuerySchema = z.object({
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  sourceModule: z.string().optional(),
+});
+const BankReconQuerySchema = z.object({ bankAccountId: z.string().min(1) });
+const ReportQuerySchema = z.object({
+  periodStart: z.string().optional(),
+  periodEnd: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  compareStartDate: z.string().optional(),
+  compareEndDate: z.string().optional(),
+  comparePeriodStart: z.string().optional(),
+  comparePeriodEnd: z.string().optional(),
+  asOfDate: z.string().optional(),
+  accountId: z.string().optional(),
+});
+
+const BankReconImportRequestSchema = z.union([
+  z.object({ bankAccountId: z.string().min(1), csv: z.string() }),
+  BankStatementImportSchema,
+]);
+
 app.get("/health", (context) => {
   const response: HealthResponse = {
     status: "ok",
@@ -89,15 +137,26 @@ const sourceModules: SourceModule[] = ["GENERAL", "OPENING_BALANCE", "POS_CLEARI
 /** Creates the Phase 1 API with a caller-owned database connection. */
 export function createApiApp(client: SqliteClient) {
   const api = new Hono();
-  api.use("/api/*", cors({ origin: (origin) => origin || "*" }));
-  api.route("/", app);
+  function readPeriod(context: Context, startKeys: string[] = ["startDate"], endKeys: string[] = ["endDate"]) {
+    const startDate = startKeys.map((key) => context.req.query(key)).find(Boolean);
+    const endDate = endKeys.map((key) => context.req.query(key)).find(Boolean);
+    return ReportPeriodSchema.safeParse({ startDate, endDate });
+  }
 
-  api.get("/api/accounts/tree", async (context) => context.json({ data: await listAccounts(client.db) }));
-
-  api.post("/api/accounts", async (context) => {
-    const parsed = AccountSchema.safeParse(await context.req.json());
+  const drillDownHandler = (context: Context) => {
+    const accountId = context.req.param("id") ?? context.req.query("accountId");
+    const period = readPeriod(context);
+    const parsed = AccountJournalDrillDownQuerySchema.safeParse({ accountId, period: period.success ? period.data : undefined });
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
-    const account = parsed.data;
+    try { return context.json({ data: getAccountJournalDrillDown(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
+  };
+
+  const typedApi = api.use("/api/*", cors({ origin: (origin) => origin || "*" })).route("/", app)
+
+    .get("/api/accounts/tree", async (context) => context.json({ data: await listAccounts(client.db) }))
+
+    .post("/api/accounts", validateJson(AccountSchema), async (context) => {
+    const account = context.req.valid("json");
     const id = account.id ?? randomUUID();
     try {
       const existing = client.db.select({ isGroup: accounts.isGroup }).from(accounts).where(eq(accounts.id, id)).get();
@@ -124,9 +183,9 @@ export function createApiApp(client: SqliteClient) {
     } catch (error) {
       return errorResponse(context, error);
     }
-  });
+  })
 
-  api.delete("/api/accounts/:id", async (context) => {
+    .delete("/api/accounts/:id", async (context) => {
     try {
       const account = client.db.select({ isGroup: accounts.isGroup }).from(accounts).where(eq(accounts.id, context.req.param("id"))).get();
       if (account?.isGroup) throw new Error("Akun grup sistem tidak boleh dihapus");
@@ -136,69 +195,63 @@ export function createApiApp(client: SqliteClient) {
     } catch (error) {
       return errorResponse(context, error);
     }
-  });
+  })
 
-  api.get("/api/opening-balances", async (context) => {
-    const cutoffDate = context.req.query("cutoffDate");
-    if (!cutoffDate) return context.json({ error: "cutoffDate wajib diisi" }, 400);
+    .get("/api/opening-balances", validateQuery(OpeningBalancesQuerySchema), async (context) => {
+    const cutoffDate = context.req.valid("query").cutoffDate;
     try { return context.json({ data: await getOpeningBalances(client.db, cutoffDate) }); }
     catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.get("/api/opening-balances/meta", (context) => context.json({ data: { cutoffDate: getOpeningBalanceCutoff(client.db) } }));
+    .get("/api/opening-balances/meta", (context) => context.json({ data: { cutoffDate: getOpeningBalanceCutoff(client.db) } }))
 
-  api.post("/api/opening-balances/auto-balance", async (context) => {
-    const parsed = SaveOpeningBalancesSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .post("/api/opening-balances/auto-balance", validateJson(SaveOpeningBalancesSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     const equity = client.db.select({ id: accounts.id }).from(accounts).where(eq(accounts.code, "3101")).get();
     if (!equity) return context.json({ error: "Akun 3101 Ekuitas Saldo Awal belum tersedia" }, 500);
     const lines = autoBalanceOpeningBalances(parsed.data.lines, equity.id);
     return context.json({ data: { cutoffDate: parsed.data.cutoffDate, lines, totals: calculateOpeningBalanceTotals(lines) } });
-  });
+  })
 
-  api.post("/api/opening-balances/save", async (context) => {
-    const parsed = SaveOpeningBalancesSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .post("/api/opening-balances/save", validateJson(SaveOpeningBalancesSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try {
       await saveOpeningBalances(client.db, parsed.data);
       return context.json({ data: { saved: true, cutoffDate: parsed.data.cutoffDate } });
     } catch (error) {
       return errorResponse(context, error);
     }
-  });
+  })
 
-  api.post("/api/opening-balances/lock", async (context) => {
-    const parsed = LockOpeningBalanceSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .post("/api/opening-balances/lock", validateJson(LockOpeningBalanceSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try {
       const journal = await lockOpeningBalance(client.db, parsed.data.cutoffDate);
       return context.json({ data: { locked: true, journal } });
     } catch (error) {
       return errorResponse(context, error);
     }
-  });
+  })
 
-  api.get("/api/period-locks", (context) => context.json({ data: listPeriodLocks(client.db) }));
+    .get("/api/period-locks", (context) => context.json({ data: listPeriodLocks(client.db) }))
 
-  api.post("/api/period-locks", async (context) => {
-    const parsed = LockPeriodSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .post("/api/period-locks", validateJson(LockPeriodSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: lockPeriod(client.db, parsed.data) }, 201); }
     catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.post("/api/period-locks/:lockedThrough/unlock", async (context) => {
-    const parsed = UnlockPeriodSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 403);
+    .post("/api/period-locks/:lockedThrough/unlock", validateJson(UnlockPeriodSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: unlockPeriod(client.db, context.req.param("lockedThrough"), parsed.data.actor) }); }
     catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.get("/api/audit-logs", (context) => context.json({ data: listAuditLogs(client.db, {
+    .get("/api/audit-logs", (context) => context.json({ data: listAuditLogs(client.db, {
     entityType: context.req.query("entityType"), entityId: context.req.query("entityId"),
-  }) }));
+  }) }))
 
-  api.get("/api/journals", (context) => {
+    .get("/api/journals", validateQuery(JournalListQuerySchema), (context) => {
     const startDate = context.req.query("startDate");
     const endDate = context.req.query("endDate");
     const sourceModule = context.req.query("sourceModule");
@@ -207,132 +260,120 @@ export function createApiApp(client: SqliteClient) {
     if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return context.json({ error: "endDate tidak valid" }, 400);
     if (startDate && endDate && startDate > endDate) return context.json({ error: "Rentang tanggal tidak valid" }, 400);
     return context.json({ data: listJournals(client.db, { startDate, endDate, sourceModule: sourceModule as SourceModule | undefined }) });
-  });
+  })
 
-  api.get("/api/journals/:id", (context) => {
+    .get("/api/journals/:id", (context) => {
     const journal = getJournalById(client.db, context.req.param("id"));
     return journal ? context.json({ data: journal }) : context.json({ error: "Jurnal tidak ditemukan" }, 404);
-  });
+  })
 
-  api.post("/api/journals/general", async (context) => {
-    const parsed = JournalEntrySchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .post("/api/journals/general", validateJson(JournalEntrySchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try {
       return context.json({ data: createJournalEntry(client.db, { ...parsed.data, sourceModule: "GENERAL", createdBy: context.req.header("x-user-id") ?? "system" }) }, 201);
     } catch (error) {
       return errorResponse(context, error);
     }
-  });
+  })
 
-  api.put("/api/journals/:id", async (context) => {
-    const parsed = JournalEntrySchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .put("/api/journals/:id", validateJson(JournalEntrySchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try {
       return context.json({ data: updateJournal(client.db, context.req.param("id"), { ...parsed.data, sourceModule: "GENERAL", createdBy: context.req.header("x-user-id") ?? "system" }) });
     } catch (error) {
       return errorResponse(context, error);
     }
-  });
+  })
 
-  api.delete("/api/journals/:id", (context) => {
+    .delete("/api/journals/:id", (context) => {
     try {
       deleteJournal(client.db, context.req.param("id"));
       return context.body(null, 204);
     } catch (error) {
       return errorResponse(context, error);
     }
-  });
+  })
 
-  api.get("/api/pos-clearings", (context) => context.json({ data: listPosClearings(client.db) }));
-  api.get("/api/pos-payment-methods", (context) => {
+    .get("/api/pos-clearings", (context) => context.json({ data: listPosClearings(client.db) }))
+    .get("/api/pos-payment-methods", (context) => {
     try { return context.json({ data: listPosPaymentMethods(client.db) }); } catch (error) { return errorResponse(context, error); }
-  });
-  api.post("/api/pos-payment-methods", async (context) => {
-    const parsed = PosPaymentMethodSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+  })
+    .post("/api/pos-payment-methods", validateJson(PosPaymentMethodSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: savePosPaymentMethod(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
-  });
-  api.post("/api/pos-clearings", async (context) => {
-    const parsed = PosClearingSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+  })
+    // Separate command path keeps the generated RPC client unambiguous while
+    // retaining the original POST endpoint for backwards compatibility.
+    .post("/api/pos-payment-methods/save", validateJson(PosPaymentMethodSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
+    try { return context.json({ data: savePosPaymentMethod(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
+  })
+    .post("/api/pos-clearings", validateJson(PosClearingSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: createPosClearing(client.db, parsed.data) }, 201); } catch (error) { return errorResponse(context, error); }
-  });
-  api.post("/api/pos-clearings/:id/generate-journal", (context) => {
+  })
+    .post("/api/pos-clearings/:id/generate-journal", (context) => {
     try { return context.json({ data: generatePosJournal(client.db, context.req.param("id")) }); } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.get("/api/pbf-invoices", (context) => context.json({ data: listPbfInvoices(client.db) }));
-  api.post("/api/pbf-invoices", async (context) => {
-    const parsed = PbfInvoiceSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .get("/api/pbf-invoices", (context) => context.json({ data: listPbfInvoices(client.db) }))
+    .post("/api/pbf-invoices", validateJson(PbfInvoiceSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: createPbfInvoice(client.db, parsed.data) }, 201); } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.get("/api/consignment/items", (context) => context.json({ data: listConsignmentItems(client.db) }));
-  api.post("/api/consignment/vendors", async (context) => {
-    const parsed = ConsignmentVendorSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .get("/api/consignment/items", (context) => context.json({ data: listConsignmentItems(client.db) }))
+    .post("/api/consignment/vendors", validateJson(ConsignmentVendorSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: createConsignmentVendor(client.db, parsed.data) }, 201); } catch (error) { return errorResponse(context, error); }
-  });
-  api.post("/api/consignment/items", async (context) => {
-    const parsed = ConsignmentItemSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+  })
+    .post("/api/consignment/items", validateJson(ConsignmentItemSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: createConsignmentItem(client.db, parsed.data) }, 201); } catch (error) { return errorResponse(context, error); }
-  });
-  api.post("/api/consignment/settlements", async (context) => {
-    const parsed = ConsignmentSettlementSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+  })
+    .post("/api/consignment/settlements", validateJson(ConsignmentSettlementSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: settleConsignment(client.db, parsed.data) }, 201); } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.get("/api/cash-bank/transfers", (context) => context.json({ data: listCashBankTransfers(client.db) }));
-  api.get("/api/cash-bank/summary", (context) => context.json({ data: getCashBankSummary(client.db) }));
-  api.post("/api/cash-bank/transfers", async (context) => {
-    const parsed = CashBankTransferSchema.safeParse(await context.req.json());
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    .get("/api/cash-bank/transfers", (context) => context.json({ data: listCashBankTransfers(client.db) }))
+    .get("/api/cash-bank/summary", (context) => context.json({ data: getCashBankSummary(client.db) }))
+    .post("/api/cash-bank/transfers", validateJson(CashBankTransferSchema), async (context) => {
+    const parsed = { data: context.req.valid("json") };
     try { return context.json({ data: createCashBankTransfer(client.db, parsed.data) }, 201); } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.get("/api/bank-recon", (context) => {
-    const bankAccountId = context.req.query("bankAccountId");
-    if (!bankAccountId) return context.json({ error: "bankAccountId wajib diisi" }, 400);
+    .get("/api/bank-recon", validateQuery(BankReconQuerySchema), (context) => {
+    const bankAccountId = context.req.valid("query").bankAccountId;
     try { return context.json({ data: getReconData(client.db, bankAccountId) }); } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.post("/api/bank-recon/import", async (context) => {
+    .post("/api/bank-recon/import", validateJson(BankReconImportRequestSchema), async (context) => {
     try {
-      const body = await context.req.json() as { bankAccountId?: string; csv?: string; rows?: unknown };
-      if (!body.bankAccountId) return context.json({ error: "bankAccountId wajib diisi" }, 400);
+      const body = context.req.valid("json");
       const result = typeof body.csv === "string"
         ? importBankStatementCsv(client.db, body.bankAccountId, body.csv)
-        : importBankStatements(client.db, { bankAccountId: body.bankAccountId, rows: body.rows as never });
+        : importBankStatements(client.db, body);
       return context.json({ data: result }, 201);
     } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.post("/api/bank-recon/auto-match", async (context) => {
+    .post("/api/bank-recon/auto-match", validateJson(z.object({ bankAccountId: z.string().min(1) })), async (context) => {
     try {
-      const body = await context.req.json() as { bankAccountId?: string };
-      if (!body.bankAccountId) return context.json({ error: "bankAccountId wajib diisi" }, 400);
+      const body = context.req.valid("json");
       return context.json({ data: autoMatch(client.db, body.bankAccountId) });
     } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  api.post("/api/bank-recon/matches", async (context) => {
-    try { return context.json({ data: manualMatch(client.db, await context.req.json()) }, 201); } catch (error) { return errorResponse(context, error); }
-  });
+    .post("/api/bank-recon/matches", validateJson(BankReconMatchSchema), async (context) => {
+    try { return context.json({ data: manualMatch(client.db, context.req.valid("json")) }, 201); } catch (error) { return errorResponse(context, error); }
+  })
 
-  api.delete("/api/bank-recon/matches/:id", (context) => {
+    .delete("/api/bank-recon/matches/:id", (context) => {
     try { return context.json({ data: removeMatch(client.db, context.req.param("id")) }); } catch (error) { return errorResponse(context, error); }
-  });
+  })
 
-  function readPeriod(context: Context, startKeys: string[] = ["startDate"], endKeys: string[] = ["endDate"]) {
-    const startDate = startKeys.map((key) => context.req.query(key)).find(Boolean);
-    const endDate = endKeys.map((key) => context.req.query(key)).find(Boolean);
-    return ReportPeriodSchema.safeParse({ startDate, endDate });
-  }
-
-  api.get("/api/reports/income-statement", (context) => {
+    .get("/api/reports/income-statement", validateQuery(ReportQuerySchema), (context) => {
     const period = readPeriod(context, ["periodStart", "startDate"], ["periodEnd", "endDate"]);
     if (!period.success) return context.json({ error: period.error.flatten() }, 400);
     const compareStart = context.req.query("compareStartDate") ?? context.req.query("comparePeriodStart");
@@ -342,29 +383,23 @@ export function createApiApp(client: SqliteClient) {
     const parsed = IncomeStatementQuerySchema.safeParse({ period: period.data, comparePeriod: comparePeriod?.data });
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
     return context.json({ data: getIncomeStatement(client.db, parsed.data) });
-  });
+  })
 
-  api.get("/api/reports/balance-sheet", (context) => {
+    .get("/api/reports/balance-sheet", validateQuery(ReportQuerySchema), (context) => {
     const parsed = BalanceSheetQuerySchema.safeParse({ asOfDate: context.req.query("asOfDate") });
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
     return context.json({ data: getBalanceSheet(client.db, parsed.data.asOfDate) });
-  });
+  })
 
-  api.get("/api/reports/trial-balance", (context) => {
+    .get("/api/reports/trial-balance", validateQuery(ReportQuerySchema), (context) => {
     const parsed = TrialBalanceQuerySchema.safeParse({ startDate: context.req.query("startDate"), endDate: context.req.query("endDate") });
     if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
     return context.json({ data: getTrialBalance(client.db, parsed.data) });
-  });
+  })
+    .get("/api/reports/accounts/:id/journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler)
+    .get("/api/reports/account-journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler);
 
-  const drillDownHandler = (context: Context) => {
-    const accountId = context.req.param("id") ?? context.req.query("accountId");
-    const period = readPeriod(context);
-    const parsed = AccountJournalDrillDownQuerySchema.safeParse({ accountId, period: period.success ? period.data : undefined });
-    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
-    try { return context.json({ data: getAccountJournalDrillDown(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
-  };
-  api.get("/api/reports/accounts/:id/journal-drill-down", drillDownHandler);
-  api.get("/api/reports/account-journal-drill-down", drillDownHandler);
-
-  return api;
+  return typedApi;
 }
+
+export type ApiApp = ReturnType<typeof createApiApp>;
