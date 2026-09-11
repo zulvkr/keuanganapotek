@@ -97,6 +97,6 @@ KeuanganApotek/
 - [x] Modul 7: Rekonsiliasi Bank Dual-Pane Split View & Algoritma *Auto-Match*.
 
 ### Fase 4: Laporan Keuangan Dinamis, Drill-Down & Finalisasi (Minggu 7-8)
-- [ ] Modul 8: Laporan Laba Rugi Komparatif, Neraca, Neraca Saldo.
-- [ ] Implementasi Slide-Over Drawer untuk drill-down jurnal pembentuk angka laporan.
+- [x] Modul 8: Laporan Laba Rugi Komparatif, Neraca, Neraca Saldo.
+- [x] Implementasi Slide-Over Drawer untuk drill-down jurnal pembentuk angka laporan.
 - [ ] Pengujian performa data grid (> 5.000 baris) dan pengujian audit trail pembukuan.

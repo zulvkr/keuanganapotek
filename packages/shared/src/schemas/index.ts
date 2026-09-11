@@ -159,6 +159,30 @@ export const BankReconMatchSchema = z.object({
   journalLineId: z.string().min(1),
 });
 
+export const ReportPeriodSchema = z.object({
+  startDate: IsoDateSchema,
+  endDate: IsoDateSchema,
+}).refine((period) => period.startDate <= period.endDate, {
+  message: "Rentang tanggal laporan tidak valid",
+  path: ["endDate"],
+});
+
+export const IncomeStatementQuerySchema = z.object({
+  period: ReportPeriodSchema,
+  comparePeriod: ReportPeriodSchema.optional(),
+});
+
+export const BalanceSheetQuerySchema = z.object({
+  asOfDate: IsoDateSchema,
+});
+
+export const TrialBalanceQuerySchema = ReportPeriodSchema;
+
+export const AccountJournalDrillDownQuerySchema = z.object({
+  accountId: z.string().min(1),
+  period: ReportPeriodSchema,
+});
+
 export type Account = z.infer<typeof AccountSchema>;
 export type JournalLine = z.infer<typeof JournalLineSchema>;
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
@@ -173,3 +197,8 @@ export type BankStatementImport = z.infer<typeof BankStatementImportSchema>;
 export type BankReconMatch = z.infer<typeof BankReconMatchSchema>;
 export type OpeningBalanceLine = z.infer<typeof OpeningBalanceLineSchema>;
 export type SaveOpeningBalances = z.infer<typeof SaveOpeningBalancesSchema>;
+export type ReportPeriod = z.infer<typeof ReportPeriodSchema>;
+export type IncomeStatementQuery = z.infer<typeof IncomeStatementQuerySchema>;
+export type BalanceSheetQuery = z.infer<typeof BalanceSheetQuerySchema>;
+export type TrialBalanceQuery = z.infer<typeof TrialBalanceQuerySchema>;
+export type AccountJournalDrillDownQuery = z.infer<typeof AccountJournalDrillDownQuerySchema>;

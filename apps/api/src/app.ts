@@ -15,6 +15,11 @@ import {
   ConsignmentVendorSchema,
   PbfInvoiceSchema,
   PosClearingSchema,
+  AccountJournalDrillDownQuerySchema,
+  BalanceSheetQuerySchema,
+  IncomeStatementQuerySchema,
+  ReportPeriodSchema,
+  TrialBalanceQuerySchema,
 } from "@keuangan-apotek/shared";
 import type { SourceModule } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "./db/client.js";
@@ -50,6 +55,7 @@ import {
   settleConsignment,
 } from "./services/operational.service.js";
 import { autoMatch, getReconData, importBankStatementCsv, importBankStatements, manualMatch, removeMatch } from "./services/recon.service.js";
+import { getAccountJournalDrillDown, getBalanceSheet, getIncomeStatement, getTrialBalance } from "./services/reports.service.js";
 
 export const app = new Hono();
 
@@ -275,6 +281,46 @@ export function createApiApp(client: SqliteClient) {
   api.delete("/api/bank-recon/matches/:id", (context) => {
     try { return context.json({ data: removeMatch(client.db, context.req.param("id")) }); } catch (error) { return errorResponse(context, error); }
   });
+
+  function readPeriod(context: Context, startKeys: string[] = ["startDate"], endKeys: string[] = ["endDate"]) {
+    const startDate = startKeys.map((key) => context.req.query(key)).find(Boolean);
+    const endDate = endKeys.map((key) => context.req.query(key)).find(Boolean);
+    return ReportPeriodSchema.safeParse({ startDate, endDate });
+  }
+
+  api.get("/api/reports/income-statement", (context) => {
+    const period = readPeriod(context, ["periodStart", "startDate"], ["periodEnd", "endDate"]);
+    if (!period.success) return context.json({ error: period.error.flatten() }, 400);
+    const compareStart = context.req.query("compareStartDate") ?? context.req.query("comparePeriodStart");
+    const compareEnd = context.req.query("compareEndDate") ?? context.req.query("comparePeriodEnd");
+    const comparePeriod = compareStart || compareEnd ? ReportPeriodSchema.safeParse({ startDate: compareStart, endDate: compareEnd }) : undefined;
+    if (comparePeriod && !comparePeriod.success) return context.json({ error: comparePeriod.error.flatten() }, 400);
+    const parsed = IncomeStatementQuerySchema.safeParse({ period: period.data, comparePeriod: comparePeriod?.data });
+    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    return context.json({ data: getIncomeStatement(client.db, parsed.data) });
+  });
+
+  api.get("/api/reports/balance-sheet", (context) => {
+    const parsed = BalanceSheetQuerySchema.safeParse({ asOfDate: context.req.query("asOfDate") });
+    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    return context.json({ data: getBalanceSheet(client.db, parsed.data.asOfDate) });
+  });
+
+  api.get("/api/reports/trial-balance", (context) => {
+    const parsed = TrialBalanceQuerySchema.safeParse({ startDate: context.req.query("startDate"), endDate: context.req.query("endDate") });
+    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    return context.json({ data: getTrialBalance(client.db, parsed.data) });
+  });
+
+  const drillDownHandler = (context: Context) => {
+    const accountId = context.req.param("id") ?? context.req.query("accountId");
+    const period = readPeriod(context);
+    const parsed = AccountJournalDrillDownQuerySchema.safeParse({ accountId, period: period.success ? period.data : undefined });
+    if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
+    try { return context.json({ data: getAccountJournalDrillDown(client.db, parsed.data) }); } catch (error) { return errorResponse(context, error); }
+  };
+  api.get("/api/reports/accounts/:id/journal-drill-down", drillDownHandler);
+  api.get("/api/reports/account-journal-drill-down", drillDownHandler);
 
   return api;
 }
