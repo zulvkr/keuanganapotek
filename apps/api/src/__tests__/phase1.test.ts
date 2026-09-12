@@ -128,8 +128,8 @@ describe("Phase 1 database and opening balance flow", () => {
     expect(payload.data.find((row) => row.accountId === "coa-4101")?.runningBalance).toBe(50_000_000);
   });
 
-  it("allows only one opening-balance cut-off date", async () => {
-    const { api } = setup();
+  it("moves an unlocked opening-balance draft when its cut-off date changes", async () => {
+    const { api, client } = setup();
     const lines = [
       { accountId: "coa-1101", debitAmount: "1000000", creditAmount: "0" },
       { accountId: "coa-3101", debitAmount: "0", creditAmount: "1000000" },
@@ -144,6 +144,19 @@ describe("Phase 1 database and opening balance flow", () => {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ cutoffDate: "2026-02-01", lines }),
     });
-    expect(second.status).toBe(409);
+    expect(second.status).toBe(200);
+    expect(client.db.select().from(openingBalances).all().every((row) => row.cutoffDate === "2026-02-01")).toBe(true);
+
+    const locked = await api.request("http://localhost/api/opening-balances/lock", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-02-01" }),
+    });
+    expect(locked.status).toBe(200);
+
+    const rejected = await api.request("http://localhost/api/opening-balances/save", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-03-01", lines }),
+    });
+    expect(rejected.status).toBe(409);
   });
 });
