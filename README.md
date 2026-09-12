@@ -74,3 +74,22 @@ KeuanganApotek/
 
 Silakan eksplorasi folder `docs/` untuk membaca rincian spesifikasi lengkap.
 
+## 🚀 Menjalankan Banyak Dev Instance
+
+`pnpm dev` otomatis memilih port kosong untuk API dan web, sehingga beberapa worktree dapat dijalankan bersamaan pada mesin yang sama. URL yang terpilih akan dicetak di terminal.
+
+Untuk port yang konsisten pada worktree tertentu, set `API_PORT` dan `WEB_PORT` sebelum menjalankan perintah. `VITE_API_URL` akan mengikuti port API secara otomatis:
+
+```powershell
+$env:API_PORT = "3101"
+$env:WEB_PORT = "5274"
+pnpm dev
+```
+
+Variabel yang tersedia:
+
+- `API_PORT`: port server API, default mulai dari `3000` dan otomatis mencari port berikutnya yang kosong.
+- `WEB_PORT`: port Vite, default mulai dari `5173` dan otomatis mencari port berikutnya yang kosong.
+- `VITE_API_URL`: URL API eksplisit jika API dijalankan di host/port berbeda.
+- `DATABASE_PATH`: lokasi database SQLite per instance/worktree jika diperlukan.
+

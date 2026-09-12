@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "pnpm -r run build",
-    "dev": "pnpm --parallel --filter @keuangan-apotek/api --filter @keuangan-apotek/web run dev",
+    "dev": "node scripts/dev.mjs",
     "db:migrate": "pnpm --filter @keuangan-apotek/api db:migrate",
     "db:push": "pnpm --filter @keuangan-apotek/api db:migrate",
     "db:seed": "pnpm --filter @keuangan-apotek/api db:seed",

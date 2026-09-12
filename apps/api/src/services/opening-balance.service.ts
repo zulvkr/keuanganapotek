@@ -151,7 +151,21 @@ export async function saveOpeningBalances(db: Db, input: SaveOpeningBalances): P
   assertOpeningBalancePostingAccounts(db, rows);
 
   db.transaction((tx) => {
-    assertOpeningBalanceCutoff(tx as unknown as Db, input.cutoffDate);
+    const otherCutoff = tx.select({ cutoffDate: openingBalances.cutoffDate })
+      .from(openingBalances)
+      .where(ne(openingBalances.cutoffDate, input.cutoffDate))
+      .groupBy(openingBalances.cutoffDate)
+      .get();
+    if (otherCutoff) {
+      const lockedOther = tx.select({ cutoffDate: openingBalances.cutoffDate })
+        .from(openingBalances)
+        .where(and(ne(openingBalances.cutoffDate, input.cutoffDate), eq(openingBalances.isLocked, true)))
+        .get();
+      if (lockedOther) throw new Error(`Saldo awal pada tanggal ${lockedOther.cutoffDate} sudah dikunci dan tidak dapat diganti.`);
+      // An unlocked draft is still editable: changing the date moves the
+      // draft instead of treating the date as a second opening-balance set.
+      tx.delete(openingBalances).where(ne(openingBalances.cutoffDate, input.cutoffDate)).run();
+    }
     const locked = tx.select({ id: openingBalances.id }).from(openingBalances)
       .where(and(eq(openingBalances.cutoffDate, input.cutoffDate), eq(openingBalances.isLocked, true))).get();
     if (locked) throw new Error("Saldo awal pada tanggal cut-off sudah dikunci");
