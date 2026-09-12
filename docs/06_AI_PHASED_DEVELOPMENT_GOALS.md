@@ -1,13 +1,14 @@
 # Panduan & Sasaran Pengembangan AI Berkelanjutan (AI Phased Development Playbook)
+
 ## Sistem Keuangan Apotek (Full-Stack TypeScript, SQLite WAL & React)
 
 ---
 
 ## 📌 1. Pendahuluan & Sasaran Utama AI (AI Mission Statement)
 
-Dokumen ini adalah **panduan eksekusi master jangka panjang (*Long-Term AI Execution Blueprint*)** yang dirancang agar asisten AI (maupun pengembang manusia) dapat melanjutkan pengembangan aplikasi **Sistem Keuangan Apotek** secara bertahap (*in phases*), konsisten, bebas regresi, dan terukur dari awal hingga tuntas.
+Dokumen ini adalah **panduan eksekusi master jangka panjang (_Long-Term AI Execution Blueprint_)** yang dirancang agar asisten AI (maupun pengembang manusia) dapat melanjutkan pengembangan aplikasi **Sistem Keuangan Apotek** secara bertahap (_in phases_), konsisten, bebas regresi, dan terukur dari awal hingga tuntas.
 
-Setiap fase memiliki **tujuan spesifik, berkas target, langkah kerja teknis, kriteria verifikasi mandiri (*Self-Verification Checklist*), dan Definisi Selesai (*Definition of Done*)**.
+Setiap fase memiliki **tujuan spesifik, berkas target, langkah kerja teknis, kriteria verifikasi mandiri (_Self-Verification Checklist_), dan Definisi Selesai (_Definition of Done_)**.
 
 ---
 
@@ -30,7 +31,7 @@ Setiap sesi AI yang bekerja pada repositori ini **wajib mematuhi 6 prinsip mutla
 5. **Konfigurasi SQLite yang Tangguh:**
    - SQLite wajib berjalan dalam mode `WAL`, `foreign_keys = ON`, `busy_timeout = 5000`, dan `synchronous = NORMAL`.
 6. **Protokol Resume Sesi AI & Kompatibilitas Multi-Platform:**
-   - Proyek berjalan di lingkungan pengembangan campuran (*cross-platform / mixed dev environment*). Pastikan seluruh script, path, dan tooling bersifat portabel dan OS-agnostik.
+   - Proyek berjalan di lingkungan pengembangan campuran (_cross-platform / mixed dev environment_). Pastikan seluruh script, path, dan tooling bersifat portabel dan OS-agnostik.
    - Saat memulai sesi baru, AI wajib memeriksa seksi **4. Matriks Kemajuan & Status Fase** untuk menentukan tugas berikutnya, membaca dokumen spesifikasi terkait di folder `docs/`, dan menjalankan verifikasi sebelum berpindah ke tugas baru.
 
 ---
@@ -109,16 +110,16 @@ KeuanganApotek/
 
 > **Instruksi untuk AI:** Perbarui status di bawah ini (`[ ]` menjadi `[x]`) setiap kali sebuah fase atau tugas selesai diuji.
 
-| Fase | Nama Fase | Fokus Utama | Status |
-| :---: | :--- | :--- | :---: |
-| **0** | **Monorepo Foundation & Tooling Setup** | Workspace pnpm, TypeScript, Tailwind, Drizzle, tRPC/Hono scaffold | `[x] Selesai diverifikasi (Node 22)` |
-| **1** | **Database Schema, Master CoA & Opening Balance** | SQLite WAL, Drizzle migration, Tree-Grid CoA, Auto-Balancing Equity | `[x] Selesai diverifikasi (schema, seed, API, UI, tests)` |
-| **2** | **Double-Entry Engine & General Journal Grid** | Service Buku Besar, Grid Jurnal Umum, Sticky Balance Bar, Hotkeys | `[x] Selesai diverifikasi (ledger service, API, grid, unit/integration/E2E tests)` |
-| **3** | **Modul Transaksi Operasional Apotek** | POS Clearing + HPP, Faktur PBF (Excel paste), Konsinyasi, Kas & Bank | `[x] Selesai diverifikasi (schema, services, API, UI, integration tests)` |
-| **4** | **Rekonsiliasi Bank Dual-Pane** | Split View, Algoritma Auto-Match tanggal/nominal, Matching manual | `[x] Selesai diverifikasi (schema, CSV/TSV import, auto-match, manual matching, dual-pane UI, API/integration tests)` |
-| **5** | **Laporan Keuangan Dinamis & Drill-Down Drawer** | Laba Rugi Komparatif, Neraca, Neraca Saldo, Drawer rincian jurnal | `[x] Selesai diverifikasi (reports engine, API, UI, integration/E2E tests)` |
-| **6** | **Pengujian Beban, Audit Trail & Penguncian Periode** | Stress test grid >5.000 baris, Lock Period, SQLite backup WAL | `[x] Selesai diverifikasi (virtualizer 5.000/2.000 baris, audit trail, lock 403, backup integrity, E2E flow)` |
-| **7** | **Fitur Ekstensi Lanjutan (Future Scope)** | Ekspor Pajak (e-Faktur), Webhook POS Integration, Multi-Cabang | `[ ] Belum Mulai` |
+| Fase  | Nama Fase                                             | Fokus Utama                                                          |                                                        Status                                                         |
+| :---: | :---------------------------------------------------- | :------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------: |
+| **0** | **Monorepo Foundation & Tooling Setup**               | Workspace pnpm, TypeScript, Tailwind, Drizzle, tRPC/Hono scaffold    |                                         `[x] Selesai diverifikasi (Node 22)`                                          |
+| **1** | **Database Schema, Master CoA & Opening Balance**     | SQLite WAL, Drizzle migration, Tree-Grid CoA, Auto-Balancing Equity  |                               `[x] Selesai diverifikasi (schema, seed, API, UI, tests)`                               |
+| **2** | **Double-Entry Engine & General Journal Grid**        | Service Buku Besar, Grid Jurnal Umum, Sticky Balance Bar, Hotkeys    |                  `[x] Selesai diverifikasi (ledger service, API, grid, unit/integration/E2E tests)`                   |
+| **3** | **Modul Transaksi Operasional Apotek**                | POS Clearing + HPP, Faktur PBF (Excel paste), Konsinyasi, Kas & Bank |                       `[x] Selesai diverifikasi (schema, services, API, UI, integration tests)`                       |
+| **4** | **Rekonsiliasi Bank Dual-Pane**                       | Split View, Algoritma Auto-Match tanggal/nominal, Matching manual    | `[x] Selesai diverifikasi (schema, CSV/TSV import, auto-match, manual matching, dual-pane UI, API/integration tests)` |
+| **5** | **Laporan Keuangan Dinamis & Drill-Down Drawer**      | Laba Rugi Komparatif, Neraca, Neraca Saldo, Drawer rincian jurnal    |                      `[x] Selesai diverifikasi (reports engine, API, UI, integration/E2E tests)`                      |
+| **6** | **Pengujian Beban, Audit Trail & Penguncian Periode** | Stress test grid >5.000 baris, Lock Period, SQLite backup WAL        |     `[x] Selesai diverifikasi (virtualizer 5.000/2.000 baris, audit trail, lock 403, backup integrity, E2E flow)`     |
+| **7** | **Fitur Ekstensi Lanjutan (Future Scope)**            | Ekspor Pajak (e-Faktur), Webhook POS Integration, Multi-Cabang       |                                                   `[ ] Belum Mulai`                                                   |
 
 ---
 
@@ -127,9 +128,11 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 0: Monorepo Foundation & Tooling Setup
+
 **Tujuan:** Membangun fondasi monorepo `pnpm workspace`, paket shared types, template aplikasi frontend Vite + React + Tailwind, dan server backend dengan SQLite.
 
 #### 📝 Tugas Spesifik AI:
+
 1. **Inisialisasi Monorepo:**
    - Buat `package.json` root, `pnpm-workspace.yaml`, dan `tsconfig.base.json`.
    - Setup folder `apps/api`, `apps/web`, dan `packages/shared`.
@@ -147,6 +150,7 @@ KeuanganApotek/
    - Setup Playwright di `apps/web` untuk E2E testing data grid dan interaksi keyboard.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
+
 - Jalankan `pnpm install` tanpa error resolusi paket.
 - Jalankan `pnpm --filter shared build` dan pastikan shared types berhasil diimpor oleh `api` dan `web`.
 - Server API dapat menyala dan merespons ping/health check.
@@ -156,9 +160,11 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 1: Database Schema, Master CoA & Opening Balance Engine
+
 **Tujuan:** Mengimplementasikan skema database akuntansi apotek, seeding master akun standar, dan antarmuka pohon akun (CoA) dengan dual mode (Struktur vs Saldo Awal).
 
 #### 📝 Tugas Spesifik AI:
+
 1. **Implementasi Drizzle Schema SQLite (`apps/api/src/db/schema/`):**
    - Buat skema `accounts` (kode, nama, klasifikasi, saldo_normal, level, parent_id).
    - Buat skema `opening_balances` (cutoff_date, account_id, debit_amount, credit_amount, is_locked).
@@ -168,14 +174,15 @@ KeuanganApotek/
 3. **API Endpoints (CoA & Opening Balance Router):**
    - Query: `getAccountsTree`, `getOpeningBalances(cutoffDate)`.
    - Mutation: `upsertAccount`, `deleteAccount`, `saveOpeningBalances`, `lockOpeningBalance`.
-   - Service: Algoritma *Auto-Balancing Equity* (menghitung selisih Total Debit - Total Kredit dan otomatis mengalokasikan ke `3101 - Ekuitas Saldo Awal`).
+   - Service: Algoritma _Auto-Balancing Equity_ (menghitung selisih Total Debit - Total Kredit dan otomatis mengalokasikan ke `3101 - Ekuitas Saldo Awal`).
 4. **Frontend UI: Modul 1 (Bagan Akun & Saldo Awal):**
    - Halaman `CoAPage.tsx` dengan toggle: **Mode Struktur Akun** vs **Mode Input Saldo Awal**.
    - Tree-Grid dengan visual auto-indentation berdasarkan level akun.
-   - Bottom Sticky Balance Bar (Menampilkan Total Debit, Total Kredit, Selisih, dan tombol *Alokasikan Selisih ke Ekuitas*).
-   - Tombol Kunci Saldo Awal (*Lock Period*) yang memicu pembuatan Jurnal Pembuka otomatis.
+   - Bottom Sticky Balance Bar (Menampilkan Total Debit, Total Kredit, Selisih, dan tombol _Alokasikan Selisih ke Ekuitas_).
+   - Tombol Kunci Saldo Awal (_Lock Period_) yang memicu pembuatan Jurnal Pembuka otomatis.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
+
 - Migrasi database berjalan sukses (`pnpm db:push` / `pnpm db:migrate`).
 - Seeding mengisi minimal 30 akun standar apotek.
 - Masukkan saldo awal yang tidak seimbang di UI $\rightarrow$ Sticky Balance Bar berubah warna merah $\rightarrow$ Klik "Auto-Balancing" $\rightarrow$ Saldo otomatis seimbang dan tombol simpan menjadi aktif.
@@ -184,9 +191,11 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 2: Core Double-Entry Engine & General Journal Grid
+
 **Tujuan:** Membangun mesin jurnal umum berpasangan dengan validasi keseimbangan multi-baris dan interaksi keyboard super cepat.
 
 #### 📝 Tugas Spesifik AI:
+
 1. **Core Accounting Service (`apps/api/src/services/ledger.service.ts`):**
    - Fungsi `createJournalEntry({ entryDate, referenceNo, memo, sourceModule, lines })`.
    - Enforce constraint ACID: $\sum \text{debit} = \sum \text{credit}$ di dalam transaksi database SQLite (`db.transaction()`).
@@ -200,6 +209,7 @@ KeuanganApotek/
    - Live Sticky Balance Bar di bagian bawah layar dengan tombol "Posting Jurnal" yang dinonaktifkan jika out-of-balance.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
+
 - Uji coba posting jurnal dengan Debit Rp 1.000.000 dan Kredit Rp 900.000 $\rightarrow$ Sistem API wajib menolak dengan error validation Zod / Business Rule.
 - Posting jurnal seimbang $\rightarrow$ Data tersimpan di `journals` dan `journal_lines` dengan foreign key valid.
 - Verifikasi format rupiah dan monospaced angka (`tabular-nums`) di UI.
@@ -207,33 +217,39 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 3: Modul Transaksi Operasional Apotek (Operational Modules)
+
 **Tujuan:** Mengimplementasikan 4 modul transaksi spesifik apotek yang otomatis membentuk jurnal tanpa input debit-kredit manual.
 
 #### 📝 Tugas Spesifik AI:
 
 #### 3.1 Modul POS Clearing & Pengakuan HPP Harian (`POSClearingPage.tsx`)
+
 - Tabel rekapitulasi harian per tanggal: Total Omzet POS, Penerimaan Tunai, QRIS/EDC, Selisih Kas Fisik, dan Nilai Modal Obat (HPP).
-- Tombol 1-klik *"Generate Jurnal"*:
+- Tombol 1-klik _"Generate Jurnal"_:
   - Debit 1101 (Kas Toko), Debit 1120 (Kliring QRIS/EDC), Debit 6106 / Kredit 4900 (Selisih Kasir), Kredit 4101/4102 (Penjualan).
   - Debit 5101 (HPP), Kredit 1301 (Persediaan Obat).
 
 #### 3.2 Modul Faktur Pembelian PBF & Utang Usaha (`PBFInvoicesPage.tsx`)
+
 - Data grid batch entri faktur PBF: Tgl Faktur, Tgl Jatuh Tempo, Nama Distributor, No. Faktur, DPP, PPN 11%, Total Tagihan, Termin Bayar.
 - Fitur **Paste from Excel (`Ctrl + V`)**: Parser clipboard multi-baris tab-separated values (TSV) langsung mengisi kolom grid.
 - Deteksi duplikasi nomor faktur per nama PBF secara instan di UI dan backend unique constraint.
 - Otomatisasi Jurnal: Debit 1301 (Persediaan), Debit 1400 (PPN Masukan), Kredit 2100 (Utang Usaha PBF).
 
 #### 3.3 Modul Konsinyasi & Bagi Hasil (`ConsignmentPage.tsx`)
+
 - Tabel barang titip jual (suplemen herbal, madu, alkes): Nama Vendor, Nama Produk, Qty Terjual, Harga Bagi Hasil, Total Utang.
-- Multi-select checkbox dengan **Floating Action Bar**: *"Selesaikan Tagihan Terpilih (X Item) — Total Rp Y"*.
+- Multi-select checkbox dengan **Floating Action Bar**: _"Selesaikan Tagihan Terpilih (X Item) — Total Rp Y"_.
 - Eksekusi pembayaran menghasilkan jurnal: Debit 2110 (Utang Konsinyasi), Kredit Kas/Bank.
 
 #### 3.4 Modul Kas, Bank & Mutasi Rekening (`CashBankPage.tsx`)
+
 - Kartu ringkasan saldo: Kas Toko, Bank BCA, Bank Mandiri.
 - Tabel mutasi: Setoran Kasir ke Bank, Transfer Antar Bank, Pembebanan Biaya Admin (misal Rp 2.500 BI-FAST).
 - Otomatisasi mutasi ganda: Debit Bank Tujuan, Debit 6201 (Biaya Admin), Kredit Akun Sumber.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
+
 - Copy 5 baris data faktur dari Excel/Notepad $\rightarrow$ Tekan `Ctrl + V` di grid PBF $\rightarrow$ 5 baris terisi otomatis dengan kalkulasi DPP & PPN 11% yang akurat.
 - Rekap POS dengan selisih kas fisik minus Rp 5.000 $\rightarrow$ Klik Generate Jurnal $\rightarrow$ Jurnal terbentuk dengan akun `6106 - Beban Selisih Kasir Minus` tercatat Rp 5.000.
 - Eksekusi pembayaran konsinyasi multi-select $\rightarrow$ Status item berubah menjadi `PAID` dan jurnal kas keluar terbentuk.
@@ -241,9 +257,11 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 4: Rekonsiliasi Bank Dual-Pane & Algoritma Auto-Match
+
 **Tujuan:** Membangun modul pencocokan mutasi rekening koran bank dengan pencatatan pembukuan internal secara visual berdampingan.
 
 #### 📝 Tugas Spesifik AI:
+
 1. **Schema & Import Bank Statement:**
    - Tabel `bank_statements` dan `bank_recon_matches`.
    - Parser impor mutasi bank (format CSV / Excel rekening koran BCA & Mandiri).
@@ -259,6 +277,7 @@ KeuanganApotek/
    - Status bar keselarasan: Total Bank, Total Sistem, Selisih Belum Cocok.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
+
 - Upload file CSV rekening koran mock $\rightarrow$ Data masuk ke panel kanan.
 - Klik "Auto-Match" $\rightarrow$ Baris dengan nominal dan tanggal sesuai otomatis berstatus `MATCHED` dan diberi tanda centang hijau.
 - Manual link matching berfungsi untuk transaksi dengan selisih tanggal > 1 hari.
@@ -266,9 +285,11 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 5: Laporan Keuangan Dinamis & Drill-Down Drawer
-**Tujuan:** Menghasilkan laporan Laba Rugi Komparatif, Neraca, dan Neraca Saldo real-time dengan fitur inspeksi transaksi asal (*drill-down*).
+
+**Tujuan:** Menghasilkan laporan Laba Rugi Komparatif, Neraca, dan Neraca Saldo real-time dengan fitur inspeksi transaksi asal (_drill-down_).
 
 #### 📝 Tugas Spesifik AI:
+
 1. **Financial Reporting Calculation Engine (`reports.service.ts`):**
    - **Laba Rugi Komparatif:** Pendapatan Penjualan - HPP Obat = Laba Kotor; Laba Kotor - Beban Operasional = Laba Bersih Usaha (dengan perbandingan Bulan Ini vs Bulan Lalu dan persentase pertumbuhan).
    - **Neraca (Balance Sheet):** Total Aset = Total Kewajiban + Total Ekuitas (termasuk Laba Periode Berjalan).
@@ -280,10 +301,11 @@ KeuanganApotek/
    - `getAccountJournalDrillDown({ accountId, startDate, endDate })`.
 3. **Frontend UI: Modul 8 (`ReportsPage.tsx` & `DrillDownDrawer.tsx`):**
    - Tab navigasi Laba Rugi, Neraca, Neraca Saldo.
-   - Sel nominal angka berjarak tetap (`tabular-nums`) dan dapat diklik (*clickable*).
+   - Sel nominal angka berjarak tetap (`tabular-nums`) dan dapat diklik (_clickable_).
    - **Slide-over Drawer:** Saat nominal diklik, drawer muncul dari kanan menampilkan daftar jurnal lengkap yang menyusun angka tersebut.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
+
 - Verifikasi persamaan dasar akuntansi pada Neraca:
   $$\text{Total Aset} == \text{Total Kewajiban} + \text{Total Ekuitas}$$
 - Klik baris nominal "HPP Obat Resep" pada Laba Rugi $\rightarrow$ Drawer membuka dan menampilkan daftar jurnal POS Clearing dan jurnal penyesuaian terkait.
@@ -291,9 +313,11 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 6: Pengujian Beban, Audit Trail & Penguncian Periode (Hardening)
+
 **Tujuan:** Memastikan keandalan sistem pada volume data besar, integritas audit pembukuan, dan kestabilan aplikasi.
 
 #### 📝 Tugas Spesifik AI:
+
 1. **Stress Test Data Grid TanStack:**
    - Buat skrip mock generator 5.000 baris jurnal dan 2.000 baris faktur PBF.
    - Pastikan virtualizer aktif sehingga render time tetap $< 100\text{ ms}$ tanpa lag scroll.
@@ -305,6 +329,7 @@ KeuanganApotek/
    - Uji alur lengkap: Setup Saldo Awal $\rightarrow$ Pembelian Faktur PBF $\rightarrow$ Rekap Penjualan POS & HPP $\rightarrow$ Mutasi Kasir ke Bank $\rightarrow$ Rekonsiliasi Bank $\rightarrow$ Hasil Laporan Laba Rugi & Neraca.
 
 #### 🧪 Kriteria Verifikasi (Self-Verification):
+
 - Uji coba edit data pada periode yang dikunci $\rightarrow$ Ditolak oleh server dengan status HTTP 403 / Forbidden error.
 - Grid merender 5.000 baris dengan responsivitas navigasi keyboard instan.
 - Backup SQLite berjalan dan file `.db` dapat dibuka kembali tanpa data corrupt.
@@ -312,9 +337,11 @@ KeuanganApotek/
 ---
 
 ### 🔹 FASE 7: Fitur Ekstensi Lanjutan (Future Scope Roadmap)
+
 **Tujuan:** Pengembangan jangka panjang untuk integrasi eksternal dan kebutuhan skala multi-outlet.
 
 #### 📝 Area Pengembangan Masa Depan:
+
 1. **Ekspor Pajak Standar Indonesia:**
    - Modul ekspor CSV Faktur Pajak Masukan sesuai format impor DJP e-Faktur.
 2. **Direct POS API Webhook:**
@@ -333,7 +360,7 @@ flowchart TD
     A["1. Orientasi & Status Check"] --> B["2. Baca Spesifikasi Modul"]
     B --> C["3. Eksekusi & Implementasi Kode"]
     C --> D["4. Verifikasi Mandiri & Update Status"]
-    
+
     A -.-> |"Cek Tabel Seksi 4 di 06_AI_PHASED_DEVELOPMENT_GOALS.md"| A
     B -.-> |"Baca docs/01..05 terkait"| B
     C -.-> |"Terapkan aturan Decimal.js, SQLite WAL & Tabular-Nums"| C

@@ -23,11 +23,15 @@ describe("financial math", () => {
       { debit: 0, credit: "600000" },
     ]);
     expect(balanced.difference.isZero()).toBe(true);
-    expect(isBalanced([
-      { debit: "0.1", credit: 0 },
-      { debit: "0.2", credit: "0.3" },
-    ])).toBe(true);
-    expect(sumDebitCredit([{ debit: "500000", credit: "400000" }]).difference.toString()).toBe("100000");
+    expect(
+      isBalanced([
+        { debit: "0.1", credit: 0 },
+        { debit: "0.2", credit: "0.3" },
+      ]),
+    ).toBe(true);
+    expect(sumDebitCredit([{ debit: "500000", credit: "400000" }]).difference.toString()).toBe(
+      "100000",
+    );
   });
 
   it("converts Indonesian rupiah display values to integer sen", () => {

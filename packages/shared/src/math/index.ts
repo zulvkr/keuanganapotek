@@ -48,7 +48,7 @@ export function isBalanced(lines: readonly JournalAmountLine[]): boolean {
 /** Converts a rupiah amount to integer sen after exact Decimal arithmetic. */
 export function rupiahToSen(value: MoneyInput): number {
   const sen = asDecimal(value).times(100);
-  if (!sen.isInteger() || !sen.isFinite() || !sen.isPositive() && !sen.isZero()) {
+  if (!sen.isInteger() || !sen.isFinite() || (!sen.isPositive() && !sen.isZero())) {
     throw new RangeError("Nominal rupiah harus berupa nilai non-negatif dengan maksimal 2 desimal");
   }
 

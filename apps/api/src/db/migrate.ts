@@ -155,11 +155,26 @@ export function runMigrations(sqlite: Database.Database): void {
   sqlite.exec("PRAGMA foreign_keys = ON");
   const migrate = sqlite.transaction(() => {
     for (const statement of migrationStatements) sqlite.exec(statement);
-    const accountColumns = new Set((sqlite.prepare("PRAGMA table_info(accounts)").all() as Array<{ name: string }>).map((column) => column.name));
-    if (!accountColumns.has("is_group")) sqlite.exec("ALTER TABLE accounts ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0");
-    const posColumns = new Set((sqlite.prepare("PRAGMA table_info(pos_clearings)").all() as Array<{ name: string }>).map((column) => column.name));
-    if (!posColumns.has("cash_account_id")) sqlite.exec("ALTER TABLE pos_clearings ADD COLUMN cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT");
-    if (!posColumns.has("non_cash_account_id")) sqlite.exec("ALTER TABLE pos_clearings ADD COLUMN non_cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT");
+    const accountColumns = new Set(
+      (sqlite.prepare("PRAGMA table_info(accounts)").all() as Array<{ name: string }>).map(
+        (column) => column.name,
+      ),
+    );
+    if (!accountColumns.has("is_group"))
+      sqlite.exec("ALTER TABLE accounts ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0");
+    const posColumns = new Set(
+      (sqlite.prepare("PRAGMA table_info(pos_clearings)").all() as Array<{ name: string }>).map(
+        (column) => column.name,
+      ),
+    );
+    if (!posColumns.has("cash_account_id"))
+      sqlite.exec(
+        "ALTER TABLE pos_clearings ADD COLUMN cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT",
+      );
+    if (!posColumns.has("non_cash_account_id"))
+      sqlite.exec(
+        "ALTER TABLE pos_clearings ADD COLUMN non_cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT",
+      );
   });
   migrate();
 }

@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, inArray, lte, like } from "drizzle-orm";
-import { JournalEntrySchema, accountingPeriod, nowIsoInstant, parseRupiahToSen, rupiahToSen, sumDebitCredit } from "@keuangan-apotek/shared";
+import {
+  JournalEntrySchema,
+  accountingPeriod,
+  nowIsoInstant,
+  parseRupiahToSen,
+  rupiahToSen,
+  sumDebitCredit,
+} from "@keuangan-apotek/shared";
 import type { JournalEntry, JournalLine, SourceModule } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "../db/client.js";
 import { accounts, journalLines, journals, openingBalances } from "../db/schema/index.js";
@@ -25,7 +32,9 @@ function amountToSen(value: string | number): number {
   if (typeof value === "number") return rupiahToSen(String(value));
   const normalized = value.trim();
   const thousandGroups = /^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(normalized);
-  return normalized.includes(",") || thousandGroups ? parseRupiahToSen(normalized) : rupiahToSen(normalized);
+  return normalized.includes(",") || thousandGroups
+    ? parseRupiahToSen(normalized)
+    : rupiahToSen(normalized);
 }
 
 function parseEntry(input: JournalEntryInput): JournalEntry {
@@ -38,7 +47,8 @@ function parseEntry(input: JournalEntryInput): JournalEntry {
 
 function assertPeriodOpen(db: Executor, entryDate: string): void {
   assertPeriodUnlocked(db, entryDate);
-  const locked = db.select({ id: openingBalances.id })
+  const locked = db
+    .select({ id: openingBalances.id })
     .from(openingBalances)
     .where(and(gte(openingBalances.cutoffDate, entryDate), eq(openingBalances.isLocked, true)))
     .limit(1)
@@ -55,32 +65,51 @@ function validateAndConvertLines(lines: readonly JournalLine[]) {
   }));
   const totals = sumDebitCredit(converted);
   if (!totals.difference.isZero()) throw new Error("Total debit dan kredit jurnal harus seimbang");
-  if (converted.some((line) => (line.debit > 0 && line.credit > 0) || (line.debit === 0 && line.credit === 0))) {
+  if (
+    converted.some(
+      (line) => (line.debit > 0 && line.credit > 0) || (line.debit === 0 && line.credit === 0),
+    )
+  ) {
     throw new Error("Setiap baris jurnal harus memiliki tepat satu sisi nominal");
   }
   return converted;
 }
 
-function assertAccounts(tx: Executor, lines: readonly ReturnType<typeof validateAndConvertLines>[number][]) {
+function assertAccounts(
+  tx: Executor,
+  lines: readonly ReturnType<typeof validateAndConvertLines>[number][],
+) {
   const ids = [...new Set(lines.map((line) => line.accountId))];
-  const found = tx.select({ id: accounts.id, isActive: accounts.isActive, isGroup: accounts.isGroup }).from(accounts).where(inArray(accounts.id, ids)).all() as Array<{ id: string; isActive: boolean; isGroup: boolean }>;
-  const foundIds = new Set(found.filter((account) => account.isActive).map((account) => account.id));
+  const found = tx
+    .select({ id: accounts.id, isActive: accounts.isActive, isGroup: accounts.isGroup })
+    .from(accounts)
+    .where(inArray(accounts.id, ids))
+    .all() as Array<{ id: string; isActive: boolean; isGroup: boolean }>;
+  const foundIds = new Set(
+    found.filter((account) => account.isActive).map((account) => account.id),
+  );
   const missing = ids.filter((id) => !foundIds.has(id));
-  if (missing.length > 0) throw new Error(`Akun tidak ditemukan atau tidak aktif: ${missing.join(", ")}`);
-  const groups = found.filter((account) => account.isActive && account.isGroup).map((account) => account.id);
-  if (groups.length > 0) throw new Error(`Akun grup tidak boleh menerima saldo atau jurnal: ${groups.join(", ")}`);
+  if (missing.length > 0)
+    throw new Error(`Akun tidak ditemukan atau tidak aktif: ${missing.join(", ")}`);
+  const groups = found
+    .filter((account) => account.isActive && account.isGroup)
+    .map((account) => account.id);
+  if (groups.length > 0)
+    throw new Error(`Akun grup tidak boleh menerima saldo atau jurnal: ${groups.join(", ")}`);
 }
 
 function nextJournalNo(tx: Executor, entryDate: string): string {
   const prefix = `JU-${accountingPeriod(entryDate)}-`;
-  const last = tx.select({ journalNo: journals.journalNo })
+  const last = tx
+    .select({ journalNo: journals.journalNo })
     .from(journals)
     .where(like(journals.journalNo, `${prefix}%`))
     .orderBy(desc(journals.journalNo))
     .limit(1)
     .get() as { journalNo: string } | undefined;
   const sequence = last ? Number(last.journalNo.slice(-4)) + 1 : 1;
-  if (!Number.isSafeInteger(sequence) || sequence > 9999) throw new Error(`Nomor jurnal periode ${accountingPeriod(entryDate)} sudah penuh`);
+  if (!Number.isSafeInteger(sequence) || sequence > 9999)
+    throw new Error(`Nomor jurnal periode ${accountingPeriod(entryDate)} sudah penuh`);
   return `${prefix}${String(sequence).padStart(4, "0")}`;
 }
 
@@ -104,27 +133,79 @@ export function createJournalEntry(db: Db, input: JournalEntryInput): JournalWit
       updatedAt: nowIsoInstant(),
     } as const;
     tx.insert(journals).values(journal).run();
-    tx.insert(journalLines).values(lines.map((line, index) => ({
-      id: randomUUID(), journalId: journal.id, lineNumber: index + 1,
-      accountId: line.accountId, description: line.description,
-      debit: line.debit, credit: line.credit,
-    }))).run();
+    tx.insert(journalLines)
+      .values(
+        lines.map((line, index) => ({
+          id: randomUUID(),
+          journalId: journal.id,
+          lineNumber: index + 1,
+          accountId: line.accountId,
+          description: line.description,
+          debit: line.debit,
+          credit: line.credit,
+        })),
+      )
+      .run();
     const result = getJournalById(tx, journal.id)!;
-    recordAudit(tx, { entityType: "JOURNAL", entityId: journal.id, action: "CREATE", actor: input.createdBy, after: result });
+    recordAudit(tx, {
+      entityType: "JOURNAL",
+      entityId: journal.id,
+      action: "CREATE",
+      actor: input.createdBy,
+      after: result,
+    });
     return result;
   });
 }
 
-export function listJournals(db: Db, filters: { startDate?: string; endDate?: string; sourceModule?: SourceModule } = {}) {
+export function listJournals(
+  db: Db,
+  filters: { startDate?: string; endDate?: string; sourceModule?: SourceModule } = {},
+) {
   const conditions = [];
   if (filters.startDate) conditions.push(gte(journals.entryDate, filters.startDate));
   if (filters.endDate) conditions.push(lte(journals.entryDate, filters.endDate));
   if (filters.sourceModule) conditions.push(eq(journals.sourceModule, filters.sourceModule));
-  const rows = db.select().from(journals)
+  const rows = db
+    .select()
+    .from(journals)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(journals.entryDate), desc(journals.journalNo)).all();
+    .orderBy(desc(journals.entryDate), desc(journals.journalNo))
+    .all();
   return rows.map((journal) => {
-    const lines = db.select({
+    const lines = db
+      .select({
+        id: journalLines.id,
+        journalId: journalLines.journalId,
+        lineNumber: journalLines.lineNumber,
+        accountId: journalLines.accountId,
+        description: journalLines.description,
+        debit: journalLines.debit,
+        credit: journalLines.credit,
+        accountCode: accounts.code,
+        accountName: accounts.name,
+      })
+      .from(journalLines)
+      .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+      .where(eq(journalLines.journalId, journal.id))
+      .orderBy(asc(journalLines.lineNumber))
+      .all();
+    const totals = sumDebitCredit(lines);
+    return {
+      ...journal,
+      totalDebit: totals.debit.toNumber(),
+      totalCredit: totals.credit.toNumber(),
+      lineCount: lines.length,
+      lines,
+    };
+  });
+}
+
+export function getJournalById(db: Executor, id: string): JournalWithLines | undefined {
+  const journal = db.select().from(journals).where(eq(journals.id, id)).get();
+  if (!journal) return undefined;
+  const lines = db
+    .select({
       id: journalLines.id,
       journalId: journalLines.journalId,
       lineNumber: journalLines.lineNumber,
@@ -134,25 +215,12 @@ export function listJournals(db: Db, filters: { startDate?: string; endDate?: st
       credit: journalLines.credit,
       accountCode: accounts.code,
       accountName: accounts.name,
-    }).from(journalLines)
-      .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
-      .where(eq(journalLines.journalId, journal.id))
-      .orderBy(asc(journalLines.lineNumber)).all();
-    const totals = sumDebitCredit(lines);
-    return { ...journal, totalDebit: totals.debit.toNumber(), totalCredit: totals.credit.toNumber(), lineCount: lines.length, lines };
-  });
-}
-
-export function getJournalById(db: Executor, id: string): JournalWithLines | undefined {
-  const journal = db.select().from(journals).where(eq(journals.id, id)).get();
-  if (!journal) return undefined;
-  const lines = db.select({
-    id: journalLines.id, journalId: journalLines.journalId, lineNumber: journalLines.lineNumber,
-    accountId: journalLines.accountId, description: journalLines.description,
-    debit: journalLines.debit, credit: journalLines.credit,
-    accountCode: accounts.code, accountName: accounts.name,
-  }).from(journalLines).innerJoin(accounts, eq(accounts.id, journalLines.accountId))
-    .where(eq(journalLines.journalId, id)).orderBy(asc(journalLines.lineNumber)).all();
+    })
+    .from(journalLines)
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(eq(journalLines.journalId, id))
+    .orderBy(asc(journalLines.lineNumber))
+    .all();
   return { journal, lines };
 }
 
@@ -167,15 +235,38 @@ export function updateJournal(db: Db, id: string, input: JournalEntryInput): Jou
     const lines = validateAndConvertLines(entry.lines);
     assertAccounts(tx, lines);
     const before = getJournalById(tx, id);
-    tx.update(journals).set({ entryDate: entry.entryDate, referenceNo: entry.referenceNo || null, memo: entry.memo || null, updatedAt: nowIsoInstant() }).where(eq(journals.id, id)).run();
+    tx.update(journals)
+      .set({
+        entryDate: entry.entryDate,
+        referenceNo: entry.referenceNo || null,
+        memo: entry.memo || null,
+        updatedAt: nowIsoInstant(),
+      })
+      .where(eq(journals.id, id))
+      .run();
     tx.delete(journalLines).where(eq(journalLines.journalId, id)).run();
-    tx.insert(journalLines).values(lines.map((line, index) => ({
-      id: randomUUID(), journalId: id, lineNumber: index + 1,
-      accountId: line.accountId, description: line.description,
-      debit: line.debit, credit: line.credit,
-    }))).run();
+    tx.insert(journalLines)
+      .values(
+        lines.map((line, index) => ({
+          id: randomUUID(),
+          journalId: id,
+          lineNumber: index + 1,
+          accountId: line.accountId,
+          description: line.description,
+          debit: line.debit,
+          credit: line.credit,
+        })),
+      )
+      .run();
     const result = getJournalById(tx, id)!;
-    recordAudit(tx, { entityType: "JOURNAL", entityId: id, action: "UPDATE", actor: input.createdBy, before, after: result });
+    recordAudit(tx, {
+      entityType: "JOURNAL",
+      entityId: id,
+      action: "UPDATE",
+      actor: input.createdBy,
+      before,
+      after: result,
+    });
     return result;
   });
 }

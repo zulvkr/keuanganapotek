@@ -3,12 +3,15 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
-export function createSqliteClient(databasePath = process.env.DATABASE_PATH ?? "data/keuangan-apotek.sqlite") {
-  const resolvedPath = databasePath === ":memory:"
-    ? databasePath
-    : isAbsolute(databasePath)
+export function createSqliteClient(
+  databasePath = process.env.DATABASE_PATH ?? "data/keuangan-apotek.sqlite",
+) {
+  const resolvedPath =
+    databasePath === ":memory:"
       ? databasePath
-      : resolve(process.cwd(), databasePath);
+      : isAbsolute(databasePath)
+        ? databasePath
+        : resolve(process.cwd(), databasePath);
 
   if (resolvedPath !== ":memory:") {
     mkdirSync(dirname(resolvedPath), { recursive: true });

@@ -14,10 +14,10 @@
   "dependencies": {
     "@keuangan-apotek/api": "workspace:*",
     "@keuangan-apotek/shared": "workspace:*",
-    "hono": "^4.13.7",
     "@tanstack/react-query": "^5.62.7",
     "@tanstack/react-table": "^8.20.5",
     "@tanstack/react-virtual": "3.11.3",
+    "hono": "^4.13.7",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

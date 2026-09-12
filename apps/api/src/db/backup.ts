@@ -40,7 +40,10 @@ export function backupDatabase(databasePath: string, destinationPath: string): B
 }
 
 function defaultDestination() {
-  const stamp = new Date().toISOString().replaceAll(/[-:TZ.]/g, "").slice(0, 14);
+  const stamp = new Date()
+    .toISOString()
+    .replaceAll(/[-:TZ.]/g, "")
+    .slice(0, 14);
   return resolve(process.cwd(), "backups", `keuangan-apotek-${stamp}.sqlite`);
 }
 
@@ -49,5 +52,7 @@ if (invokedFile.endsWith("/db/backup.ts") || invokedFile.endsWith("/db/backup.js
   const source = process.env.DATABASE_PATH ?? "data/keuangan-apotek.sqlite";
   const destination = process.argv[2] ?? defaultDestination();
   const result = backupDatabase(source, destination);
-  console.log(`Backup SQLite berhasil: ${basename(result.destination)} (integrity: ${result.integrity})`);
+  console.log(
+    `Backup SQLite berhasil: ${basename(result.destination)} (integrity: ${result.integrity})`,
+  );
 }

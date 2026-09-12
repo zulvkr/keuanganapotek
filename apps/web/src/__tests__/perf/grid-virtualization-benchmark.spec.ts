@@ -17,7 +17,11 @@ test("renders the 5,000-row grid with only viewport rows in the DOM", async ({ p
   await page.goto("/");
   await page.getByRole("button", { name: "Uji Beban" }).click();
   await page.getByRole("button", { name: "5.000 jurnal" }).waitFor();
-  const elapsed = await page.evaluate(() => (window as Window & { __phase6GridRenderMs?: number }).__phase6GridRenderMs ?? Number.POSITIVE_INFINITY);
+  const elapsed = await page.evaluate(
+    () =>
+      (window as Window & { __phase6GridRenderMs?: number }).__phase6GridRenderMs ??
+      Number.POSITIVE_INFINITY,
+  );
   const mountedRows = await page.locator('[aria-label="Grid stress jurnal"] [data-index]').count();
   expect(elapsed).toBeLessThan(100);
   expect(mountedRows).toBeLessThan(100);

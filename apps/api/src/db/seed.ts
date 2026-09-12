@@ -64,23 +64,52 @@ const seedRows: SeedTuple[] = [
   ["6201", "Beban Administrasi Bank & EDC Merchant", "BEBAN_NON_OPERASIONAL", "DEBIT", "6000", 2],
 ];
 
-const systemGroupCodes = new Set(seedRows.map(([, , , , parentCode]) => parentCode).filter((code): code is string => Boolean(code)));
-export const pharmacyAccounts: SeedAccount[] = seedRows.map(([code, name, classification, normalBalance, parentCode, level]) => ({ code, name, classification, normalBalance, parentCode, level, isGroup: systemGroupCodes.has(code) }));
+const systemGroupCodes = new Set(
+  seedRows
+    .map(([, , , , parentCode]) => parentCode)
+    .filter((code): code is string => Boolean(code)),
+);
+export const pharmacyAccounts: SeedAccount[] = seedRows.map(
+  ([code, name, classification, normalBalance, parentCode, level]) => ({
+    code,
+    name,
+    classification,
+    normalBalance,
+    parentCode,
+    level,
+    isGroup: systemGroupCodes.has(code),
+  }),
+);
 
 export function seedAccounts(client: ReturnType<typeof createSqliteClient>): number {
   const ids = new Map(pharmacyAccounts.map((account) => [account.code, `coa-${account.code}`]));
   client.db.transaction((tx) => {
     for (const account of pharmacyAccounts) {
-      tx.insert(accounts).values({
-        id: ids.get(account.code)!, code: account.code, name: account.name,
-        parentId: account.parentCode ? ids.get(account.parentCode)! : null,
-        classification: account.classification, normalBalance: account.normalBalance,
-        level: account.level, isGroup: account.isGroup, isActive: true,
-      }).onConflictDoUpdate({
-        target: accounts.code,
-        set: { name: account.name, parentId: account.parentCode ? ids.get(account.parentCode)! : null,
-          classification: account.classification, normalBalance: account.normalBalance, level: account.level, isGroup: account.isGroup, isActive: true },
-      }).run();
+      tx.insert(accounts)
+        .values({
+          id: ids.get(account.code)!,
+          code: account.code,
+          name: account.name,
+          parentId: account.parentCode ? ids.get(account.parentCode)! : null,
+          classification: account.classification,
+          normalBalance: account.normalBalance,
+          level: account.level,
+          isGroup: account.isGroup,
+          isActive: true,
+        })
+        .onConflictDoUpdate({
+          target: accounts.code,
+          set: {
+            name: account.name,
+            parentId: account.parentCode ? ids.get(account.parentCode)! : null,
+            classification: account.classification,
+            normalBalance: account.normalBalance,
+            level: account.level,
+            isGroup: account.isGroup,
+            isActive: true,
+          },
+        })
+        .run();
     }
   });
   return pharmacyAccounts.length;

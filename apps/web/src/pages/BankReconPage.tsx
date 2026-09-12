@@ -1,20 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, RefreshCw, Upload, WandSparkles, X } from "lucide-react";
-import { autoMatchBankRecon, importBankRecon, matchBankRecon, unmatchBankRecon } from "../lib/mutations";
+import {
+  autoMatchBankRecon,
+  importBankRecon,
+  matchBankRecon,
+  unmatchBankRecon,
+} from "../lib/mutations";
 import { getAccounts, getBankRecon, queryKeys } from "../lib/queries";
 
-type Account = { id: string; code: string; name: string };
-type StatementRow = { id: string; statementDate: string; description: string | null; debit: number; credit: number; isMatched: boolean; matchId: string | null; journalLineId: string | null; matchType: string | null };
-type InternalRow = { journalLineId: string; journalId: string; entryDate: string; description: string; referenceNo: string | null; debit: number; credit: number; isMatched: boolean; matchId: string | null; matchType: string | null };
-type ReconData = { account: Account; statements: StatementRow[]; internal: InternalRow[] };
-type ApiResponse<T> = { data: T } | { error: string | object };
+const inputClass =
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
+const money = (value: number) => {
+  const absolute = Math.abs(value);
+  const rupiah = (absolute / 100).toFixed(2);
+  const [whole, fraction] = rupiah.split(".");
+  return `${value < 0 ? "-" : ""}${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${fraction}`;
+};
 
-const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
-const money = (value: number) => { const absolute = Math.abs(value); const rupiah = (absolute / 100).toFixed(2); const [whole, fraction] = rupiah.split("."); return `${value < 0 ? "-" : ""}${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${fraction}`; };
-
-function PanelHeader({ title, count, matched }: { title: string; count: number; matched: number }) { return <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3"><div><h3 className="font-semibold">{title}</h3><p className="text-xs text-muted">{count} baris · {matched} sudah cocok</p></div></div>; }
-function StatusBadge({ matched, type }: { matched: boolean; type: string | null }) { return matched ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">✓ Cocok {type === "AUTO" ? "otomatis" : "manual"}</span> : <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-500">Belum cocok</span>; }
+function PanelHeader({ title, count, matched }: { title: string; count: number; matched: number }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <div>
+        <h3 className="font-semibold">{title}</h3>
+        <p className="text-xs text-muted">
+          {count} baris · {matched} sudah cocok
+        </p>
+      </div>
+    </div>
+  );
+}
+function StatusBadge({ matched, type }: { matched: boolean; type: string | null }) {
+  return matched ? (
+    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+      ✓ Cocok {type === "AUTO" ? "otomatis" : "manual"}
+    </span>
+  ) : (
+    <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-500">
+      Belum cocok
+    </span>
+  );
+}
 
 export default function BankReconPage() {
   const [bankAccountId, setBankAccountId] = useState("");
@@ -24,38 +50,346 @@ export default function BankReconPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const accountsQuery = useQuery({ queryKey: queryKeys.accounts, queryFn: getAccounts });
-  const accounts = (accountsQuery.data ?? []).filter((account) => ["1111", "1112"].includes(account.code));
-  useEffect(() => { if (!bankAccountId && accounts[0]) setBankAccountId(accounts[0].id); }, [accounts, bankAccountId]);
-  const reconQuery = useQuery({ queryKey: queryKeys.bankRecon(bankAccountId), queryFn: () => getBankRecon(bankAccountId), enabled: Boolean(bankAccountId) });
+  const accounts = (accountsQuery.data ?? []).filter((account) =>
+    ["1111", "1112"].includes(account.code),
+  );
+  useEffect(() => {
+    if (!bankAccountId && accounts[0]) setBankAccountId(accounts[0].id);
+  }, [accounts, bankAccountId]);
+  const reconQuery = useQuery({
+    queryKey: queryKeys.bankRecon(bankAccountId),
+    queryFn: () => getBankRecon(bankAccountId),
+    enabled: Boolean(bankAccountId),
+  });
   const data = reconQuery.data ?? null;
-  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.bankRecon(bankAccountId) });
-  const autoMatchMutation = useMutation({ mutationFn: () => autoMatchBankRecon(bankAccountId), onSuccess: async (result) => { setMessage(`${result.matchedCount} transaksi berhasil dicocokkan otomatis.`); await refresh(); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Auto-match gagal") });
-  const importMutation = useMutation({ mutationFn: (csv: string) => importBankRecon({ bankAccountId, csv }), onSuccess: async (result) => { setMessage(`${result.imported.length} baris rekening koran diimpor.`); await refresh(); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Impor rekening koran gagal") });
-  const linkMutation = useMutation({ mutationFn: () => matchBankRecon({ bankStatementId: selectedStatement, journalLineId: selectedInternal }), onSuccess: async () => { setMessage("Transaksi berhasil ditautkan secara manual."); setSelectedInternal(""); setSelectedStatement(""); await refresh(); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Manual matching gagal") });
-  const unlinkMutation = useMutation({ mutationFn: (matchId: string) => unmatchBankRecon(matchId), onSuccess: async () => { setMessage("Pencocokan dibatalkan."); await refresh(); }, onError: (error) => setMessage(error instanceof Error ? error.message : "Pencocokan belum dibatalkan") });
-  const busy = reconQuery.isFetching || autoMatchMutation.isPending || importMutation.isPending || linkMutation.isPending || unlinkMutation.isPending;
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: queryKeys.bankRecon(bankAccountId) });
+  const autoMatchMutation = useMutation({
+    mutationFn: () => autoMatchBankRecon(bankAccountId),
+    onSuccess: async (result) => {
+      setMessage(`${result.matchedCount} transaksi berhasil dicocokkan otomatis.`);
+      await refresh();
+    },
+    onError: (error) => setMessage(error instanceof Error ? error.message : "Auto-match gagal"),
+  });
+  const importMutation = useMutation({
+    mutationFn: (csv: string) => importBankRecon({ bankAccountId, csv }),
+    onSuccess: async (result) => {
+      setMessage(`${result.imported.length} baris rekening koran diimpor.`);
+      await refresh();
+    },
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Impor rekening koran gagal"),
+  });
+  const linkMutation = useMutation({
+    mutationFn: () =>
+      matchBankRecon({ bankStatementId: selectedStatement, journalLineId: selectedInternal }),
+    onSuccess: async () => {
+      setMessage("Transaksi berhasil ditautkan secara manual.");
+      setSelectedInternal("");
+      setSelectedStatement("");
+      await refresh();
+    },
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Manual matching gagal"),
+  });
+  const unlinkMutation = useMutation({
+    mutationFn: (matchId: string) => unmatchBankRecon(matchId),
+    onSuccess: async () => {
+      setMessage("Pencocokan dibatalkan.");
+      await refresh();
+    },
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Pencocokan belum dibatalkan"),
+  });
+  const busy =
+    reconQuery.isFetching ||
+    autoMatchMutation.isPending ||
+    importMutation.isPending ||
+    linkMutation.isPending ||
+    unlinkMutation.isPending;
 
-  const unmatchedInternal = useMemo(() => data?.internal.filter((row) => !row.isMatched) ?? [], [data]);
-  const unmatchedStatements = useMemo(() => data?.statements.filter((row) => !row.isMatched) ?? [], [data]);
-  const bankNet = useMemo(() => (data?.statements ?? []).reduce((sum, row) => sum + row.credit - row.debit, 0), [data]);
-  const systemNet = useMemo(() => (data?.internal ?? []).reduce((sum, row) => sum + row.debit - row.credit, 0), [data]);
+  const unmatchedInternal = useMemo(
+    () => data?.internal.filter((row) => !row.isMatched) ?? [],
+    [data],
+  );
+  const unmatchedStatements = useMemo(
+    () => data?.statements.filter((row) => !row.isMatched) ?? [],
+    [data],
+  );
+  const bankNet = useMemo(
+    () => (data?.statements ?? []).reduce((sum, row) => sum + row.credit - row.debit, 0),
+    [data],
+  );
+  const systemNet = useMemo(
+    () => (data?.internal ?? []).reduce((sum, row) => sum + row.debit - row.credit, 0),
+    [data],
+  );
   const difference = bankNet - systemNet;
 
-  function autoMatchAll() { if (bankAccountId) autoMatchMutation.mutate(); }
-  async function importFile(file: File) { importMutation.mutate(await file.text()); if (fileRef.current) fileRef.current.value = ""; }
-  function linkSelected() { if (selectedInternal && selectedStatement) linkMutation.mutate(); }
-  function unlink(matchId: string) { unlinkMutation.mutate(matchId); }
+  function autoMatchAll() {
+    if (bankAccountId) autoMatchMutation.mutate();
+  }
+  async function importFile(file: File) {
+    importMutation.mutate(await file.text());
+    if (fileRef.current) fileRef.current.value = "";
+  }
+  function linkSelected() {
+    if (selectedInternal && selectedStatement) linkMutation.mutate();
+  }
+  function unlink(matchId: string) {
+    unlinkMutation.mutate(matchId);
+  }
 
-  return <div className="space-y-5">
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Phase 4 · Modul 7</p><h2 className="mt-1 text-2xl font-bold tracking-tight">Rekonsiliasi Bank</h2><p className="mt-1 text-sm text-muted">Bandingkan mutasi buku besar dengan rekening koran dan tautkan transaksi yang sama.</p></div><div className="flex flex-wrap gap-2"><label className="text-xs font-semibold text-slate-500">Akun bank<select className={`${inputClass} mt-1 min-w-56`} value={bankAccountId} onChange={(event) => setBankAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}</select></label><input ref={fileRef} accept=".csv,.tsv,text/csv,text/tab-separated-values" className="hidden" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); }} /><button className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-600 disabled:opacity-50" disabled={busy || !bankAccountId} onClick={() => fileRef.current?.click()} type="button"><Upload size={16} /> Impor CSV / TSV</button><button className="flex h-10 items-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || !bankAccountId} onClick={() => void autoMatchAll()} type="button"><WandSparkles size={16} /> Auto-Match Semua</button></div></div>
-    </section>
-    {(message || (reconQuery.error instanceof Error ? reconQuery.error.message : accountsQuery.error instanceof Error ? accountsQuery.error.message : "")) && <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800" role="status"><span>{message || (reconQuery.error instanceof Error ? reconQuery.error.message : accountsQuery.error instanceof Error ? accountsQuery.error.message : "")}</span><button onClick={() => setMessage("")} type="button"><X size={16} /></button></div>}
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><PanelHeader title="Mutasi Buku Besar Sistem" count={data?.internal.length ?? 0} matched={data?.internal.filter((row) => row.isMatched).length ?? 0} /><div className="max-h-[560px] overflow-auto"><table className="w-full min-w-[560px] text-sm"><thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400"><tr><th className="w-10 px-3 py-3" /><th className="px-3 py-3">Tanggal</th><th className="px-3 py-3">Keterangan</th><th className="px-3 py-3 text-right">Masuk</th><th className="px-3 py-3 text-right">Keluar</th><th className="px-3 py-3">Status</th></tr></thead><tbody>{data?.internal.map((row) => <tr className={`border-b border-slate-50 ${selectedInternal === row.journalLineId ? "bg-blue-50" : "hover:bg-slate-50"}`} key={row.journalLineId}><td className="px-3 py-3"><input aria-label={`Pilih mutasi ${row.entryDate}`} checked={selectedInternal === row.journalLineId} disabled={row.isMatched} onChange={() => setSelectedInternal(row.journalLineId)} type="checkbox" /></td><td className="px-3 py-3 font-mono tabular-nums">{row.entryDate}</td><td className="max-w-48 px-3 py-3"><p className="truncate">{row.description}</p><p className="text-[11px] text-slate-400">{row.referenceNo || row.journalId.slice(0, 8)}</p></td><td className="px-3 py-3 text-right font-mono tabular-nums">{row.debit ? `Rp ${money(row.debit)}` : "—"}</td><td className="px-3 py-3 text-right font-mono tabular-nums">{row.credit ? `Rp ${money(row.credit)}` : "—"}</td><td className="px-3 py-3"><StatusBadge matched={row.isMatched} type={row.matchType} />{row.matchId && <button className="ml-2 text-slate-400 hover:text-red-600" onClick={() => void unlink(row.matchId!)} title="Batalkan pencocokan" type="button"><RefreshCw size={14} /></button>}</td></tr>)}</tbody></table>{data?.internal.length === 0 && <p className="p-8 text-center text-sm text-muted">Belum ada mutasi internal pada akun ini.</p>}</div></div>
-      <div className="flex items-center justify-center"><button className="grid h-11 w-11 place-items-center rounded-full bg-brand text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || !selectedInternal || !selectedStatement} onClick={() => void linkSelected()} title="Tautkan transaksi terpilih" type="button"><Link2 size={18} /></button></div>
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><PanelHeader title="Rekening Koran Bank" count={data?.statements.length ?? 0} matched={data?.statements.filter((row) => row.isMatched).length ?? 0} /><div className="max-h-[560px] overflow-auto"><table className="w-full min-w-[560px] text-sm"><thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400"><tr><th className="w-10 px-3 py-3" /><th className="px-3 py-3">Tanggal</th><th className="px-3 py-3">Keterangan</th><th className="px-3 py-3 text-right">Debit</th><th className="px-3 py-3 text-right">Kredit</th><th className="px-3 py-3">Status</th></tr></thead><tbody>{data?.statements.map((row) => <tr className={`border-b border-slate-50 ${selectedStatement === row.id ? "bg-blue-50" : "hover:bg-slate-50"}`} key={row.id}><td className="px-3 py-3"><input aria-label={`Pilih rekening koran ${row.statementDate}`} checked={selectedStatement === row.id} disabled={row.isMatched} onChange={() => setSelectedStatement(row.id)} type="checkbox" /></td><td className="px-3 py-3 font-mono tabular-nums">{row.statementDate}</td><td className="max-w-48 px-3 py-3"><p className="truncate">{row.description || "—"}</p></td><td className="px-3 py-3 text-right font-mono tabular-nums">{row.debit ? `Rp ${money(row.debit)}` : "—"}</td><td className="px-3 py-3 text-right font-mono tabular-nums">{row.credit ? `Rp ${money(row.credit)}` : "—"}</td><td className="px-3 py-3"><StatusBadge matched={row.isMatched} type={row.matchType} />{row.matchId && <button className="ml-2 text-slate-400 hover:text-red-600" onClick={() => void unlink(row.matchId!)} title="Batalkan pencocokan" type="button"><RefreshCw size={14} /></button>}</td></tr>)}</tbody></table>{data?.statements.length === 0 && <p className="p-8 text-center text-sm text-muted">Impor rekening koran untuk memulai rekonsiliasi.</p>}</div></div>
-    </section>
-    <section className="grid gap-4 sm:grid-cols-3"><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-muted">Total bank (net)</p><p className="mt-2 font-mono text-xl font-bold tabular-nums">Rp {money(bankNet)}</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-muted">Total sistem (net)</p><p className="mt-2 font-mono text-xl font-bold tabular-nums">Rp {money(systemNet)}</p></div><div className={`rounded-2xl border p-4 shadow-sm ${difference === 0 ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}><p className="text-xs text-muted">Selisih belum cocok</p><p className="mt-2 font-mono text-xl font-bold tabular-nums">Rp {money(difference)}</p><p className="mt-1 text-xs text-muted">{unmatchedStatements.length} rekening koran · {unmatchedInternal.length} sistem</p></div></section>
-  </div>;
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">
+              Phase 4 · Modul 7
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight">Rekonsiliasi Bank</h2>
+            <p className="mt-1 text-sm text-muted">
+              Bandingkan mutasi buku besar dengan rekening koran dan tautkan transaksi yang sama.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="text-xs font-semibold text-slate-500">
+              Akun bank
+              <select
+                className={`${inputClass} mt-1 min-w-56`}
+                value={bankAccountId}
+                onChange={(event) => setBankAccountId(event.target.value)}
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.code} · {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <input
+              ref={fileRef}
+              accept=".csv,.tsv,text/csv,text/tab-separated-values"
+              className="hidden"
+              type="file"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void importFile(file);
+              }}
+            />
+            <button
+              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-600 disabled:opacity-50"
+              disabled={busy || !bankAccountId}
+              onClick={() => fileRef.current?.click()}
+              type="button"
+            >
+              <Upload size={16} /> Impor CSV / TSV
+            </button>
+            <button
+              className="flex h-10 items-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white disabled:opacity-50"
+              disabled={busy || !bankAccountId}
+              onClick={() => void autoMatchAll()}
+              type="button"
+            >
+              <WandSparkles size={16} /> Auto-Match Semua
+            </button>
+          </div>
+        </div>
+      </section>
+      {(message ||
+        (reconQuery.error instanceof Error
+          ? reconQuery.error.message
+          : accountsQuery.error instanceof Error
+            ? accountsQuery.error.message
+            : "")) && (
+        <div
+          className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"
+          role="status"
+        >
+          <span>
+            {message ||
+              (reconQuery.error instanceof Error
+                ? reconQuery.error.message
+                : accountsQuery.error instanceof Error
+                  ? accountsQuery.error.message
+                  : "")}
+          </span>
+          <button onClick={() => setMessage("")} type="button">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <PanelHeader
+            title="Mutasi Buku Besar Sistem"
+            count={data?.internal.length ?? 0}
+            matched={data?.internal.filter((row) => row.isMatched).length ?? 0}
+          />
+          <div className="max-h-[560px] overflow-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
+                <tr>
+                  <th className="w-10 px-3 py-3" />
+                  <th className="px-3 py-3">Tanggal</th>
+                  <th className="px-3 py-3">Keterangan</th>
+                  <th className="px-3 py-3 text-right">Masuk</th>
+                  <th className="px-3 py-3 text-right">Keluar</th>
+                  <th className="px-3 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.internal.map((row) => (
+                  <tr
+                    className={`border-b border-slate-50 ${selectedInternal === row.journalLineId ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                    key={row.journalLineId}
+                  >
+                    <td className="px-3 py-3">
+                      <input
+                        aria-label={`Pilih mutasi ${row.entryDate}`}
+                        checked={selectedInternal === row.journalLineId}
+                        disabled={row.isMatched}
+                        onChange={() => setSelectedInternal(row.journalLineId)}
+                        type="checkbox"
+                      />
+                    </td>
+                    <td className="px-3 py-3 font-mono tabular-nums">{row.entryDate}</td>
+                    <td className="max-w-48 px-3 py-3">
+                      <p className="truncate">{row.description}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {row.referenceNo || row.journalId.slice(0, 8)}
+                      </p>
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">
+                      {row.debit ? `Rp ${money(row.debit)}` : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">
+                      {row.credit ? `Rp ${money(row.credit)}` : "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusBadge matched={row.isMatched} type={row.matchType} />
+                      {row.matchId && (
+                        <button
+                          className="ml-2 text-slate-400 hover:text-red-600"
+                          onClick={() => void unlink(row.matchId!)}
+                          title="Batalkan pencocokan"
+                          type="button"
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {data?.internal.length === 0 && (
+              <p className="p-8 text-center text-sm text-muted">
+                Belum ada mutasi internal pada akun ini.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-center">
+          <button
+            className="grid h-11 w-11 place-items-center rounded-full bg-brand text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={busy || !selectedInternal || !selectedStatement}
+            onClick={() => void linkSelected()}
+            title="Tautkan transaksi terpilih"
+            type="button"
+          >
+            <Link2 size={18} />
+          </button>
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <PanelHeader
+            title="Rekening Koran Bank"
+            count={data?.statements.length ?? 0}
+            matched={data?.statements.filter((row) => row.isMatched).length ?? 0}
+          />
+          <div className="max-h-[560px] overflow-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
+                <tr>
+                  <th className="w-10 px-3 py-3" />
+                  <th className="px-3 py-3">Tanggal</th>
+                  <th className="px-3 py-3">Keterangan</th>
+                  <th className="px-3 py-3 text-right">Debit</th>
+                  <th className="px-3 py-3 text-right">Kredit</th>
+                  <th className="px-3 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.statements.map((row) => (
+                  <tr
+                    className={`border-b border-slate-50 ${selectedStatement === row.id ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                    key={row.id}
+                  >
+                    <td className="px-3 py-3">
+                      <input
+                        aria-label={`Pilih rekening koran ${row.statementDate}`}
+                        checked={selectedStatement === row.id}
+                        disabled={row.isMatched}
+                        onChange={() => setSelectedStatement(row.id)}
+                        type="checkbox"
+                      />
+                    </td>
+                    <td className="px-3 py-3 font-mono tabular-nums">{row.statementDate}</td>
+                    <td className="max-w-48 px-3 py-3">
+                      <p className="truncate">{row.description || "—"}</p>
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">
+                      {row.debit ? `Rp ${money(row.debit)}` : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">
+                      {row.credit ? `Rp ${money(row.credit)}` : "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusBadge matched={row.isMatched} type={row.matchType} />
+                      {row.matchId && (
+                        <button
+                          className="ml-2 text-slate-400 hover:text-red-600"
+                          onClick={() => void unlink(row.matchId!)}
+                          title="Batalkan pencocokan"
+                          type="button"
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {data?.statements.length === 0 && (
+              <p className="p-8 text-center text-sm text-muted">
+                Impor rekening koran untuk memulai rekonsiliasi.
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+      <section className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs text-muted">Total bank (net)</p>
+          <p className="mt-2 font-mono text-xl font-bold tabular-nums">Rp {money(bankNet)}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs text-muted">Total sistem (net)</p>
+          <p className="mt-2 font-mono text-xl font-bold tabular-nums">Rp {money(systemNet)}</p>
+        </div>
+        <div
+          className={`rounded-2xl border p-4 shadow-sm ${difference === 0 ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}
+        >
+          <p className="text-xs text-muted">Selisih belum cocok</p>
+          <p className="mt-2 font-mono text-xl font-bold tabular-nums">Rp {money(difference)}</p>
+          <p className="mt-1 text-xs text-muted">
+            {unmatchedStatements.length} rekening koran · {unmatchedInternal.length} sistem
+          </p>
+        </div>
+      </section>
+    </div>
+  );
 }

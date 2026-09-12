@@ -25,7 +25,7 @@ KeuanganApotek/
 
 1. **Bagan Akun (Chart of Accounts - CoA) & Saldo Awal**
    - Manajemen hierarki tree-grid akun finansial.
-   - Dual-mode: *Mode Struktur Akun* & *Mode Input Saldo Awal*.
+   - Dual-mode: _Mode Struktur Akun_ & _Mode Input Saldo Awal_.
    - Auto-Balancing Equity & Jurnal Pembuka otomatis.
 2. **Jurnal Umum (General Journal Entry Grid)**
    - Entri debit-kredit berpasangan multi-baris berbasis grid cepat.
@@ -35,7 +35,7 @@ KeuanganApotek/
    - Pengakuan HPP / COGS obat harian & auto-generate jurnal.
 4. **Faktur Pembelian PBF & Utang Usaha (AP Batch Ledger)**
    - Entri tumpukan faktur Pedagang Besar Farmasi (PBF) beruntun.
-   - Dukungan *copy-paste* tabular langsung dari Excel (`Ctrl + V`).
+   - Dukungan _copy-paste_ tabular langsung dari Excel (`Ctrl + V`).
    - Kalkulasi otomatis DPP, PPN 11%, dan jatuh tempo.
 5. **Konsinyasi & Bagi Hasil (Consignment Ledger)**
    - Perhitungan bagi hasil produk titip jual (suplemen, madu, alkes).
@@ -45,7 +45,7 @@ KeuanganApotek/
    - Otomatisasi mutasi ganda buku besar tanpa jurnal manual.
 7. **Rekonsiliasi Bank (Dual Pane Split-Grid)**
    - Perbandingan berdampingan: Mutasi Internal Sistem vs Rekening Koran Bank.
-   - Fitur *Auto-Match* tanggal ±1 hari & nominal identik serta pencocokan manual satu-klik.
+   - Fitur _Auto-Match_ tanggal ±1 hari & nominal identik serta pencocokan manual satu-klik.
 8. **Laporan Keuangan Dinamis & Drill-Down**
    - Laba Rugi Komparatif, Neraca, Neraca Saldo.
    - Interaktif: Mengklik nominal membuka slide-over drawer rincian jurnal pembentuk.
@@ -92,4 +92,3 @@ Variabel yang tersedia:
 - `WEB_PORT`: port Vite, default mulai dari `5173` dan otomatis mencari port berikutnya yang kosong.
 - `VITE_API_URL`: URL API eksplisit jika API dijalankan di host/port berbeda.
 - `DATABASE_PATH`: lokasi database SQLite per instance/worktree jika diperlukan.
-

@@ -1,15 +1,7 @@
 {
   "name": "keuangan-apotek",
-  "private": true,
   "version": "0.1.0",
-  "packageManager": "pnpm@10.13.1",
-  "engines": {
-    "node": ">=20.0.0 <21.0.0 || >=22.0.0 <23.0.0"
-  },
-  "volta": {
-    "node": "22.21.1",
-    "pnpm": "10.13.1"
-  },
+  "private": true,
   "scripts": {
     "build": "pnpm -r run build",
     "dev": "node scripts/dev.mjs",
@@ -17,11 +9,33 @@
     "db:push": "pnpm --filter @keuangan-apotek/api db:migrate",
     "db:seed": "pnpm --filter @keuangan-apotek/api db:seed",
     "db:backup": "pnpm --filter @keuangan-apotek/api db:backup",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "format": "pnpm run fmt",
+    "format:check": "pnpm run fmt:check",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "test": "pnpm -r --if-present run test",
     "test:coverage": "pnpm -r --if-present run test:coverage",
-    "typecheck": "pnpm -r --if-present run typecheck"
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "check": "pnpm run fmt:check && pnpm run lint && pnpm run typecheck"
   },
+  "devDependencies": {
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0"
+  },
+  "engines": {
+    "node": ">=20.0.0 <21.0.0 || >=22.0.0 <23.0.0"
+  },
+  "volta": {
+    "node": "22.21.1",
+    "pnpm": "10.13.1"
+  },
+  "packageManager": "pnpm@10.13.1",
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }

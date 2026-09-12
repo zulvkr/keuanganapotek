@@ -1,4 +1,5 @@
 # Rancangan Skema Database (Database Schema Design)
+
 ## Sistem Keuangan Apotek (SQLite & Drizzle ORM)
 
 Dokumen ini memuat relasi antar tabel, tipe data SQLite, standar presisi finansial, indeks, dan integritas transaksi pada sistem akuntansi apotek.
@@ -10,7 +11,7 @@ Dokumen ini memuat relasi antar tabel, tipe data SQLite, standar presisi finansi
 Karena SQLite tidak memiliki tipe bawaan `DECIMAL(18, 4)` seperti RDBMS enterprise, sistem menerapkan standar ketat untuk menjamin **nol deviasi/pembulatan floating point**:
 
 1. **Penyimpanan Nominal (Financial Precision):**
-   - Disimpan sebagai **`INTEGER`** (dalam satuan *sen* / minor units: $1\text{ IDR} = 100\text{ sen}$, atau rupiah bulat sesuai kebutuhan) atau **`TEXT`** (string angka fixed-point).
+   - Disimpan sebagai **`INTEGER`** (dalam satuan _sen_ / minor units: $1\text{ IDR} = 100\text{ sen}$, atau rupiah bulat sesuai kebutuhan) atau **`TEXT`** (string angka fixed-point).
    - Di layer aplikasi (Backend & Frontend), angka diolah menggunakan library **`decimal.js`** / **`dinero.js`** untuk operasi perkalian PPN 11%, DPP, bagi hasil konsinyasi, dan validasi $\sum \text{Debit} = \sum \text{Kredit}$.
 2. **Pragma SQLite untuk Integritas Transaksi & Concurrency:**
    ```sql
@@ -30,16 +31,16 @@ erDiagram
     ACCOUNTS ||--o{ JOURNAL_LINES : "records"
     ACCOUNTS ||--o{ OPENING_BALANCES : "has"
     JOURNALS ||--|{ JOURNAL_LINES : "contains"
-    
+
     POS_CLEARINGS ||--o| JOURNALS : "generates"
     PBF_INVOICES ||--o| JOURNALS : "generates"
     CONSIGNMENT_SETTLEMENTS ||--o| JOURNALS : "generates"
     CASH_BANK_TRANSFERS ||--o| JOURNALS : "generates"
-    
+
     CONSIGNMENT_VENDORS ||--o{ CONSIGNMENT_ITEMS : "supplies"
     CONSIGNMENT_ITEMS ||--o{ CONSIGNMENT_SETTLEMENT_ITEMS : "settled_in"
     CONSIGNMENT_SETTLEMENTS ||--o{ CONSIGNMENT_SETTLEMENT_ITEMS : "includes"
-    
+
     BANK_STATEMENTS ||--o{ BANK_RECON_MATCHES : "matched_to"
     JOURNAL_LINES ||--o{ BANK_RECON_MATCHES : "matched_with"
 ```
@@ -49,7 +50,9 @@ erDiagram
 ## 3. Struktur Tabel SQLite (DDL)
 
 ### 3.1 `accounts` (Bagan Akun / CoA)
+
 Menyimpan struktur hierarki rekening akuntansi.
+
 ```sql
 CREATE TABLE accounts (
     id TEXT PRIMARY KEY NOT NULL,
@@ -68,7 +71,9 @@ CREATE INDEX idx_accounts_parent ON accounts(parent_id);
 ```
 
 ### 3.2 `opening_balances` (Saldo Awal Periode)
+
 Menyimpan saldo awal per tanggal cut-off migrasi.
+
 ```sql
 CREATE TABLE opening_balances (
     id TEXT PRIMARY KEY NOT NULL,
@@ -85,7 +90,9 @@ CREATE TABLE opening_balances (
 ```
 
 ### 3.3 `journals` & `journal_lines` (Buku Jurnal Ganda)
-Inti transaksi *double-entry accounting* yang divalidasi balance.
+
+Inti transaksi _double-entry accounting_ yang divalidasi balance.
+
 ```sql
 CREATE TABLE journals (
     id TEXT PRIMARY KEY NOT NULL,
@@ -117,6 +124,7 @@ CREATE INDEX idx_journal_lines_journal_id ON journal_lines(journal_id);
 ```
 
 ### 3.4 `pos_clearings` (Rekapitulasi Harian POS)
+
 ```sql
 CREATE TABLE pos_clearings (
     id TEXT PRIMARY KEY NOT NULL,
@@ -135,6 +143,7 @@ CREATE TABLE pos_clearings (
 ```
 
 ### 3.5 `pbf_invoices` (Faktur Pembelian PBF / Utang Usaha)
+
 ```sql
 CREATE TABLE pbf_invoices (
     id TEXT PRIMARY KEY NOT NULL,
@@ -156,6 +165,7 @@ CREATE TABLE pbf_invoices (
 ```
 
 ### 3.6 `consignment_items` & `consignment_settlements`
+
 ```sql
 CREATE TABLE consignment_vendors (
     id TEXT PRIMARY KEY NOT NULL,
@@ -195,6 +205,7 @@ CREATE TABLE consignment_settlement_items (
 ```
 
 ### 3.7 `cash_bank_transfers` (Mutasi Kas & Bank)
+
 ```sql
 CREATE TABLE cash_bank_transfers (
     id TEXT PRIMARY KEY NOT NULL,
@@ -213,6 +224,7 @@ CREATE TABLE cash_bank_transfers (
 ```
 
 ### 3.8 `bank_statements` & `bank_reconciliations`
+
 ```sql
 CREATE TABLE bank_statements (
     id TEXT PRIMARY KEY NOT NULL,
@@ -234,4 +246,3 @@ CREATE TABLE bank_recon_matches (
     UNIQUE(bank_statement_id, journal_line_id)
 );
 ```
-

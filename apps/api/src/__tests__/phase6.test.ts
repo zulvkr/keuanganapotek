@@ -15,7 +15,8 @@ const temporaryDirectories: string[] = [];
 
 afterEach(() => {
   for (const client of clients.splice(0)) client.sqlite.close();
-  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  for (const directory of temporaryDirectories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
 
 function setup() {
@@ -27,7 +28,9 @@ function setup() {
 }
 
 const entry = {
-  entryDate: "2026-01-15", referenceNo: "PH6-001", memo: "Audit test",
+  entryDate: "2026-01-15",
+  referenceNo: "PH6-001",
+  memo: "Audit test",
   lines: [
     { accountId: "coa-1101", debit: "1.000.000", credit: "0" },
     { accountId: "coa-4101", debit: "0", credit: "1.000.000" },
@@ -38,27 +41,36 @@ describe("Phase 6 hardening", () => {
   it("locks a period for authorized roles and rejects writes with HTTP 403", async () => {
     const { api, client } = setup();
     const lock = await api.request("http://localhost/api/period-locks", {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ lockedThrough: "2026-01-31", actor: "owner-1", role: "OWNER" }),
     });
     expect(lock.status).toBe(201);
     const rejected = await api.request("http://localhost/api/journals/general", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(entry),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(entry),
     });
     expect(rejected.status).toBe(403);
-    expect((await rejected.json()) as { error: string }).toMatchObject({ error: expect.stringContaining("PERIOD_LOCKED") });
+    expect((await rejected.json()) as { error: string }).toMatchObject({
+      error: expect.stringContaining("PERIOD_LOCKED"),
+    });
     expect(client.db.select().from(journals).all()).toHaveLength(0);
   });
 
   it("records journal before/after snapshots and protects unlock with owner role", async () => {
     const { api, client } = setup();
     const created = await api.request("http://localhost/api/journals/general", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(entry),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(entry),
     });
-    const createdPayload = await created.json() as { data: { journal: { id: string } } };
+    const createdPayload = (await created.json()) as { data: { journal: { id: string } } };
     const id = createdPayload.data.journal.id;
     const updated = await api.request(`http://localhost/api/journals/${id}`, {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...entry, memo: "Audit updated" }),
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...entry, memo: "Audit updated" }),
     });
     expect(updated.status).toBe(200);
     const logs = client.db.select().from(auditLogs).where(eq(auditLogs.entityId, id)).all();
@@ -67,13 +79,23 @@ describe("Phase 6 hardening", () => {
     expect(logs[1]?.afterData).toContain("Audit updated");
 
     const lock = await api.request("http://localhost/api/period-locks", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ lockedThrough: "2026-01-31", actor: "pharmacist", role: "APOTEKER_PENGELOLA" }),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        lockedThrough: "2026-01-31",
+        actor: "pharmacist",
+        role: "APOTEKER_PENGELOLA",
+      }),
     });
     expect(lock.status).toBe(201);
-    const forbiddenUnlock = await api.request("http://localhost/api/period-locks/2026-01-31/unlock", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor: "accountant", role: "AKUNTAN" }),
-    });
+    const forbiddenUnlock = await api.request(
+      "http://localhost/api/period-locks/2026-01-31/unlock",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actor: "accountant", role: "AKUNTAN" }),
+      },
+    );
     expect(forbiddenUnlock.status).toBe(403);
   });
 
@@ -91,7 +113,13 @@ describe("Phase 6 hardening", () => {
     const restored = createSqliteClient(destination);
     try {
       expect(restored.sqlite.pragma("integrity_check", { simple: true })).toBe("ok");
-      expect((restored.sqlite.prepare("SELECT count(*) AS count FROM accounts").get() as { count: number }).count).toBeGreaterThanOrEqual(30);
+      expect(
+        (
+          restored.sqlite.prepare("SELECT count(*) AS count FROM accounts").get() as {
+            count: number;
+          }
+        ).count,
+      ).toBeGreaterThanOrEqual(30);
     } finally {
       restored.sqlite.close();
     }

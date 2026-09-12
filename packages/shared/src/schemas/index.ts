@@ -70,13 +70,21 @@ export const JournalEntrySchema = z
     memo: z.string().trim().optional(),
     lines: z.array(JournalLineSchema).min(2),
   })
-  .refine((entry) => isBalanced(entry.lines.map((line) => ({
-    debit: parseRupiahToSen(typeof line.debit === "number" ? String(line.debit) : line.debit),
-    credit: parseRupiahToSen(typeof line.credit === "number" ? String(line.credit) : line.credit),
-  }))), {
-    message: "Total debit dan kredit jurnal harus seimbang",
-    path: ["lines"],
-  });
+  .refine(
+    (entry) =>
+      isBalanced(
+        entry.lines.map((line) => ({
+          debit: parseRupiahToSen(typeof line.debit === "number" ? String(line.debit) : line.debit),
+          credit: parseRupiahToSen(
+            typeof line.credit === "number" ? String(line.credit) : line.credit,
+          ),
+        })),
+      ),
+    {
+      message: "Total debit dan kredit jurnal harus seimbang",
+      path: ["lines"],
+    },
+  );
 
 const RupiahInputSchema = RupiahAmountSchema;
 
@@ -110,7 +118,10 @@ export const UnlockPeriodSchema = z.object({
 });
 
 export const PaymentTermsSchema = z.enum(["TUNAI", "TEMPO_14", "TEMPO_30", "TEMPO_45", "TEMPO_60"]);
-const NonNegativeMoneySchema = RupiahAmountSchema.refine((value) => positiveAmount(value) || String(value).trim() === "0", "Nominal tidak boleh negatif");
+const NonNegativeMoneySchema = RupiahAmountSchema.refine(
+  (value) => positiveAmount(value) || String(value).trim() === "0",
+  "Nominal tidak boleh negatif",
+);
 
 export const PbfInvoiceSchema = z
   .object({
@@ -132,43 +143,84 @@ export const PbfInvoiceSchema = z
   });
 
 export const PosClearingSchema = z.object({
-  id: z.string().optional(), clearingDate: IsoDateSchema, shiftName: z.string().trim().optional(), cashierName: z.string().trim().optional(),
-  totalPosOmzet: NonNegativeMoneySchema, cashReceived: NonNegativeMoneySchema.default("0"), nonCashReceived: NonNegativeMoneySchema.default("0"), cogsAmount: NonNegativeMoneySchema.default("0"),
-  cashAccountId: z.string().min(1).optional(), nonCashAccountId: z.string().min(1).optional(),
-  payments: z.array(z.object({ paymentMethodId: z.string().min(1), amount: NonNegativeMoneySchema })).min(1).optional(),
-  salesAccountCode: z.enum(["4101", "4102"]).default("4101"), cogsAccountCode: z.enum(["5101", "5102"]).default("5101"),
+  id: z.string().optional(),
+  clearingDate: IsoDateSchema,
+  shiftName: z.string().trim().optional(),
+  cashierName: z.string().trim().optional(),
+  totalPosOmzet: NonNegativeMoneySchema,
+  cashReceived: NonNegativeMoneySchema.default("0"),
+  nonCashReceived: NonNegativeMoneySchema.default("0"),
+  cogsAmount: NonNegativeMoneySchema.default("0"),
+  cashAccountId: z.string().min(1).optional(),
+  nonCashAccountId: z.string().min(1).optional(),
+  payments: z
+    .array(z.object({ paymentMethodId: z.string().min(1), amount: NonNegativeMoneySchema }))
+    .min(1)
+    .optional(),
+  salesAccountCode: z.enum(["4101", "4102"]).default("4101"),
+  cogsAccountCode: z.enum(["5101", "5102"]).default("5101"),
 });
 
 export const PosPaymentMethodSchema = z.object({
-  id: z.string().optional(), name: z.string().trim().min(1), accountId: z.string().min(1),
-  isCash: z.boolean().default(false), isActive: z.boolean().default(true), sortOrder: z.number().int().nonnegative().default(0),
+  id: z.string().optional(),
+  name: z.string().trim().min(1),
+  accountId: z.string().min(1),
+  isCash: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  sortOrder: z.number().int().nonnegative().default(0),
 });
 
 export const ConsignmentVendorSchema = z.object({
-  id: z.string().optional(), vendorName: z.string().trim().min(1), contactPerson: z.string().trim().optional(), phone: z.string().trim().optional(), bankAccountInfo: z.string().trim().optional(),
+  id: z.string().optional(),
+  vendorName: z.string().trim().min(1),
+  contactPerson: z.string().trim().optional(),
+  phone: z.string().trim().optional(),
+  bankAccountInfo: z.string().trim().optional(),
 });
 
 export const ConsignmentItemSchema = z.object({
-  id: z.string().optional(), vendorId: z.string().min(1), productName: z.string().trim().min(1), qtySold: z.number().int().nonnegative(), agreedCostPrice: NonNegativeMoneySchema,
+  id: z.string().optional(),
+  vendorId: z.string().min(1),
+  productName: z.string().trim().min(1),
+  qtySold: z.number().int().nonnegative(),
+  agreedCostPrice: NonNegativeMoneySchema,
 });
 
 export const ConsignmentSettlementSchema = z.object({
-  itemIds: z.array(z.string().min(1)).min(1), settlementDate: IsoDateSchema, paymentAccountId: z.string().min(1), referenceNo: z.string().trim().optional(),
+  itemIds: z.array(z.string().min(1)).min(1),
+  settlementDate: IsoDateSchema,
+  paymentAccountId: z.string().min(1),
+  referenceNo: z.string().trim().optional(),
 });
 
-export const CashBankTransferSchema = z.object({
-  transactionTime: z.string().trim().min(10), transactionType: z.enum(["DEPOSIT", "BANK_TRANSFER", "EXPENSE", "OTHER"]), sourceAccountId: z.string().min(1), targetAccountId: z.string().min(1),
-  netAmount: NonNegativeMoneySchema.refine(positiveAmount, "Nominal transaksi harus lebih besar dari nol"), adminFee: NonNegativeMoneySchema.default("0"), referenceNo: z.string().trim().optional(), memo: z.string().trim().optional(),
-}).refine((input) => input.sourceAccountId !== input.targetAccountId, { message: "Akun sumber dan tujuan harus berbeda" });
+export const CashBankTransferSchema = z
+  .object({
+    transactionTime: z.string().trim().min(10),
+    transactionType: z.enum(["DEPOSIT", "BANK_TRANSFER", "EXPENSE", "OTHER"]),
+    sourceAccountId: z.string().min(1),
+    targetAccountId: z.string().min(1),
+    netAmount: NonNegativeMoneySchema.refine(
+      positiveAmount,
+      "Nominal transaksi harus lebih besar dari nol",
+    ),
+    adminFee: NonNegativeMoneySchema.default("0"),
+    referenceNo: z.string().trim().optional(),
+    memo: z.string().trim().optional(),
+  })
+  .refine((input) => input.sourceAccountId !== input.targetAccountId, {
+    message: "Akun sumber dan tujuan harus berbeda",
+  });
 
-export const BankStatementImportRowSchema = z.object({
-  statementDate: IsoDateSchema,
-  description: z.string().trim().optional(),
-  debit: NonNegativeMoneySchema.default("0"),
-  credit: NonNegativeMoneySchema.default("0"),
-}).refine((row) => positiveAmount(row.debit) !== positiveAmount(row.credit), {
-  message: "Baris rekening koran harus memiliki tepat satu nominal debit atau kredit",
-});
+export const BankStatementImportRowSchema = z
+  .object({
+    statementDate: IsoDateSchema,
+    description: z.string().trim().optional(),
+    debit: NonNegativeMoneySchema.default("0"),
+    credit: NonNegativeMoneySchema.default("0"),
+  })
+  .refine((row) => positiveAmount(row.debit) !== positiveAmount(row.credit), {
+    message: "Baris rekening koran harus memiliki tepat satu nominal debit atau kredit",
+  });
 
 export const BankStatementImportSchema = z.object({
   bankAccountId: z.string().min(1),
@@ -180,13 +232,15 @@ export const BankReconMatchSchema = z.object({
   journalLineId: z.string().min(1),
 });
 
-export const ReportPeriodSchema = z.object({
-  startDate: IsoDateSchema,
-  endDate: IsoDateSchema,
-}).refine((period) => period.startDate <= period.endDate, {
-  message: "Rentang tanggal laporan tidak valid",
-  path: ["endDate"],
-});
+export const ReportPeriodSchema = z
+  .object({
+    startDate: IsoDateSchema,
+    endDate: IsoDateSchema,
+  })
+  .refine((period) => period.startDate <= period.endDate, {
+    message: "Rentang tanggal laporan tidak valid",
+    path: ["endDate"],
+  });
 
 export const IncomeStatementQuerySchema = z.object({
   period: ReportPeriodSchema,

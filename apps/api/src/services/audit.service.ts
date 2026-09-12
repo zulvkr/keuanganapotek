@@ -18,25 +18,33 @@ export function recordAudit(
     after?: unknown;
   },
 ) {
-  db.insert(auditLogs).values({
-    id: randomUUID(), entityType: input.entityType, entityId: input.entityId,
-    action: input.action, actor: input.actor ?? "system",
-    beforeData: input.before === undefined ? null : JSON.stringify(input.before),
-    afterData: input.after === undefined ? null : JSON.stringify(input.after),
-    occurredAt: nowIsoInstant(),
-  }).run();
+  db.insert(auditLogs)
+    .values({
+      id: randomUUID(),
+      entityType: input.entityType,
+      entityId: input.entityId,
+      action: input.action,
+      actor: input.actor ?? "system",
+      beforeData: input.before === undefined ? null : JSON.stringify(input.before),
+      afterData: input.after === undefined ? null : JSON.stringify(input.after),
+      occurredAt: nowIsoInstant(),
+    })
+    .run();
 }
 
 export function listAuditLogs(db: Db, filters: { entityType?: string; entityId?: string } = {}) {
   const conditions = [];
   if (filters.entityType) conditions.push(eq(auditLogs.entityType, filters.entityType));
   if (filters.entityId) conditions.push(eq(auditLogs.entityId, filters.entityId));
-  return db.select().from(auditLogs)
+  return db
+    .select()
+    .from(auditLogs)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(auditLogs.occurredAt), asc(auditLogs.id)).all()
+    .orderBy(desc(auditLogs.occurredAt), asc(auditLogs.id))
+    .all()
     .map((row) => ({
       ...row,
-      before: row.beforeData ? JSON.parse(row.beforeData) as unknown : null,
-      after: row.afterData ? JSON.parse(row.afterData) as unknown : null,
+      before: row.beforeData ? (JSON.parse(row.beforeData) as unknown) : null,
+      after: row.afterData ? (JSON.parse(row.afterData) as unknown) : null,
     }));
 }

@@ -41,8 +41,10 @@ async function isAvailable(port) {
 
 async function choosePort(config, label, excludedPorts = []) {
   if (config.explicit) {
-    if (excludedPorts.includes(config.value)) throw new Error(`${label} port ${config.value} conflicts with another dev service`);
-    if (!(await isAvailable(config.value))) throw new Error(`${label} port ${config.value} is already in use`);
+    if (excludedPorts.includes(config.value))
+      throw new Error(`${label} port ${config.value} conflicts with another dev service`);
+    if (!(await isAvailable(config.value)))
+      throw new Error(`${label} port ${config.value} is already in use`);
     return config.value;
   }
 
@@ -62,8 +64,16 @@ const childEnv = {
   VITE_API_URL: process.env.VITE_API_URL || `http://127.0.0.1:${apiPort}`,
 };
 const children = [
-  spawn("pnpm", ["--filter", "@keuangan-apotek/api", "run", "dev"], { env: childEnv, stdio: "inherit", windowsHide: true }),
-  spawn("pnpm", ["--filter", "@keuangan-apotek/web", "run", "dev"], { env: childEnv, stdio: "inherit", windowsHide: true }),
+  spawn("pnpm", ["--filter", "@keuangan-apotek/api", "run", "dev"], {
+    env: childEnv,
+    stdio: "inherit",
+    windowsHide: true,
+  }),
+  spawn("pnpm", ["--filter", "@keuangan-apotek/web", "run", "dev"], {
+    env: childEnv,
+    stdio: "inherit",
+    windowsHide: true,
+  }),
 ];
 let shuttingDown = false;
 
@@ -74,12 +84,13 @@ function shutdown(code = 0) {
   setTimeout(() => process.exit(code), 250);
 }
 
-for (const child of children) child.once("exit", (code, signal) => {
-  if (!shuttingDown) {
-    console.error(`Dev process stopped (${signal ?? `exit ${code ?? 1}`}).`);
-    shutdown(code ?? 1);
-  }
-});
+for (const child of children)
+  child.once("exit", (code, signal) => {
+    if (!shuttingDown) {
+      console.error(`Dev process stopped (${signal ?? `exit ${code ?? 1}`}).`);
+      shutdown(code ?? 1);
+    }
+  });
 process.once("SIGINT", () => shutdown(0));
 process.once("SIGTERM", () => shutdown(0));
 

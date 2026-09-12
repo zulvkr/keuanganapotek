@@ -46,7 +46,11 @@ export function createJournal(input: JournalInput) {
 }
 
 export function updateJournal(id: string, input: JournalInput) {
-  return requestJson(`/api/journals/${encodeURIComponent(id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  return requestJson(`/api/journals/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export function deleteJournal(id: string) {
@@ -58,7 +62,9 @@ export function createPosClearing(input: PosClearingInput) {
 }
 
 export function generatePosJournal(id: string) {
-  return requestJson(`/api/pos-clearings/${encodeURIComponent(id)}/generate-journal`, { method: "POST" });
+  return requestJson(`/api/pos-clearings/${encodeURIComponent(id)}/generate-journal`, {
+    method: "POST",
+  });
 }
 
 export function createPbfInvoice(input: PbfInvoiceInput) {
@@ -82,29 +88,67 @@ export function createCashBankTransfer(input: CashBankTransferInput) {
 }
 
 export function importBankRecon(input: BankReconImportInput) {
-  return requestJson<{ imported: unknown[] }>("/api/bank-recon/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  return requestJson<{ imported: unknown[] }>("/api/bank-recon/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export function autoMatchBankRecon(bankAccountId: string) {
-  return requestJson<{ matchedCount: number }>("/api/bank-recon/auto-match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bankAccountId }) });
+  return requestJson<{ matchedCount: number }>("/api/bank-recon/auto-match", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bankAccountId }),
+  });
 }
 
 export function matchBankRecon(input: BankReconMatchInput) {
-  return requestJson("/api/bank-recon/matches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  return requestJson("/api/bank-recon/matches", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export function unmatchBankRecon(id: string) {
-  return requestJson<null>(`/api/bank-recon/matches/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return requestJson<null>(`/api/bank-recon/matches/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
-export function autoBalanceOpeningBalances(input: { cutoffDate: string; lines: Array<{ accountId: string; debitAmount: string; creditAmount: string; notes?: string }> }) {
-  return requestJson<{ cutoffDate: string; lines: unknown[]; totals: unknown }>("/api/opening-balances/auto-balance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export function autoBalanceOpeningBalances(input: {
+  cutoffDate: string;
+  lines: Array<{ accountId: string; debitAmount: string; creditAmount: string; notes?: string }>;
+}) {
+  return requestJson<{ cutoffDate: string; lines: unknown[]; totals: unknown }>(
+    "/api/opening-balances/auto-balance",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
 }
 
-export function saveOpeningBalances(input: { cutoffDate: string; lines: Array<{ accountId: string; debitAmount: string; creditAmount: string; notes?: string }> }) {
-  return requestJson<{ saved: boolean; cutoffDate: string }>("/api/opening-balances/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export function saveOpeningBalances(input: {
+  cutoffDate: string;
+  lines: Array<{ accountId: string; debitAmount: string; creditAmount: string; notes?: string }>;
+}) {
+  return requestJson<{ saved: boolean; cutoffDate: string }>("/api/opening-balances/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export function lockOpeningBalances(cutoffDate: string) {
-  return requestJson<{ locked: boolean; journal: { journalNo: string } }>("/api/opening-balances/lock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cutoffDate }) });
+  return requestJson<{ locked: boolean; journal: { journalNo: string } }>(
+    "/api/opening-balances/lock",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cutoffDate }),
+    },
+  );
 }
