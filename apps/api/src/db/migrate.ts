@@ -89,6 +89,18 @@ const migrationStatements = [
     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_pos_payment_methods_active_order ON pos_payment_methods(is_active, sort_order)`,
+  `CREATE TABLE IF NOT EXISTS cashiers (
+    id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE,
+    is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_cashiers_active_order ON cashiers(is_active, sort_order)`,
+  `CREATE TABLE IF NOT EXISTS shifts (
+    id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE,
+    is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_shifts_active_order ON shifts(is_active, sort_order)`,
   `CREATE TABLE IF NOT EXISTS pos_clearing_payments (
     id TEXT PRIMARY KEY NOT NULL, clearing_id TEXT NOT NULL REFERENCES pos_clearings(id) ON DELETE CASCADE,
     payment_method_id TEXT NOT NULL REFERENCES pos_payment_methods(id) ON DELETE RESTRICT, amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),

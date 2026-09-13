@@ -11,7 +11,9 @@ import type {
   PbfInvoiceInput,
   PosClearingInput,
   SaveAccount,
+  SaveCashier,
   SavePaymentMethod,
+  SaveShift,
 } from "./queries";
 
 export function invalidateAccountingQueries(queryClient: QueryClient) {
@@ -31,6 +33,14 @@ export function invalidateAccountingQueries(queryClient: QueryClient) {
 
 export function savePaymentMethod(input: SavePaymentMethod) {
   return rpc(() => api.api["pos-payment-methods"].$post({ json: input }));
+}
+
+export function saveCashier(input: SaveCashier) {
+  return rpc(() => api.api.cashiers.$post({ json: input }));
+}
+
+export function saveShift(input: SaveShift) {
+  return rpc(() => api.api.shifts.$post({ json: input }));
 }
 
 export function saveAccount(input: SaveAccount) {
