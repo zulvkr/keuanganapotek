@@ -43,7 +43,6 @@ test("keeps draft metadata inside the journal grid", async ({ page }) => {
 
   await expect(journalTable.getByLabel("Tanggal jurnal draft")).toHaveCount(1);
   await expect(journalTable.getByLabel("Referensi jurnal draft")).toHaveCount(1);
-  await expect(journalTable.getByLabel("Memo jurnal draft")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "1 line" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -60,7 +59,7 @@ test("edits a GENERAL journal inline in its table group", async ({ page }) => {
     journalNo: "JU-202609-0001",
     entryDate: "2026-09-10",
     referenceNo: "ADJ-001",
-    memo: "Penyesuaian kas",
+    memo: null,
     sourceModule: "GENERAL",
     totalDebit: 100000000,
     totalCredit: 100000000,
@@ -84,7 +83,7 @@ test("edits a GENERAL journal inline in its table group", async ({ page }) => {
       },
     ],
   };
-  let updatedMemo = journal.memo;
+  let updatedReferenceNo = journal.referenceNo;
 
   await page.route("**/api/accounts/tree", (route) =>
     route.fulfill({
@@ -97,26 +96,63 @@ test("edits a GENERAL journal inline in its table group", async ({ page }) => {
     }),
   );
   await page.route("**/api/journals", (route) =>
-    route.fulfill({ json: { data: [{ ...journal, memo: updatedMemo }] } }),
+    route.fulfill({ json: { data: [{ ...journal, referenceNo: updatedReferenceNo }] } }),
   );
   await page.route("**/api/journals/journal-1", async (route) => {
     if (route.request().method() !== "PUT") return route.continue();
-    const body = route.request().postDataJSON() as { memo: string };
-    updatedMemo = body.memo;
+    const body = route.request().postDataJSON() as { referenceNo: string };
+    updatedReferenceNo = body.referenceNo;
     await route.fulfill({
-      json: { data: { journal: { ...journal, memo: updatedMemo }, lines: journal.lines } },
+      json: {
+        data: {
+          journal: { ...journal, referenceNo: updatedReferenceNo },
+          lines: journal.lines,
+        },
+      },
     });
   });
 
   await page.goto("/");
   await page.getByRole("button", { name: "Jurnal Umum" }).click();
-  await expect(page.getByText("JU-202609-0001").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit JU-202609-0001" })).toBeVisible();
   await page.getByRole("button", { name: "Edit JU-202609-0001" }).click();
 
-  const memo = page.getByLabel("Memo jurnal JU-202609-0001").first();
-  await memo.fill("Penyesuaian diperbarui");
+  const refInput = page.getByLabel("Referensi jurnal JU-202609-0001").first();
+  await refInput.fill("ADJ-002");
   await page.getByRole("button", { name: "Simpan JU-202609-0001" }).click();
 
   await expect(page.getByText("Jurnal berhasil diperbarui.")).toBeVisible();
-  await expect(page.getByText("Penyesuaian diperbarui").first()).toBeVisible();
+  await expect(page.getByText("ADJ-002").first()).toBeVisible();
+});
+
+test("applies date presets and handles new journal button click", async ({ page }) => {
+  await page.route("**/api/accounts/tree", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          { id: "coa-1101", code: "1101", name: "Kas Toko / Kasir", isActive: true },
+          { id: "coa-4101", code: "4101", name: "Pendapatan Penjualan", isActive: true },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/journals*", (route) => route.fulfill({ json: { data: [] } }));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Jurnal Umum" }).click();
+
+  // Test preset buttons
+  await page.getByRole("button", { name: "Bulan ini" }).click();
+  const startInput = page.getByLabel("Filter jurnal mulai");
+  const endInput = page.getByLabel("Filter jurnal sampai");
+  await expect(startInput).not.toHaveValue("");
+  await expect(endInput).not.toHaveValue("");
+
+  await page.getByRole("button", { name: "Semua" }).click();
+  await expect(startInput).toHaveValue("");
+  await expect(endInput).toHaveValue("");
+
+  // Test Jurnal baru button
+  await page.getByRole("button", { name: "Jurnal baru" }).click();
+  await expect(page.getByText("Draft jurnal baru siap diisi.")).toBeVisible();
 });

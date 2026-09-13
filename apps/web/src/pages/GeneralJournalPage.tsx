@@ -7,18 +7,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  ChevronDown,
-  ClipboardPaste,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Save,
-  Trash2,
-  Undo2,
-  X,
-} from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, RotateCcw, Save, Trash2, Undo2, X } from "lucide-react";
 import {
   JournalEntrySchema,
   parseRupiahToSen,
@@ -41,7 +30,6 @@ type InlineJournalEdit = {
   id: string;
   entryDate: string;
   referenceNo: string;
-  memo: string;
   rows: DraftLine[];
 };
 
@@ -82,19 +70,59 @@ function toDraftRows(journal: JournalSummary): DraftLine[] {
   }));
 }
 
+type DatePreset = "ALL" | "THIS_MONTH" | "PREV_MONTH" | "THIS_YEAR" | "TODAY" | "CUSTOM";
+
+function getDatePresetRange(preset: DatePreset): { startDate: string; endDate: string } {
+  const today = todayIsoDate();
+  const [yearStr, monthStr] = today.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+
+  if (preset === "TODAY") {
+    return { startDate: today, endDate: today };
+  }
+  if (preset === "THIS_MONTH") {
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const mm = String(month).padStart(2, "0");
+    return {
+      startDate: `${year}-${mm}-01`,
+      endDate: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+    };
+  }
+  if (preset === "PREV_MONTH") {
+    const prevDate = new Date(Date.UTC(year, month - 2, 1));
+    const prevYear = prevDate.getUTCFullYear();
+    const prevMonth = prevDate.getUTCMonth() + 1;
+    const lastDay = new Date(Date.UTC(prevYear, prevMonth, 0)).getUTCDate();
+    const mm = String(prevMonth).padStart(2, "0");
+    return {
+      startDate: `${prevYear}-${mm}-01`,
+      endDate: `${prevYear}-${mm}-${String(lastDay).padStart(2, "0")}`,
+    };
+  }
+  if (preset === "THIS_YEAR") {
+    return {
+      startDate: `${year}-01-01`,
+      endDate: `${year}-12-31`,
+    };
+  }
+  return { startDate: "", endDate: "" };
+}
+
 function GeneralJournalPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [entryDate, setEntryDate] = useState(todayIsoDate());
   const [referenceNo, setReferenceNo] = useState("");
-  const [memo, setMemo] = useState("");
   const [rows, setRows] = useState<DraftLine[]>([emptyLine(), emptyLine()]);
   const [history, setHistory] = useState<DraftLine[][]>([]);
   const [future, setFuture] = useState<DraftLine[][]>([]);
   const [inlineEdit, setInlineEdit] = useState<InlineJournalEdit | null>(null);
   const [singleLine, setSingleLine] = useState(true);
+  const [activePreset, setActivePreset] = useState<DatePreset>("ALL");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [message, setMessage] = useState("");
+  const draftRowRef = useRef<HTMLTableRowElement | null>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const queryClient = useQueryClient();
   const accountsQuery = useQuery({ queryKey: queryKeys.accounts, queryFn: getAccounts });
@@ -176,16 +204,26 @@ function GeneralJournalPage() {
   function resetDraft() {
     setEntryDate(todayIsoDate());
     setReferenceNo("");
-    setMemo("");
     setRows([emptyLine(), emptyLine()]);
     setHistory([]);
     setFuture([]);
   }
 
+  function applyPreset(preset: DatePreset) {
+    setActivePreset(preset);
+    const range = getDatePresetRange(preset);
+    setStartDate(range.startDate);
+    setEndDate(range.endDate);
+  }
+
   function newJournal() {
     setInlineEdit(null);
     resetDraft();
-    setMessage("");
+    setMessage("Draft jurnal baru siap diisi.");
+    window.setTimeout(() => {
+      draftRowRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      inputRefs.current["0:account"]?.focus();
+    }, 50);
   }
 
   function commitRows(next: DraftLine[] | ((current: DraftLine[]) => DraftLine[])) {
@@ -344,7 +382,6 @@ function GeneralJournalPage() {
       id: journal.id,
       entryDate: journal.entryDate,
       referenceNo: journal.referenceNo ?? "",
-      memo: journal.memo ?? "",
       rows: toDraftRows(journal),
     });
     setMessage("");
@@ -366,7 +403,6 @@ function GeneralJournalPage() {
     return JournalEntrySchema.safeParse({
       entryDate: edit?.entryDate ?? entryDate,
       referenceNo: edit?.referenceNo ?? referenceNo,
-      memo: edit?.memo ?? memo,
       lines: resolvedRows,
     });
   }
@@ -402,9 +438,8 @@ function GeneralJournalPage() {
   function renderTableHeader() {
     return singleLine ? (
       <tr>
-        <th className="w-24 px-3 py-3">Nomor</th>
         <th className="w-40 px-3 py-3">Tanggal</th>
-        <th className="w-56 px-3 py-3">Referensi / Memo</th>
+        <th className="w-48 px-3 py-3">Referensi</th>
         <th className="min-w-[230px] px-3 py-3">Akun debit</th>
         <th className="min-w-[230px] px-3 py-3">Akun kredit</th>
         <th className="w-48 px-3 py-3 text-right">Nominal (Rp)</th>
@@ -413,9 +448,8 @@ function GeneralJournalPage() {
       </tr>
     ) : (
       <tr>
-        <th className="w-24 px-3 py-3">Nomor</th>
         <th className="w-40 px-3 py-3">Tanggal</th>
-        <th className="w-56 px-3 py-3">Referensi / Memo</th>
+        <th className="w-48 px-3 py-3">Referensi</th>
         <th className="min-w-[230px] px-3 py-3">Akun</th>
         <th className="min-w-[190px] px-3 py-3">Keterangan</th>
         <th className="w-48 px-3 py-3 text-right">Debit (Rp)</th>
@@ -431,10 +465,7 @@ function GeneralJournalPage() {
       const creditRow = rows[1] ?? emptyLine();
       const amount = debitRow.debit || creditRow.credit;
       return (
-        <tr>
-          <td className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 text-center align-top font-semibold text-brand">
-            Baru
-          </td>
+        <tr ref={draftRowRef}>
           <td className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top">
             <input
               aria-label="Tanggal jurnal draft"
@@ -451,13 +482,6 @@ function GeneralJournalPage() {
               onChange={(event) => setReferenceNo(event.target.value)}
               placeholder="No. bukti / referensi"
               value={referenceNo}
-            />
-            <input
-              aria-label="Memo jurnal draft"
-              className="mt-2 w-full rounded-md border border-transparent bg-white px-2 py-2 text-sm outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
-              onChange={(event) => setMemo(event.target.value)}
-              placeholder="Memo singkat"
-              value={memo}
             />
           </td>
           <td className="px-3 py-2">
@@ -535,15 +559,13 @@ function GeneralJournalPage() {
       );
     }
     return rows.map((row, index) => (
-      <tr className={singleLine && index % 2 ? "bg-blue-50/30" : ""} key={`draft-${index}`}>
+      <tr
+        className={singleLine && index % 2 ? "bg-blue-50/30" : ""}
+        key={`draft-${index}`}
+        ref={index === 0 ? draftRowRef : undefined}
+      >
         {(singleLine || index === 0) && (
           <>
-            <td
-              className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 text-center align-top font-semibold text-brand"
-              rowSpan={singleLine ? undefined : rows.length}
-            >
-              Baru
-            </td>
             <td
               className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top"
               rowSpan={singleLine ? undefined : rows.length}
@@ -566,13 +588,6 @@ function GeneralJournalPage() {
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="No. bukti / referensi"
                 value={referenceNo}
-              />
-              <input
-                aria-label="Memo jurnal draft"
-                className="mt-2 w-full rounded-md border border-transparent bg-white px-2 py-2 text-sm outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
-                onChange={(event) => setMemo(event.target.value)}
-                placeholder="Memo singkat"
-                value={memo}
               />
             </td>
           </>
@@ -661,14 +676,23 @@ function GeneralJournalPage() {
             className="bg-blue-50/50 px-3 py-2 text-center align-top"
             rowSpan={singleLine ? undefined : rows.length}
           >
-            <button
-              className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-              disabled={!canPost || saveMutation.isPending}
-              onClick={submitJournal}
-              type="button"
-            >
-              <Save size={14} /> Posting
-            </button>
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                disabled={!canPost || saveMutation.isPending}
+                onClick={submitJournal}
+                type="button"
+              >
+                <Save size={14} /> Posting
+              </button>
+              <button
+                className="inline-flex items-center gap-1 rounded-lg border border-dashed border-blue-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand hover:border-brand hover:bg-blue-50"
+                onClick={addRow}
+                type="button"
+              >
+                <Plus size={13} /> Tambah baris
+              </button>
+            </div>
           </td>
         ) : (
           <td className="bg-blue-50/30 px-3 py-2" />
@@ -687,9 +711,6 @@ function GeneralJournalPage() {
       const amount = debitRow.debit || creditRow.credit || String(journal.totalDebit / 100);
       return (
         <tr key={`${journal.id}-single`}>
-          <td className="border-r border-slate-100 px-3 py-3 align-top font-mono font-semibold tabular-nums">
-            {journal.journalNo}
-          </td>
           <td className="border-r border-slate-100 px-3 py-3 align-top">
             {isEditing ? (
               <input
@@ -709,35 +730,19 @@ function GeneralJournalPage() {
           </td>
           <td className="border-r border-slate-100 px-3 py-3 align-top">
             {isEditing ? (
-              <>
-                <input
-                  aria-label={`Referensi jurnal ${journal.journalNo}`}
-                  className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                  onChange={(event) =>
-                    setInlineEdit((current) =>
-                      current ? { ...current, referenceNo: event.target.value } : current,
-                    )
-                  }
-                  placeholder="No. referensi"
-                  value={edit!.referenceNo}
-                />
-                <input
-                  aria-label={`Memo jurnal ${journal.journalNo}`}
-                  className="mt-2 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                  onChange={(event) =>
-                    setInlineEdit((current) =>
-                      current ? { ...current, memo: event.target.value } : current,
-                    )
-                  }
-                  placeholder="Memo"
-                  value={edit!.memo}
-                />
-              </>
+              <input
+                aria-label={`Referensi jurnal ${journal.journalNo}`}
+                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
+                onChange={(event) =>
+                  setInlineEdit((current) =>
+                    current ? { ...current, referenceNo: event.target.value } : current,
+                  )
+                }
+                placeholder="No. referensi"
+                value={edit!.referenceNo}
+              />
             ) : (
-              <>
-                <p>{journal.referenceNo || "—"}</p>
-                <p className="mt-1 text-xs text-slate-500">{journal.memo || "—"}</p>
-              </>
+              <p>{journal.referenceNo || "—"}</p>
             )}
           </td>
           <td className="px-3 py-3 align-top">
@@ -864,12 +869,6 @@ function GeneralJournalPage() {
         {(singleLine || index === 0) && (
           <>
             <td
-              className="border-r border-slate-100 px-3 py-3 align-top font-mono font-semibold tabular-nums"
-              rowSpan={singleLine ? undefined : displayRows.length}
-            >
-              {journal.journalNo}
-            </td>
-            <td
               className="border-r border-slate-100 px-3 py-3 align-top"
               rowSpan={singleLine ? undefined : displayRows.length}
             >
@@ -894,35 +893,19 @@ function GeneralJournalPage() {
               rowSpan={singleLine ? undefined : displayRows.length}
             >
               {isEditing ? (
-                <>
-                  <input
-                    aria-label={`Referensi jurnal ${journal.journalNo}`}
-                    className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                    onChange={(event) =>
-                      setInlineEdit((current) =>
-                        current ? { ...current, referenceNo: event.target.value } : current,
-                      )
-                    }
-                    placeholder="No. referensi"
-                    value={edit!.referenceNo}
-                  />
-                  <input
-                    aria-label={`Memo jurnal ${journal.journalNo}`}
-                    className="mt-2 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                    onChange={(event) =>
-                      setInlineEdit((current) =>
-                        current ? { ...current, memo: event.target.value } : current,
-                      )
-                    }
-                    placeholder="Memo"
-                    value={edit!.memo}
-                  />
-                </>
+                <input
+                  aria-label={`Referensi jurnal ${journal.journalNo}`}
+                  className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
+                  onChange={(event) =>
+                    setInlineEdit((current) =>
+                      current ? { ...current, referenceNo: event.target.value } : current,
+                    )
+                  }
+                  placeholder="No. referensi"
+                  value={edit!.referenceNo}
+                />
               ) : (
-                <>
-                  <p>{journal.referenceNo || "—"}</p>
-                  <p className="mt-1 text-xs text-slate-500">{journal.memo || "—"}</p>
-                </>
+                <p>{journal.referenceNo || "—"}</p>
               )}
             </td>
           </>
@@ -1185,29 +1168,69 @@ function GeneralJournalPage() {
                 </button>
               </div>
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600"
+                className="inline-flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm font-semibold text-brand hover:bg-brand hover:text-white transition"
                 onClick={newJournal}
                 type="button"
               >
                 <Plus size={16} /> Jurnal baru
               </button>
-              <span className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                <ClipboardPaste size={15} /> Excel paste siap
-              </span>
-              <input
-                aria-label="Filter jurnal mulai"
-                className="rounded-lg border border-slate-200 px-3 py-2 text-xs tabular-nums"
-                onChange={(event) => setStartDate(event.target.value)}
-                type="date"
-                value={startDate}
-              />
-              <input
-                aria-label="Filter jurnal sampai"
-                className="rounded-lg border border-slate-200 px-3 py-2 text-xs tabular-nums"
-                onChange={(event) => setEndDate(event.target.value)}
-                type="date"
-                value={endDate}
-              />
+              <div
+                aria-label="Filter periode preset"
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50/70 p-1"
+                role="group"
+              >
+                <button
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "THIS_MONTH" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  onClick={() => applyPreset("THIS_MONTH")}
+                  type="button"
+                >
+                  Bulan ini
+                </button>
+                <button
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "PREV_MONTH" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  onClick={() => applyPreset("PREV_MONTH")}
+                  type="button"
+                >
+                  Bulan lalu
+                </button>
+                <button
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "THIS_YEAR" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  onClick={() => applyPreset("THIS_YEAR")}
+                  type="button"
+                >
+                  Tahun ini
+                </button>
+                <button
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "ALL" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  onClick={() => applyPreset("ALL")}
+                  type="button"
+                >
+                  Semua
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  aria-label="Filter jurnal mulai"
+                  className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs tabular-nums outline-none focus:border-brand"
+                  onChange={(event) => {
+                    setStartDate(event.target.value);
+                    setActivePreset("CUSTOM");
+                  }}
+                  type="date"
+                  value={startDate}
+                />
+                <span className="text-xs text-slate-400">s/d</span>
+                <input
+                  aria-label="Filter jurnal sampai"
+                  className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs tabular-nums outline-none focus:border-brand"
+                  onChange={(event) => {
+                    setEndDate(event.target.value);
+                    setActivePreset("CUSTOM");
+                  }}
+                  type="date"
+                  value={endDate}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1220,7 +1243,7 @@ function GeneralJournalPage() {
               {renderDraftRows()}
               {journalsQuery.isLoading ? (
                 <tr>
-                  <td className="px-3 py-8 text-center text-muted" colSpan={8}>
+                  <td className="px-3 py-8 text-center text-muted" colSpan={7}>
                     Memuat jurnal...
                   </td>
                 </tr>
@@ -1235,13 +1258,6 @@ function GeneralJournalPage() {
             <option key={account.id} value={`${account.code} · ${account.name}`} />
           ))}
         </datalist>
-        <button
-          className="m-3 inline-flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-          onClick={addRow}
-          type="button"
-        >
-          <Plus size={15} /> Tambah baris draft
-        </button>
       </section>
     </div>
   );
