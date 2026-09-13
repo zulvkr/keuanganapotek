@@ -14,12 +14,14 @@ import {
   nowIsoInstant,
   SaveOpeningBalancesSchema,
   CashBankTransferSchema,
+  CashierSchema,
   ConsignmentItemSchema,
   ConsignmentSettlementSchema,
   ConsignmentVendorSchema,
   PbfInvoiceSchema,
   PosClearingSchema,
   PosPaymentMethodSchema,
+  ShiftSchema,
   AccountJournalDrillDownQuerySchema,
   BalanceSheetQuerySchema,
   IncomeStatementQuerySchema,
@@ -53,6 +55,7 @@ import {
 import type { HealthResponse } from "@keuangan-apotek/shared";
 import {
   createCashBankTransfer,
+  listCashiers,
   createConsignmentItem,
   createConsignmentVendor,
   createPbfInvoice,
@@ -65,8 +68,11 @@ import {
   listConsignmentItems,
   listPbfInvoices,
   listPosClearings,
+  listShifts,
   updatePosClearing,
   savePosPaymentMethod,
+  saveCashier,
+  saveShift,
   settleConsignment,
 } from "./services/operational.service.js";
 import {
@@ -508,6 +514,22 @@ export function createApiApp(client: SqliteClient) {
     .get("/api/pos-payment-methods", (context) => {
       try {
         return context.json({ data: listPosPaymentMethods(client.db) });
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+    .get("/api/cashiers", (context) => context.json({ data: listCashiers(client.db) }))
+    .post("/api/cashiers", validateJson(CashierSchema), async (context) => {
+      try {
+        return context.json({ data: saveCashier(client.db, context.req.valid("json")) });
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+    .get("/api/shifts", (context) => context.json({ data: listShifts(client.db) }))
+    .post("/api/shifts", validateJson(ShiftSchema), async (context) => {
+      try {
+        return context.json({ data: saveShift(client.db, context.req.valid("json")) });
       } catch (error) {
         return errorResponse(context, error);
       }

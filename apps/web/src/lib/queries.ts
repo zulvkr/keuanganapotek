@@ -11,6 +11,8 @@ export const queryKeys = {
   journal: (id: string) => ["journal", id] as const,
   posClearings: ["pos-clearings"] as const,
   paymentMethods: ["pos-payment-methods"] as const,
+  cashiers: ["cashiers"] as const,
+  shifts: ["shifts"] as const,
   pbfInvoices: ["pbf-invoices"] as const,
   consignmentItems: ["consignment-items"] as const,
   cashBankTransfers: ["cash-bank", "transfers"] as const,
@@ -59,6 +61,8 @@ export type JournalDetail = {
 export type PosPaymentMethod = ResponseData<
   InferResponseType<(typeof api.api)["pos-payment-methods"]["$get"]>
 >[number];
+export type Cashier = ResponseData<InferResponseType<(typeof api.api.cashiers)["$get"]>>[number];
+export type Shift = ResponseData<InferResponseType<(typeof api.api.shifts)["$get"]>>[number];
 export type PosClearing = ResponseData<
   InferResponseType<(typeof api.api)["pos-clearings"]["$get"]>
 >[number];
@@ -201,6 +205,8 @@ export type DrillDown = {
 export type SavePaymentMethod = InferRequestType<
   (typeof api.api)["pos-payment-methods"]["$post"]
 >["json"];
+export type SaveCashier = InferRequestType<(typeof api.api.cashiers)["$post"]>["json"];
+export type SaveShift = InferRequestType<(typeof api.api.shifts)["$post"]>["json"];
 export type SaveAccount = InferRequestType<(typeof api.api.accounts)["$post"]>["json"];
 export type JournalInput = InferRequestType<(typeof api.api.journals.general)["$post"]>["json"];
 export type PosClearingInput = InferRequestType<(typeof api.api)["pos-clearings"]["$post"]>["json"];
@@ -255,6 +261,14 @@ export function getJournal(id: string) {
 
 export function getPaymentMethods() {
   return rpc(() => api.api["pos-payment-methods"].$get()).then((response) => response.data);
+}
+
+export function getCashiers() {
+  return rpc(() => api.api.cashiers.$get()).then((response) => response.data);
+}
+
+export function getShifts() {
+  return rpc(() => api.api.shifts.$get()).then((response) => response.data);
 }
 
 export function getPosClearings() {

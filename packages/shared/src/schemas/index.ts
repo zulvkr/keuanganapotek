@@ -180,6 +180,20 @@ export const PosPaymentMethodSchema = z.object({
   sortOrder: z.number().int().nonnegative().default(0),
 });
 
+export const CashierSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(1).max(120),
+  isActive: z.boolean().default(true),
+  sortOrder: z.number().int().nonnegative().default(0),
+});
+
+export const ShiftSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(1).max(120),
+  isActive: z.boolean().default(true),
+  sortOrder: z.number().int().nonnegative().default(0),
+});
+
 export const ConsignmentVendorSchema = z.object({
   id: z.string().optional(),
   vendorName: z.string().trim().min(1),
@@ -274,6 +288,8 @@ export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 export type PbfInvoice = z.infer<typeof PbfInvoiceSchema>;
 export type PosClearing = z.infer<typeof PosClearingSchema>;
 export type PosPaymentMethod = z.infer<typeof PosPaymentMethodSchema>;
+export type Cashier = z.infer<typeof CashierSchema>;
+export type Shift = z.infer<typeof ShiftSchema>;
 export type ConsignmentVendor = z.infer<typeof ConsignmentVendorSchema>;
 export type ConsignmentItem = z.infer<typeof ConsignmentItemSchema>;
 export type ConsignmentSettlement = z.infer<typeof ConsignmentSettlementSchema>;

@@ -1,10 +1,20 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { savePaymentMethod } from "../lib/mutations";
-import { getAccounts, getPaymentMethods, queryKeys } from "../lib/queries";
+import { saveCashier, savePaymentMethod, saveShift } from "../lib/mutations";
+import {
+  getAccounts,
+  getCashiers,
+  getPaymentMethods,
+  getShifts,
+  queryKeys,
+  type Cashier,
+  type Shift,
+} from "../lib/queries";
 
 type PosPaymentMethod = Awaited<ReturnType<typeof getPaymentMethods>>[number];
 type SavePaymentMethodInput = Parameters<typeof savePaymentMethod>[0];
+type SaveCashierInput = Parameters<typeof saveCashier>[0];
+type SaveShiftInput = Parameters<typeof saveShift>[0];
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
@@ -19,18 +29,31 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function SettingsPage() {
   const [methods, setMethods] = useState<PosPaymentMethod[]>([]);
+  const [cashiers, setCashiers] = useState<Cashier[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [newCashier, setNewCashier] = useState("");
+  const [newShift, setNewShift] = useState("");
   const [newMethod, setNewMethod] = useState({ name: "", accountId: "" });
   const [message, setMessage] = useState("");
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({
     queryKey: ["settings"],
     queryFn: async () => {
-      const [methods, accounts] = await Promise.all([getPaymentMethods(), getAccounts()]);
-      return { methods, accounts };
+      const [methods, accounts, cashiers, shifts] = await Promise.all([
+        getPaymentMethods(),
+        getAccounts(),
+        getCashiers(),
+        getShifts(),
+      ]);
+      return { methods, accounts, cashiers, shifts };
     },
   });
   useEffect(() => {
-    if (settingsQuery.data) setMethods(settingsQuery.data.methods);
+    if (settingsQuery.data) {
+      setMethods(settingsQuery.data.methods);
+      setCashiers(settingsQuery.data.cashiers);
+      setShifts(settingsQuery.data.shifts);
+    }
   }, [settingsQuery.data]);
   const accounts = settingsQuery.data?.accounts ?? [];
   const loading = settingsQuery.isLoading;
@@ -54,6 +77,30 @@ function SettingsPage() {
     },
     onError: (error) =>
       setMessage(error instanceof Error ? error.message : "Konfigurasi metode belum tersimpan"),
+  });
+  const saveCashierMutation = useMutation({
+    mutationFn: (input: SaveCashierInput) => saveCashier(input),
+    onSuccess: async (_, input) => {
+      setMessage(`Kasir ${input.name} berhasil disimpan.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.cashiers }),
+      ]);
+    },
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Kasir belum tersimpan"),
+  });
+  const saveShiftMutation = useMutation({
+    mutationFn: (input: SaveShiftInput) => saveShift(input),
+    onSuccess: async (_, input) => {
+      setMessage(`Shift ${input.name} berhasil disimpan.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.shifts }),
+      ]);
+    },
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Shift belum tersimpan"),
   });
 
   function saveMethod(method: PosPaymentMethod) {
@@ -90,6 +137,32 @@ function SettingsPage() {
         },
       },
     );
+  }
+
+  function addCashier() {
+    if (!newCashier.trim()) {
+      setMessage("Nama kasir wajib diisi.");
+      return;
+    }
+    saveCashierMutation.mutate({
+      name: newCashier.trim(),
+      isActive: true,
+      sortOrder: cashiers.length * 10 + 10,
+    });
+    setNewCashier("");
+  }
+
+  function addShift() {
+    if (!newShift.trim()) {
+      setMessage("Nama shift wajib diisi.");
+      return;
+    }
+    saveShiftMutation.mutate({
+      name: newShift.trim(),
+      isActive: true,
+      sortOrder: shifts.length * 10 + 10,
+    });
+    setNewShift("");
   }
 
   return (
@@ -215,6 +288,151 @@ function SettingsPage() {
             </div>
           </>
         )}
+      </Card>
+
+      <Card>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand">POS Clearing</p>
+        <h3 className="mt-1 text-lg font-semibold">Master kasir dan shift</h3>
+        <p className="mt-1 text-sm text-muted">
+          Input dan aktifkan kasir serta shift di sini. Data aktif akan tersedia sebagai dropdown di
+          form POS Clearing.
+        </p>
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h4 className="text-sm font-semibold">Kasir</h4>
+            <div className="mt-3 space-y-2">
+              {cashiers.map((cashier) => (
+                <div
+                  className="flex items-center gap-2 rounded-lg bg-slate-50 p-2"
+                  key={cashier.id}
+                >
+                  <input
+                    aria-label={`Nama kasir ${cashier.id}`}
+                    className={inputClass}
+                    value={cashier.name}
+                    onChange={(e) =>
+                      setCashiers((current) =>
+                        current.map((item) =>
+                          item.id === cashier.id ? { ...item, name: e.target.value } : item,
+                        ),
+                      )
+                    }
+                  />
+                  <label className="flex shrink-0 items-center gap-1 text-xs text-slate-500">
+                    <input
+                      checked={cashier.isActive}
+                      onChange={(e) =>
+                        setCashiers((current) =>
+                          current.map((item) =>
+                            item.id === cashier.id ? { ...item, isActive: e.target.checked } : item,
+                          ),
+                        )
+                      }
+                      type="checkbox"
+                    />
+                    Aktif
+                  </label>
+                  <button
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-brand hover:text-brand"
+                    onClick={() =>
+                      saveCashierMutation.mutate({
+                        id: cashier.id,
+                        name: cashier.name,
+                        isActive: cashier.isActive,
+                        sortOrder: cashier.sortOrder,
+                      })
+                    }
+                    type="button"
+                  >
+                    Simpan
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                aria-label="Nama kasir baru"
+                className={inputClass}
+                placeholder="Contoh: Siti"
+                value={newCashier}
+                onChange={(e) => setNewCashier(e.target.value)}
+              />
+              <button
+                className="shrink-0 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white"
+                onClick={addCashier}
+                type="button"
+              >
+                + Tambah
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-semibold">Shift</h4>
+            <div className="mt-3 space-y-2">
+              {shifts.map((shift) => (
+                <div className="flex items-center gap-2 rounded-lg bg-slate-50 p-2" key={shift.id}>
+                  <input
+                    aria-label={`Nama shift ${shift.id}`}
+                    className={inputClass}
+                    value={shift.name}
+                    onChange={(e) =>
+                      setShifts((current) =>
+                        current.map((item) =>
+                          item.id === shift.id ? { ...item, name: e.target.value } : item,
+                        ),
+                      )
+                    }
+                  />
+                  <label className="flex shrink-0 items-center gap-1 text-xs text-slate-500">
+                    <input
+                      checked={shift.isActive}
+                      onChange={(e) =>
+                        setShifts((current) =>
+                          current.map((item) =>
+                            item.id === shift.id ? { ...item, isActive: e.target.checked } : item,
+                          ),
+                        )
+                      }
+                      type="checkbox"
+                    />
+                    Aktif
+                  </label>
+                  <button
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-brand hover:text-brand"
+                    onClick={() =>
+                      saveShiftMutation.mutate({
+                        id: shift.id,
+                        name: shift.name,
+                        isActive: shift.isActive,
+                        sortOrder: shift.sortOrder,
+                      })
+                    }
+                    type="button"
+                  >
+                    Simpan
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                aria-label="Nama shift baru"
+                className={inputClass}
+                placeholder="Contoh: Shift Pagi"
+                value={newShift}
+                onChange={(e) => setNewShift(e.target.value)}
+              />
+              <button
+                className="shrink-0 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white"
+                onClick={addShift}
+                type="button"
+              >
+                + Tambah
+              </button>
+            </div>
+          </div>
+        </div>
       </Card>
 
       <Card>

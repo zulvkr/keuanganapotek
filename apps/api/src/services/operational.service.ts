@@ -3,12 +3,14 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
 import {
   CashBankTransferSchema,
+  CashierSchema,
   ConsignmentItemSchema,
   ConsignmentSettlementSchema,
   ConsignmentVendorSchema,
   PbfInvoiceSchema,
   PosClearingSchema,
   PosPaymentMethodSchema,
+  ShiftSchema,
   calculatePpn,
   parseRupiahToSen,
   rupiahToSen,
@@ -16,16 +18,19 @@ import {
 } from "@keuangan-apotek/shared";
 import type {
   CashBankTransfer,
+  Cashier,
   ConsignmentItem,
   ConsignmentSettlement,
   ConsignmentVendor,
   PbfInvoice,
   PosClearing,
   PosPaymentMethod,
+  Shift,
 } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "../db/client.js";
 import {
   accounts,
+  cashiers,
   cashBankTransfers,
   consignmentItems,
   consignmentSettlementItems,
@@ -37,6 +42,7 @@ import {
   posClearingPayments,
   posClearings,
   posPaymentMethods,
+  shifts,
 } from "../db/schema/index.js";
 import { createJournalEntry, deleteJournal, updateJournal } from "./ledger.service.js";
 
@@ -217,6 +223,60 @@ export function savePosPaymentMethod(db: Db, input: PosPaymentMethod) {
     })
     .run();
   return listPosPaymentMethods(db).find((method) => method.id === id)!;
+}
+
+export function listCashiers(db: Db) {
+  return db.select().from(cashiers).orderBy(asc(cashiers.sortOrder), asc(cashiers.name)).all();
+}
+
+export function saveCashier(db: Db, input: Cashier) {
+  const parsed = CashierSchema.parse(input);
+  const id = parsed.id ?? randomUUID();
+  db.insert(cashiers)
+    .values({
+      id,
+      name: parsed.name,
+      isActive: parsed.isActive,
+      sortOrder: parsed.sortOrder,
+    })
+    .onConflictDoUpdate({
+      target: cashiers.id,
+      set: {
+        name: parsed.name,
+        isActive: parsed.isActive,
+        sortOrder: parsed.sortOrder,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+    .run();
+  return listCashiers(db).find((cashier) => cashier.id === id)!;
+}
+
+export function listShifts(db: Db) {
+  return db.select().from(shifts).orderBy(asc(shifts.sortOrder), asc(shifts.name)).all();
+}
+
+export function saveShift(db: Db, input: Shift) {
+  const parsed = ShiftSchema.parse(input);
+  const id = parsed.id ?? randomUUID();
+  db.insert(shifts)
+    .values({
+      id,
+      name: parsed.name,
+      isActive: parsed.isActive,
+      sortOrder: parsed.sortOrder,
+    })
+    .onConflictDoUpdate({
+      target: shifts.id,
+      set: {
+        name: parsed.name,
+        isActive: parsed.isActive,
+        sortOrder: parsed.sortOrder,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+    .run();
+  return listShifts(db).find((shift) => shift.id === id)!;
 }
 
 function configuredPayments(db: Db, parsed: PosClearing) {

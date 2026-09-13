@@ -15,15 +15,19 @@ import {
 } from "../lib/mutations";
 import {
   getAccounts,
+  getCashiers,
   getCashBankSummary,
   getCashBankTransfers,
   getConsignmentItems,
   getPbfInvoices,
   getPaymentMethods,
   getPosClearings,
+  getShifts,
   queryKeys,
   type PosClearing,
   type PosPaymentMethod,
+  type Cashier,
+  type Shift,
 } from "../lib/queries";
 
 type PbfPost = (typeof api.api)["pbf-invoices"]["$post"];
@@ -145,8 +149,9 @@ function PosDraftRow({
   draft,
   rowLabel,
   methods,
+  cashiers,
+  shifts,
   onChange,
-  onPaste,
   action,
   status = "EDIT",
   className = "border-b border-blue-100 bg-blue-50/40",
@@ -154,8 +159,9 @@ function PosDraftRow({
   draft: PosDraft;
   rowLabel: string;
   methods: PosPaymentMethod[];
+  cashiers: Cashier[];
+  shifts: Shift[];
   onChange: (patch: Partial<PosDraft>) => void;
-  onPaste?: (event: React.ClipboardEvent<HTMLInputElement>) => void;
   action: React.ReactNode;
   status?: string;
   className?: string;
@@ -169,26 +175,47 @@ function PosDraftRow({
           type="date"
           value={draft.clearingDate}
           onChange={(e) => onChange({ clearingDate: e.target.value })}
-          onPaste={onPaste}
         />
       </td>
       <td className="px-2 py-2">
-        <input
+        <select
           aria-label={`Kasir ${rowLabel}`}
           className={`${inputClass} min-w-[140px]`}
-          placeholder="Nama kasir"
           value={draft.cashierName}
           onChange={(e) => onChange({ cashierName: e.target.value })}
-        />
+        >
+          <option value="">Pilih kasir</option>
+          {cashiers
+            .filter((cashier) => cashier.isActive)
+            .map((cashier) => (
+              <option key={cashier.id} value={cashier.name}>
+                {cashier.name}
+              </option>
+            ))}
+          {draft.cashierName && !cashiers.some((cashier) => cashier.name === draft.cashierName) && (
+            <option value={draft.cashierName}>{draft.cashierName} (tersimpan)</option>
+          )}
+        </select>
       </td>
       <td className="px-2 py-2">
-        <input
+        <select
           aria-label={`Shift ${rowLabel}`}
           className={`${inputClass} min-w-[100px]`}
-          placeholder="Shift 1"
           value={draft.shiftName}
           onChange={(e) => onChange({ shiftName: e.target.value })}
-        />
+        >
+          <option value="">Pilih shift</option>
+          {shifts
+            .filter((shift) => shift.isActive)
+            .map((shift) => (
+              <option key={shift.id} value={shift.name}>
+                {shift.name}
+              </option>
+            ))}
+          {draft.shiftName && !shifts.some((shift) => shift.name === draft.shiftName) && (
+            <option value={draft.shiftName}>{draft.shiftName} (tersimpan)</option>
+          )}
+        </select>
       </td>
       {methods.map((method) => (
         <td className="px-2 py-2" key={method.id}>
@@ -226,8 +253,12 @@ export function POSClearingPage() {
   const queryClient = useQueryClient();
   const rowsQuery = useQuery({ queryKey: queryKeys.posClearings, queryFn: getPosClearings });
   const methodsQuery = useQuery({ queryKey: queryKeys.paymentMethods, queryFn: getPaymentMethods });
+  const cashiersQuery = useQuery({ queryKey: queryKeys.cashiers, queryFn: getCashiers });
+  const shiftsQuery = useQuery({ queryKey: queryKeys.shifts, queryFn: getShifts });
   const rows = rowsQuery.data ?? [];
   const methods = methodsQuery.data ?? [];
+  const cashiers = cashiersQuery.data ?? [];
+  const shifts = shiftsQuery.data ?? [];
   const activeMethods = methods
     .filter((method) => method.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
@@ -330,33 +361,6 @@ export function POSClearingPage() {
     deleteMutation.mutate(row.id);
   }
 
-  function pasteDrafts(event: React.ClipboardEvent<HTMLInputElement>, index: number) {
-    const text = event.clipboardData.getData("text");
-    if (!text.includes("\t") && !text.includes("\n")) return;
-    event.preventDefault();
-    const pastedRows = text
-      .trimEnd()
-      .split(/\r?\n/)
-      .map((line) => line.split("\t").map((value) => value.trim()));
-    setDrafts((current) => {
-      const next = [...current];
-      pastedRows.forEach((cells, offset) => {
-        const [clearingDate = todayIsoDate(), cashierName = "", shiftName = ""] = cells;
-        const paymentValues = Object.fromEntries(
-          activeMethods.map((method, methodIndex) => [method.id, cells[3 + methodIndex] ?? ""]),
-        );
-        next[index + offset] = {
-          clearingDate,
-          cashierName,
-          shiftName,
-          payments: paymentValues,
-          cogsAmount: cells[3 + activeMethods.length] ?? "",
-        };
-      });
-      return next;
-    });
-  }
-
   function saveDrafts() {
     if (activeMethods.length === 0) {
       setMessage("Aktifkan minimal satu metode pembayaran POS.");
@@ -404,16 +408,15 @@ export function POSClearingPage() {
             ? rowsQuery.error.message
             : methodsQuery.error instanceof Error
               ? methodsQuery.error.message
-              : "")
+              : cashiersQuery.error instanceof Error
+                ? cashiersQuery.error.message
+                : shiftsQuery.error instanceof Error
+                  ? shiftsQuery.error.message
+                  : "")
         }
       />
       <Card>
-        <Header
-          eyebrow="Phase 3 · Modul Operasional"
-          title="POS Clearing & HPP Harian"
-          note="Isi langsung di tabel seperti sheet. Omzet dihitung otomatis dari seluruh penerimaan."
-        />
-        <div className="mt-5 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600"
             onClick={() => setDrafts((current) => [...current, emptyPosDraft(activeMethods)])}
@@ -429,15 +432,7 @@ export function POSClearingPage() {
           >
             {saveMutation.isPending ? "Menyimpan…" : "Simpan semua baris"}
           </button>
-          <span className="text-xs text-muted">
-            Tempel TSV dari Excel/Sheets mulai dari kolom Tanggal: tanggal, kasir, shift, metode
-            pembayaran, HPP.
-          </span>
         </div>
-        <p className="mt-3 text-xs text-muted">
-          Metode marketplace dapat diarahkan ke piutang; metode bank/QRIS diarahkan ke akun bank
-          atau kliring sesuai Pengaturan. Saat disimpan, jurnal langsung dibuat otomatis.
-        </p>
         <div className="mt-4 overflow-x-auto">
           <table className={tableClass}>
             <thead className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
@@ -484,12 +479,13 @@ export function POSClearingPage() {
                       )}
                     </div>
                   }
+                  cashiers={cashiers}
                   draft={draft}
                   key={`draft-${index}`}
                   methods={activeMethods}
                   onChange={(patch) => updateDraft(index, patch)}
-                  onPaste={(event) => pasteDrafts(event, index)}
                   rowLabel={`POS draft baris ${index + 1}`}
+                  shifts={shifts}
                   status="DRAFT"
                 />
               ))}
@@ -516,11 +512,13 @@ export function POSClearingPage() {
                       </div>
                     }
                     className="border-b border-amber-100 bg-amber-50/50"
+                    cashiers={cashiers}
                     draft={editingDraft}
                     key={row.id}
                     methods={activeMethods}
                     onChange={(patch) => setEditingDraft({ ...editingDraft, ...patch })}
                     rowLabel={`POS tersimpan ${row.id.slice(0, 8)}`}
+                    shifts={shifts}
                   />
                 ) : (
                   <tr className="border-b border-slate-50" key={row.id}>

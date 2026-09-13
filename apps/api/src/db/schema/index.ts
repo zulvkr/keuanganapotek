@@ -160,6 +160,36 @@ export const posPaymentMethods = sqliteTable(
   }),
 );
 
+export const cashiers = sqliteTable(
+  "cashiers",
+  {
+    id: text("id").primaryKey().notNull(),
+    name: text("name").notNull().unique(),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull().default("(datetime('now'))"),
+    updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
+  },
+  (table) => ({
+    activeOrderIndex: index("idx_cashiers_active_order").on(table.isActive, table.sortOrder),
+  }),
+);
+
+export const shifts = sqliteTable(
+  "shifts",
+  {
+    id: text("id").primaryKey().notNull(),
+    name: text("name").notNull().unique(),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull().default("(datetime('now'))"),
+    updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
+  },
+  (table) => ({
+    activeOrderIndex: index("idx_shifts_active_order").on(table.isActive, table.sortOrder),
+  }),
+);
+
 export const posClearingPayments = sqliteTable(
   "pos_clearing_payments",
   {
@@ -338,6 +368,8 @@ export type PeriodLockRow = typeof periodLocks.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type PosClearingRow = typeof posClearings.$inferSelect;
 export type PosPaymentMethodRow = typeof posPaymentMethods.$inferSelect;
+export type CashierRow = typeof cashiers.$inferSelect;
+export type ShiftRow = typeof shifts.$inferSelect;
 export type PosClearingPaymentRow = typeof posClearingPayments.$inferSelect;
 export type PbfInvoiceRow = typeof pbfInvoices.$inferSelect;
 export type ConsignmentVendorRow = typeof consignmentVendors.$inferSelect;
