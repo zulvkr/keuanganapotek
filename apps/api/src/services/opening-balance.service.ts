@@ -260,6 +260,55 @@ export async function saveOpeningBalances(db: Db, input: SaveOpeningBalances): P
   });
 }
 
+export function moveLockedOpeningBalance(db: Db, fromDate: string, toDate: string) {
+  return db.transaction((tx) => {
+    const rows = tx
+      .select()
+      .from(openingBalances)
+      .where(eq(openingBalances.cutoffDate, fromDate))
+      .all();
+    if (rows.length === 0) throw new Error("Saldo awal tidak ditemukan");
+    if (rows.some((row) => !row.isLocked))
+      throw new Error("Saldo awal yang belum terkunci harus disimpan melalui formulir");
+
+    const target = tx
+      .select({ id: openingBalances.id })
+      .from(openingBalances)
+      .where(eq(openingBalances.cutoffDate, toDate))
+      .get();
+    if (target) throw new Error(`Sudah ada saldo awal pada tanggal ${toDate}`);
+
+    const journal = tx
+      .select()
+      .from(journals)
+      .where(and(eq(journals.sourceModule, "OPENING_BALANCE"), eq(journals.sourceId, fromDate)))
+      .get();
+    if (!journal) throw new Error("Jurnal pembuka saldo awal tidak ditemukan");
+
+    tx.update(openingBalances)
+      .set({ cutoffDate: toDate })
+      .where(eq(openingBalances.cutoffDate, fromDate))
+      .run();
+    tx.update(journals)
+      .set({
+        entryDate: toDate,
+        sourceId: toDate,
+        referenceNo: `OPENING-${accountingPeriod(toDate)}`,
+        memo: `Jurnal pembuka per ${toDate}`,
+      })
+      .where(eq(journals.id, journal.id))
+      .run();
+    recordAudit(tx, {
+      entityType: "OPENING_BALANCE",
+      entityId: toDate,
+      action: "UPDATE",
+      before: { cutoffDate: fromDate, journalId: journal.id },
+      after: { cutoffDate: toDate, journalId: journal.id },
+    });
+    return { cutoffDate: toDate, journalNo: journal.journalNo };
+  });
+}
+
 export async function lockOpeningBalance(db: Db, cutoffDate: string) {
   return db.transaction((tx) => {
     assertOpeningBalanceCutoff(tx as unknown as Db, cutoffDate);

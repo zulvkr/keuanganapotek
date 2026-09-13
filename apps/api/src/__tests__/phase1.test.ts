@@ -229,5 +229,26 @@ describe("Phase 1 database and opening balance flow", () => {
       body: JSON.stringify({ cutoffDate: "2026-03-01", lines }),
     });
     expect(rejected.status).toBe(409);
+
+    const moved = await api.request("http://localhost/api/opening-balances/move", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fromDate: "2026-02-01", toDate: "2026-03-01" }),
+    });
+    expect(moved.status).toBe(200);
+    expect(
+      client.db
+        .select({ cutoffDate: openingBalances.cutoffDate, isLocked: openingBalances.isLocked })
+        .from(openingBalances)
+        .all()
+        .every((row) => row.cutoffDate === "2026-03-01" && row.isLocked),
+    ).toBe(true);
+    expect(
+      client.db
+        .select({ entryDate: journals.entryDate, sourceId: journals.sourceId })
+        .from(journals)
+        .where(eq(journals.sourceModule, "OPENING_BALANCE"))
+        .get(),
+    ).toEqual({ entryDate: "2026-03-01", sourceId: "2026-03-01" });
   });
 });

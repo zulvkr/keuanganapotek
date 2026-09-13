@@ -8,9 +8,10 @@ import {
   createConsignmentVendor,
   createPbfInvoice,
   createPosClearing,
-  generatePosJournal,
+  deletePosClearing,
   invalidateAccountingQueries,
   settleConsignment,
+  updatePosClearing,
 } from "../lib/mutations";
 import {
   getAccounts,
@@ -21,6 +22,8 @@ import {
   getPaymentMethods,
   getPosClearings,
   queryKeys,
+  type PosClearing,
+  type PosPaymentMethod,
 } from "../lib/queries";
 
 type PbfPost = (typeof api.api)["pbf-invoices"]["$post"];
@@ -75,16 +78,151 @@ function ErrorMessage({ message }: { message: string }) {
   ) : null;
 }
 
-export function POSClearingPage() {
-  const [message, setMessage] = useState("");
-  const [form, setForm] = useState({
+type PosDraft = {
+  clearingDate: string;
+  shiftName: string;
+  cashierName: string;
+  cogsAmount: string;
+  payments: Record<string, string>;
+};
+
+function emptyPosDraft(methods: Array<{ id: string }>): PosDraft {
+  return {
     clearingDate: todayIsoDate(),
     shiftName: "",
     cashierName: "",
-    totalPosOmzet: "",
     cogsAmount: "",
-    payments: {} as Record<string, string>,
-  });
+    payments: Object.fromEntries(methods.map((method) => [method.id, ""])),
+  };
+}
+
+function storedPosPayment(row: PosClearing, method: PosPaymentMethod) {
+  const payment = row.payments?.find((item) => item.paymentMethodId === method.id);
+  return (
+    payment?.amount ??
+    (method.code === "TUNAI"
+      ? row.cashReceived
+      : method.code === "QRIS_EDC"
+        ? row.nonCashReceived
+        : 0)
+  );
+}
+
+function posDraftFromRow(row: PosClearing, methods: PosPaymentMethod[]): PosDraft {
+  return {
+    clearingDate: row.clearingDate,
+    shiftName: row.shiftName ?? "",
+    cashierName: row.cashierName ?? "",
+    cogsAmount: row.cogsAmount ? money(row.cogsAmount) : "",
+    payments: Object.fromEntries(
+      methods.map((method) => [
+        method.id,
+        storedPosPayment(row, method) ? money(storedPosPayment(row, method)) : "",
+      ]),
+    ),
+  };
+}
+
+function posInput(draft: PosDraft, methods: PosPaymentMethod[]) {
+  const totalPosOmzet = methods.reduce(
+    (sum, method) => sum + amount(draft.payments[method.id] ?? ""),
+    0,
+  );
+  return {
+    clearingDate: draft.clearingDate,
+    shiftName: draft.shiftName,
+    cashierName: draft.cashierName,
+    totalPosOmzet: senToRupiah(totalPosOmzet).toFixed(2),
+    cogsAmount: draft.cogsAmount || "0",
+    payments: methods.map((method) => ({
+      paymentMethodId: method.id,
+      amount: draft.payments[method.id] || "0",
+    })),
+  };
+}
+
+function PosDraftRow({
+  draft,
+  rowLabel,
+  methods,
+  onChange,
+  onPaste,
+  action,
+  status = "EDIT",
+  className = "border-b border-blue-100 bg-blue-50/40",
+}: {
+  draft: PosDraft;
+  rowLabel: string;
+  methods: PosPaymentMethod[];
+  onChange: (patch: Partial<PosDraft>) => void;
+  onPaste?: (event: React.ClipboardEvent<HTMLInputElement>) => void;
+  action: React.ReactNode;
+  status?: string;
+  className?: string;
+}) {
+  return (
+    <tr className={className}>
+      <td className="px-2 py-2">
+        <input
+          aria-label={`Tanggal ${rowLabel}`}
+          className={`${inputClass} min-w-[140px] tabular-nums`}
+          type="date"
+          value={draft.clearingDate}
+          onChange={(e) => onChange({ clearingDate: e.target.value })}
+          onPaste={onPaste}
+        />
+      </td>
+      <td className="px-2 py-2">
+        <input
+          aria-label={`Kasir ${rowLabel}`}
+          className={`${inputClass} min-w-[140px]`}
+          placeholder="Nama kasir"
+          value={draft.cashierName}
+          onChange={(e) => onChange({ cashierName: e.target.value })}
+        />
+      </td>
+      <td className="px-2 py-2">
+        <input
+          aria-label={`Shift ${rowLabel}`}
+          className={`${inputClass} min-w-[100px]`}
+          placeholder="Shift 1"
+          value={draft.shiftName}
+          onChange={(e) => onChange({ shiftName: e.target.value })}
+        />
+      </td>
+      {methods.map((method) => (
+        <td className="px-2 py-2" key={method.id}>
+          <input
+            aria-label={`${method.name} ${rowLabel}`}
+            className={`${inputClass} min-w-[140px] text-right font-mono tabular-nums`}
+            placeholder="0"
+            value={draft.payments[method.id] ?? ""}
+            onChange={(e) =>
+              onChange({ payments: { ...draft.payments, [method.id]: e.target.value } })
+            }
+          />
+        </td>
+      ))}
+      <td className="px-2 py-2">
+        <input
+          aria-label={`HPP ${rowLabel}`}
+          className={`${inputClass} min-w-[140px] text-right font-mono tabular-nums`}
+          placeholder="0"
+          value={draft.cogsAmount}
+          onChange={(e) => onChange({ cogsAmount: e.target.value })}
+        />
+      </td>
+      <td className="px-2 py-2 text-xs font-medium text-brand">{status}</td>
+      <td className="px-2 py-2 text-right">{action}</td>
+    </tr>
+  );
+}
+
+export function POSClearingPage() {
+  const [message, setMessage] = useState("");
+  const [drafts, setDrafts] = useState<PosDraft[]>([emptyPosDraft([])]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState<PosDraft | null>(null);
   const queryClient = useQueryClient();
   const rowsQuery = useQuery({ queryKey: queryKeys.posClearings, queryFn: getPosClearings });
   const methodsQuery = useQuery({ queryKey: queryKeys.paymentMethods, queryFn: getPaymentMethods });
@@ -93,164 +231,172 @@ export function POSClearingPage() {
   const activeMethods = methods
     .filter((method) => method.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
-  const paymentTotal = activeMethods.reduce(
-    (sum, method) => sum + amount(form.payments[method.id] ?? ""),
-    0,
-  );
-  const diff = paymentTotal - amount(form.totalPosOmzet);
+
   useEffect(() => {
-    const nextMethods = methods.filter((method) => method.isActive);
-    setForm((current) => ({
-      ...current,
-      payments: Object.fromEntries(
-        nextMethods.map((method) => [method.id, current.payments[method.id] ?? ""]),
-      ),
-    }));
+    setDrafts((current) =>
+      current.map((draft) => ({
+        ...draft,
+        payments: Object.fromEntries(
+          activeMethods.map((method) => [method.id, draft.payments[method.id] ?? ""]),
+        ),
+      })),
+    );
   }, [methods]);
+
   const saveMutation = useMutation({
-    mutationFn: (input: Parameters<typeof createPosClearing>[0]) => createPosClearing(input),
+    mutationFn: async (items: PosDraft[]) => {
+      for (const draft of items) {
+        await createPosClearing(posInput(draft, activeMethods));
+      }
+    },
     onSuccess: async () => {
-      setMessage("Rekap POS tersimpan sebagai draft.");
-      setForm((current) => ({
-        ...current,
-        totalPosOmzet: "",
-        cogsAmount: "",
-        payments: Object.fromEntries(activeMethods.map((method) => [method.id, ""])),
-      }));
+      setMessage("Rekap POS tersimpan dan jurnal berhasil dibuat.");
+      setDrafts([emptyPosDraft(activeMethods)]);
       await invalidateAccountingQueries(queryClient);
     },
     onError: (error) =>
       setMessage(error instanceof Error ? error.message : "Rekap belum tersimpan"),
   });
-  const postMutation = useMutation({
-    mutationFn: (id: string) => generatePosJournal(id),
-    onSuccess: async () => {
-      setMessage("Jurnal POS dan HPP berhasil dibuat.");
+  const saveRowMutation = useMutation({
+    mutationFn: ({ draft }: { index: number; draft: PosDraft }) =>
+      createPosClearing(posInput(draft, activeMethods)),
+    onSuccess: async (_, variables) => {
+      setMessage("Rekap POS tersimpan dan jurnal berhasil dibuat.");
+      setDrafts((current) => {
+        const remaining = current.filter((_, index) => index !== variables.index);
+        return remaining.length > 0 ? remaining : [emptyPosDraft(activeMethods)];
+      });
       await invalidateAccountingQueries(queryClient);
     },
-    onError: (error) => setMessage(error instanceof Error ? error.message : "Jurnal belum dibuat"),
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Rekap POS belum tersimpan"),
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, draft }: { id: string; draft: PosDraft }) =>
+      updatePosClearing(id, posInput(draft, activeMethods)),
+    onSuccess: async () => {
+      setMessage("Rekap POS dan jurnal berhasil diperbarui.");
+      setEditingId(null);
+      setEditingDraft(null);
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Rekap POS belum diperbarui"),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: deletePosClearing,
+    onSuccess: async () => {
+      setMessage("Rekap POS dan jurnal berhasil dihapus.");
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (error) =>
+      setMessage(error instanceof Error ? error.message : "Rekap POS belum dihapus"),
   });
 
-  async function save() {
+  function updateDraft(index: number, patch: Partial<PosDraft>) {
+    setDrafts((current) =>
+      current.map((draft, draftIndex) => (draftIndex === index ? { ...draft, ...patch } : draft)),
+    );
+  }
+
+  function startEdit(row: PosClearing) {
+    setEditingId(row.id);
+    setEditingDraft(posDraftFromRow(row, activeMethods));
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditingDraft(null);
+  }
+
+  function saveEdit() {
+    if (!editingId || !editingDraft) return;
+    if (!editingDraft.clearingDate) {
+      setMessage("Tanggal wajib diisi.");
+      return;
+    }
+    if (
+      !activeMethods.some((method) => editingDraft.payments[method.id]?.trim()) &&
+      !editingDraft.cogsAmount.trim()
+    ) {
+      setMessage("Isi minimal satu penerimaan atau nilai HPP pada baris ini.");
+      return;
+    }
+    updateMutation.mutate({ id: editingId, draft: editingDraft });
+  }
+
+  function removeRow(row: PosClearing) {
+    if (!window.confirm(`Hapus rekap POS tanggal ${row.clearingDate} beserta jurnalnya?`)) return;
+    deleteMutation.mutate(row.id);
+  }
+
+  function pasteDrafts(event: React.ClipboardEvent<HTMLInputElement>, index: number) {
+    const text = event.clipboardData.getData("text");
+    if (!text.includes("\t") && !text.includes("\n")) return;
+    event.preventDefault();
+    const pastedRows = text
+      .trimEnd()
+      .split(/\r?\n/)
+      .map((line) => line.split("\t").map((value) => value.trim()));
+    setDrafts((current) => {
+      const next = [...current];
+      pastedRows.forEach((cells, offset) => {
+        const [clearingDate = todayIsoDate(), cashierName = "", shiftName = ""] = cells;
+        const paymentValues = Object.fromEntries(
+          activeMethods.map((method, methodIndex) => [method.id, cells[3 + methodIndex] ?? ""]),
+        );
+        next[index + offset] = {
+          clearingDate,
+          cashierName,
+          shiftName,
+          payments: paymentValues,
+          cogsAmount: cells[3 + activeMethods.length] ?? "",
+        };
+      });
+      return next;
+    });
+  }
+
+  function saveDrafts() {
     if (activeMethods.length === 0) {
       setMessage("Aktifkan minimal satu metode pembayaran POS.");
       return;
     }
-    saveMutation.mutate({
-      clearingDate: form.clearingDate,
-      shiftName: form.shiftName,
-      cashierName: form.cashierName,
-      totalPosOmzet: form.totalPosOmzet,
-      cogsAmount: form.cogsAmount,
-      payments: activeMethods.map((method) => ({
-        paymentMethodId: method.id,
-        amount: form.payments[method.id] || "0",
-      })),
-    });
+    const readyDrafts = drafts.filter(
+      (draft) =>
+        draft.clearingDate &&
+        (activeMethods.some((method) => draft.payments[method.id]?.trim()) ||
+          draft.cogsAmount.trim()),
+    );
+    if (readyDrafts.length === 0) {
+      setMessage("Isi minimal satu penerimaan atau nilai HPP pada satu baris.");
+      return;
+    }
+    saveMutation.mutate(readyDrafts);
   }
 
-  async function post(id: string) {
-    postMutation.mutate(id);
+  function saveRow(index: number) {
+    if (activeMethods.length === 0) {
+      setMessage("Aktifkan minimal satu metode pembayaran POS.");
+      return;
+    }
+    const draft = drafts[index];
+    if (!draft || !draft.clearingDate) {
+      setMessage("Tanggal wajib diisi.");
+      return;
+    }
+    if (
+      !activeMethods.some((method) => draft.payments[method.id]?.trim()) &&
+      !draft.cogsAmount.trim()
+    ) {
+      setMessage("Isi minimal satu penerimaan atau nilai HPP pada baris ini.");
+      return;
+    }
+    saveRowMutation.mutate({ index, draft });
   }
 
   return (
     <div className="space-y-5">
-      <Card>
-        <Header
-          eyebrow="Phase 3 · Modul Operasional"
-          title="POS Clearing & HPP Harian"
-          note="Masukkan rekap harian dan nilai HPP. Pengaturan metode pembayaran tersedia di menu Pengaturan."
-        />
-        <div className="mt-5 space-y-4">
-          <div className="grid gap-3 md:grid-cols-4">
-            <label className="text-xs font-semibold text-slate-500">
-              Tanggal
-              <input
-                className={inputClass}
-                type="date"
-                value={form.clearingDate}
-                onChange={(e) => setForm({ ...form, clearingDate: e.target.value })}
-              />
-            </label>
-            <label className="text-xs font-semibold text-slate-500">
-              Kasir / shift
-              <input
-                className={inputClass}
-                value={form.cashierName}
-                placeholder="Nama kasir"
-                onChange={(e) => setForm({ ...form, cashierName: e.target.value })}
-              />
-            </label>
-            <label className="text-xs font-semibold text-slate-500">
-              Shift
-              <input
-                className={inputClass}
-                value={form.shiftName}
-                placeholder="Shift 1"
-                onChange={(e) => setForm({ ...form, shiftName: e.target.value })}
-              />
-            </label>
-            <label className="text-xs font-semibold text-slate-500">
-              Omzet POS
-              <input
-                className={inputClass + " text-right font-mono tabular-nums"}
-                value={form.totalPosOmzet}
-                placeholder="0"
-                onChange={(e) => setForm({ ...form, totalPosOmzet: e.target.value })}
-              />
-            </label>
-            {activeMethods.map((method) => (
-              <label className="text-xs font-semibold text-slate-500" key={method.id}>
-                {method.name}
-                <span className="mt-1 block text-[10px] font-normal text-slate-400">
-                  {method.accountCode} · {method.accountName}
-                </span>
-                <input
-                  className={inputClass + " text-right font-mono tabular-nums"}
-                  value={form.payments[method.id] ?? ""}
-                  placeholder="0"
-                  onChange={(e) =>
-                    setForm((current) => ({
-                      ...current,
-                      payments: { ...current.payments, [method.id]: e.target.value },
-                    }))
-                  }
-                />
-              </label>
-            ))}
-            <label className="text-xs font-semibold text-slate-500">
-              HPP harian
-              <input
-                className={inputClass + " text-right font-mono tabular-nums"}
-                value={form.cogsAmount}
-                placeholder="0"
-                onChange={(e) => setForm({ ...form, cogsAmount: e.target.value })}
-              />
-            </label>
-            <div className="flex items-end gap-2">
-              <div
-                className={
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-mono tabular-nums " +
-                  (diff === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")
-                }
-              >
-                Selisih penerimaan: Rp {money(diff)}
-              </div>
-              <button
-                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white"
-                onClick={() => void save()}
-                type="button"
-              >
-                Simpan
-              </button>
-            </div>
-          </div>
-          <p className="text-xs text-muted">
-            Metode marketplace dapat diarahkan ke akun piutang; metode bank/QRIS dapat diarahkan ke
-            akun bank atau kliring yang sesuai. Ubah pemetaannya di Pengaturan.
-          </p>
-        </div>
-      </Card>
       <ErrorMessage
         message={
           message ||
@@ -262,70 +408,178 @@ export function POSClearingPage() {
         }
       />
       <Card>
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold">Rekap harian</h3>
-            <p className="text-xs text-muted">
-              Selisih penerimaan minus otomatis masuk Beban Selisih Kasir 6106.
-            </p>
-          </div>
+        <Header
+          eyebrow="Phase 3 · Modul Operasional"
+          title="POS Clearing & HPP Harian"
+          note="Isi langsung di tabel seperti sheet. Omzet dihitung otomatis dari seluruh penerimaan."
+        />
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <button
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600"
+            onClick={() => setDrafts((current) => [...current, emptyPosDraft(activeMethods)])}
+            type="button"
+          >
+            + Tambah baris
+          </button>
+          <button
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            disabled={saveMutation.isPending || activeMethods.length === 0}
+            onClick={saveDrafts}
+            type="button"
+          >
+            {saveMutation.isPending ? "Menyimpan…" : "Simpan semua baris"}
+          </button>
+          <span className="text-xs text-muted">
+            Tempel TSV dari Excel/Sheets mulai dari kolom Tanggal: tanggal, kasir, shift, metode
+            pembayaran, HPP.
+          </span>
         </div>
-        <div className="overflow-x-auto">
+        <p className="mt-3 text-xs text-muted">
+          Metode marketplace dapat diarahkan ke piutang; metode bank/QRIS diarahkan ke akun bank
+          atau kliring sesuai Pengaturan. Saat disimpan, jurnal langsung dibuat otomatis.
+        </p>
+        <div className="mt-4 overflow-x-auto">
           <table className={tableClass}>
             <thead className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
-                <th className="px-3 py-3">Tanggal</th>
-                <th className="px-3 py-3">Kasir</th>
-                <th className="px-3 py-3 text-right">Omzet</th>
-                <th className="px-3 py-3 text-right">Selisih</th>
-                <th className="px-3 py-3 text-right">HPP</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3" />
+                <th className="px-2 py-3">Tanggal</th>
+                <th className="px-2 py-3">Kasir</th>
+                <th className="px-2 py-3">Shift</th>
+                {activeMethods.map((method) => (
+                  <th className="px-2 py-3 text-right" key={method.id}>
+                    <span className="whitespace-nowrap">{method.name}</span>
+                    <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal">
+                      {method.accountCode} · {method.accountName}
+                    </span>
+                  </th>
+                ))}
+                <th className="px-2 py-3 text-right">HPP harian</th>
+                <th className="px-2 py-3">Status</th>
+                <th className="px-2 py-3" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr className="border-b border-slate-50" key={row.id}>
-                  <td className="px-3 py-3 tabular-nums">{row.clearingDate}</td>
-                  <td className="px-3 py-3">{row.cashierName || row.shiftName || "—"}</td>
-                  <td className="px-3 py-3 text-right font-mono tabular-nums">
-                    Rp {money(row.totalPosOmzet)}
-                  </td>
-                  <td
-                    className={
-                      "px-3 py-3 text-right font-mono tabular-nums " +
-                      (row.physicalCashDiff < 0 ? "text-red-600" : "text-emerald-600")
-                    }
-                  >
-                    Rp {money(row.physicalCashDiff)}
-                  </td>
-                  <td className="px-3 py-3 text-right font-mono tabular-nums">
-                    Rp {money(row.cogsAmount)}
-                  </td>
-                  <td className="px-3 py-3">
-                    <span
-                      className={
-                        "rounded-full px-2 py-1 text-xs " +
-                        (row.status === "POSTED"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-slate-100 text-slate-600")
-                      }
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <button
-                      className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                      disabled={row.status === "POSTED"}
-                      onClick={() => void post(row.id)}
-                      type="button"
-                    >
-                      Generate Jurnal
-                    </button>
-                  </td>
-                </tr>
+              {drafts.map((draft, index) => (
+                <PosDraftRow
+                  action={
+                    <div className="flex justify-end gap-1">
+                      <button
+                        className="whitespace-nowrap rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                        disabled={saveRowMutation.isPending}
+                        onClick={() => saveRow(index)}
+                        type="button"
+                      >
+                        Simpan
+                      </button>
+                      {drafts.length > 1 && (
+                        <button
+                          className="whitespace-nowrap rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                          onClick={() =>
+                            setDrafts((current) => current.filter((_, i) => i !== index))
+                          }
+                          type="button"
+                        >
+                          Hapus
+                        </button>
+                      )}
+                    </div>
+                  }
+                  draft={draft}
+                  key={`draft-${index}`}
+                  methods={activeMethods}
+                  onChange={(patch) => updateDraft(index, patch)}
+                  onPaste={(event) => pasteDrafts(event, index)}
+                  rowLabel={`POS draft baris ${index + 1}`}
+                  status="DRAFT"
+                />
               ))}
+              {rows.map((row) =>
+                editingId === row.id && editingDraft ? (
+                  <PosDraftRow
+                    action={
+                      <div className="flex justify-end gap-1">
+                        <button
+                          className="whitespace-nowrap rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                          disabled={updateMutation.isPending}
+                          onClick={saveEdit}
+                          type="button"
+                        >
+                          Simpan
+                        </button>
+                        <button
+                          className="whitespace-nowrap rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                          onClick={cancelEdit}
+                          type="button"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    }
+                    className="border-b border-amber-100 bg-amber-50/50"
+                    draft={editingDraft}
+                    key={row.id}
+                    methods={activeMethods}
+                    onChange={(patch) => setEditingDraft({ ...editingDraft, ...patch })}
+                    rowLabel={`POS tersimpan ${row.id.slice(0, 8)}`}
+                  />
+                ) : (
+                  <tr className="border-b border-slate-50" key={row.id}>
+                    <td className="px-2 py-3 tabular-nums">{row.clearingDate}</td>
+                    <td className="px-2 py-3">{row.cashierName || "—"}</td>
+                    <td className="px-2 py-3">{row.shiftName || "—"}</td>
+                    {activeMethods.map((method) => {
+                      const payment = row.payments?.find(
+                        (item) => item.paymentMethodId === method.id,
+                      );
+                      const legacyAmount =
+                        method.code === "TUNAI"
+                          ? row.cashReceived
+                          : method.code === "QRIS_EDC"
+                            ? row.nonCashReceived
+                            : 0;
+                      return (
+                        <td className="px-2 py-3 text-right font-mono tabular-nums" key={method.id}>
+                          Rp {money(payment?.amount ?? legacyAmount)}
+                        </td>
+                      );
+                    })}
+                    <td className="px-2 py-3 text-right font-mono tabular-nums">
+                      Rp {money(row.cogsAmount)}
+                    </td>
+                    <td className="px-2 py-3">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs ${
+                          row.status === "POSTED"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 text-right">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          className="whitespace-nowrap rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => startEdit(row)}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="whitespace-nowrap rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 disabled:opacity-40"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => removeRow(row)}
+                          type="button"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         </div>

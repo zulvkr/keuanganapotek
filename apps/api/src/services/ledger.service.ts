@@ -224,12 +224,18 @@ export function getJournalById(db: Executor, id: string): JournalWithLines | und
   return { journal, lines };
 }
 
-export function updateJournal(db: Db, id: string, input: JournalEntryInput): JournalWithLines {
+export function updateJournal(
+  db: Db,
+  id: string,
+  input: JournalEntryInput,
+  options: { allowSystem?: boolean } = {},
+): JournalWithLines {
   const entry = parseEntry(input);
   return db.transaction((tx) => {
     const existing = tx.select().from(journals).where(eq(journals.id, id)).get();
     if (!existing) throw new Error("Jurnal tidak ditemukan");
-    if (existing.sourceModule !== "GENERAL") throw new Error("Jurnal sistem tidak dapat diubah");
+    if (existing.sourceModule !== "GENERAL" && !options.allowSystem)
+      throw new Error("Jurnal sistem tidak dapat diubah");
     if (existing.entryDate !== entry.entryDate) assertPeriodOpen(tx, existing.entryDate);
     assertPeriodOpen(tx, entry.entryDate);
     const lines = validateAndConvertLines(entry.lines);
@@ -271,11 +277,12 @@ export function updateJournal(db: Db, id: string, input: JournalEntryInput): Jou
   });
 }
 
-export function deleteJournal(db: Db, id: string): void {
+export function deleteJournal(db: Db, id: string, options: { allowSystem?: boolean } = {}): void {
   db.transaction((tx) => {
     const existing = tx.select().from(journals).where(eq(journals.id, id)).get();
     if (!existing) throw new Error("Jurnal tidak ditemukan");
-    if (existing.sourceModule !== "GENERAL") throw new Error("Jurnal sistem tidak dapat dihapus");
+    if (existing.sourceModule !== "GENERAL" && !options.allowSystem)
+      throw new Error("Jurnal sistem tidak dapat dihapus");
     assertPeriodOpen(tx, existing.entryDate);
     const before = getJournalById(tx, id);
     tx.delete(journals).where(eq(journals.id, id)).run();

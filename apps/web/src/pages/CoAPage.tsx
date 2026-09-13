@@ -22,6 +22,7 @@ import {
   deleteAccount as removeAccount,
   invalidateAccountingQueries,
   lockOpeningBalances,
+  moveOpeningBalanceDate,
   saveAccount,
   saveOpeningBalances,
 } from "../lib/mutations";
@@ -128,12 +129,21 @@ function CoAPage() {
   });
   const saveLockMutation = useMutation({
     mutationFn: async (lines: BalanceLine[]) => {
+      if (isLocked) {
+        return moveOpeningBalanceDate({ fromDate: loadedCutoffDate, toDate: cutoffDate });
+      }
       await saveOpeningBalances({ cutoffDate, lines });
       return lockOpeningBalances(cutoffDate);
     },
     onSuccess: async (payload) => {
       setIsLocked(true);
-      setMessage(`Saldo awal terkunci. Jurnal pembuka ${payload.journal.journalNo} terbentuk.`);
+      queryClient.setQueryData(queryKeys.openingBalanceMeta, { cutoffDate });
+      setIsCutoffDateDirty(false);
+      setMessage(
+        isLocked
+          ? `Tanggal saldo awal dipindahkan ke ${cutoffDate}. Saldo tetap terkunci.`
+          : `Saldo awal terkunci. Jurnal pembuka ${payload.journal.journalNo} terbentuk.`,
+      );
       await invalidateAccountingQueries(queryClient);
     },
     onError: (error) =>
@@ -317,7 +327,6 @@ function CoAPage() {
               <input
                 aria-label="Tanggal saldo awal"
                 className="rounded-md border border-blue-200 bg-white px-2 py-1 text-sm font-normal tabular-nums text-slate-700"
-                disabled={isLocked}
                 id="cutoff"
                 onChange={(event) => {
                   setCutoffDate(event.target.value);
@@ -668,12 +677,20 @@ function CoAPage() {
             </button>
             <button
               className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isLocked || !totals.difference.isZero()}
+              disabled={isLocked ? cutoffDate === loadedCutoffDate : !totals.difference.isZero()}
               onClick={saveAndLock}
               type="button"
             >
-              {isLocked ? <LockKeyhole size={16} /> : <Save size={16} />}{" "}
-              {isLocked ? "Terkunci" : "Simpan & Terapkan"}
+              {isLocked && cutoffDate === loadedCutoffDate ? (
+                <LockKeyhole size={16} />
+              ) : (
+                <Save size={16} />
+              )}{" "}
+              {isLocked
+                ? cutoffDate === loadedCutoffDate
+                  ? "Terkunci"
+                  : "Simpan tanggal"
+                : "Simpan & Terapkan"}
             </button>
           </div>
         </div>

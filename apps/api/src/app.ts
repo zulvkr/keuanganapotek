@@ -10,6 +10,7 @@ import {
   AccountSchema,
   JournalEntrySchema,
   LockOpeningBalanceSchema,
+  MoveOpeningBalanceSchema,
   nowIsoInstant,
   SaveOpeningBalancesSchema,
   CashBankTransferSchema,
@@ -39,6 +40,7 @@ import {
   getOpeningBalanceCutoff,
   listAccounts,
   lockOpeningBalance,
+  moveLockedOpeningBalance,
   saveOpeningBalances,
 } from "./services/opening-balance.service.js";
 import {
@@ -55,6 +57,7 @@ import {
   createConsignmentVendor,
   createPbfInvoice,
   createPosClearing,
+  deletePosClearing,
   generatePosJournal,
   getCashBankSummary,
   listPosPaymentMethods,
@@ -62,6 +65,7 @@ import {
   listConsignmentItems,
   listPbfInvoices,
   listPosClearings,
+  updatePosClearing,
   savePosPaymentMethod,
   settleConsignment,
 } from "./services/operational.service.js";
@@ -361,6 +365,22 @@ export function createApiApp(client: SqliteClient) {
       },
     )
 
+    .post("/api/opening-balances/move", validateJson(MoveOpeningBalanceSchema), async (context) => {
+      const parsed = { data: context.req.valid("json") };
+      try {
+        const moved = moveLockedOpeningBalance(client.db, parsed.data.fromDate, parsed.data.toDate);
+        return context.json({
+          data: {
+            moved: true,
+            cutoffDate: moved.cutoffDate,
+            journal: { journalNo: moved.journalNo },
+          },
+        });
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+
     .post("/api/opening-balances/lock", validateJson(LockOpeningBalanceSchema), async (context) => {
       const parsed = { data: context.req.valid("json") };
       try {
@@ -496,6 +516,24 @@ export function createApiApp(client: SqliteClient) {
       const parsed = { data: context.req.valid("json") };
       try {
         return context.json({ data: createPosClearing(client.db, parsed.data) }, 201);
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+    .put("/api/pos-clearings/:id", validateJson(PosClearingSchema), async (context) => {
+      const parsed = { data: context.req.valid("json") };
+      try {
+        return context.json({
+          data: updatePosClearing(client.db, context.req.param("id")!, parsed.data),
+        });
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+    .delete("/api/pos-clearings/:id", (context) => {
+      try {
+        deletePosClearing(client.db, context.req.param("id"));
+        return context.body(null, 204);
       } catch (error) {
         return errorResponse(context, error);
       }

@@ -104,6 +104,16 @@ export const LockOpeningBalanceSchema = z.object({
   cutoffDate: IsoDateSchema,
 });
 
+export const MoveOpeningBalanceSchema = z
+  .object({
+    fromDate: IsoDateSchema,
+    toDate: IsoDateSchema,
+  })
+  .refine((input) => input.fromDate !== input.toDate, {
+    message: "Tanggal saldo awal baru harus berbeda dari tanggal sebelumnya",
+    path: ["toDate"],
+  });
+
 export const UserRoleSchema = z.enum(["OWNER", "APOTEKER_PENGELOLA", "AKUNTAN", "KASIR"]);
 
 export const LockPeriodSchema = z.object({
@@ -147,7 +157,7 @@ export const PosClearingSchema = z.object({
   clearingDate: IsoDateSchema,
   shiftName: z.string().trim().optional(),
   cashierName: z.string().trim().optional(),
-  totalPosOmzet: NonNegativeMoneySchema,
+  totalPosOmzet: NonNegativeMoneySchema.optional(),
   cashReceived: NonNegativeMoneySchema.default("0"),
   nonCashReceived: NonNegativeMoneySchema.default("0"),
   cogsAmount: NonNegativeMoneySchema.default("0"),
@@ -273,6 +283,7 @@ export type BankStatementImport = z.infer<typeof BankStatementImportSchema>;
 export type BankReconMatch = z.infer<typeof BankReconMatchSchema>;
 export type OpeningBalanceLine = z.infer<typeof OpeningBalanceLineSchema>;
 export type SaveOpeningBalances = z.infer<typeof SaveOpeningBalancesSchema>;
+export type MoveOpeningBalance = z.infer<typeof MoveOpeningBalanceSchema>;
 export type LockPeriod = z.infer<typeof LockPeriodSchema>;
 export type UnlockPeriod = z.infer<typeof UnlockPeriodSchema>;
 export type ReportPeriod = z.infer<typeof ReportPeriodSchema>;

@@ -61,6 +61,20 @@ export function createPosClearing(input: PosClearingInput) {
   return rpc(() => api.api["pos-clearings"].$post({ json: input }));
 }
 
+export function updatePosClearing(id: string, input: PosClearingInput) {
+  return requestJson(`/api/pos-clearings/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function deletePosClearing(id: string) {
+  return requestJson<null>(`/api/pos-clearings/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export function generatePosJournal(id: string) {
   return requestJson(`/api/pos-clearings/${encodeURIComponent(id)}/generate-journal`, {
     method: "POST",
@@ -136,6 +150,18 @@ export function saveOpeningBalances(input: {
   lines: Array<{ accountId: string; debitAmount: string; creditAmount: string; notes?: string }>;
 }) {
   return requestJson<{ saved: boolean; cutoffDate: string }>("/api/opening-balances/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function moveOpeningBalanceDate(input: { fromDate: string; toDate: string }) {
+  return requestJson<{
+    moved: boolean;
+    cutoffDate: string;
+    journal: { journalNo: string };
+  }>("/api/opening-balances/move", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),

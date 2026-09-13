@@ -38,7 +38,7 @@ import {
   posClearings,
   posPaymentMethods,
 } from "../db/schema/index.js";
-import { createJournalEntry } from "./ledger.service.js";
+import { createJournalEntry, deleteJournal, updateJournal } from "./ledger.service.js";
 
 type Db = SqliteClient["db"];
 
@@ -262,16 +262,21 @@ function configuredPayments(db: Db, parsed: PosClearing) {
 }
 
 export function listPosClearings(db: Db) {
-  return db.select().from(posClearings).orderBy(desc(posClearings.clearingDate)).all();
+  const clearings = db.select().from(posClearings).orderBy(desc(posClearings.clearingDate)).all();
+  const payments = db.select().from(posClearingPayments).all();
+  return clearings.map((clearing) => ({
+    ...clearing,
+    payments: payments.filter((payment) => payment.clearingId === clearing.id),
+  }));
 }
 
 export function createPosClearing(db: Db, input: PosClearing) {
   const parsed = PosClearingSchema.parse(input);
   const id = parsed.id ?? randomUUID();
-  const omzet = amountToSen(parsed.totalPosOmzet);
   const cogs = amountToSen(parsed.cogsAmount);
   const payments = configuredPayments(db, parsed);
   const paymentTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const omzet = parsed.totalPosOmzet ? amountToSen(parsed.totalPosOmzet) : paymentTotal;
   const diffSen = paymentTotal - omzet;
   const legacyCash = amountToSen(parsed.cashReceived);
   const legacyNonCash = amountToSen(parsed.nonCashReceived);
@@ -307,25 +312,26 @@ export function createPosClearing(db: Db, input: PosClearing) {
         )
         .run();
   });
-  return { id, clearing: db.select().from(posClearings).where(eq(posClearings.id, id)).get()! };
+  return { id, ...generatePosJournal(db, id) };
 }
 
-export function generatePosJournal(db: Db, id: string) {
-  const clearing = db.select().from(posClearings).where(eq(posClearings.id, id)).get();
-  if (!clearing) throw new Error("Rekap POS tidak ditemukan");
-  if (clearing.status === "POSTED" || clearing.journalId)
-    throw new Error("Rekap POS sudah diposting");
-
-  let paymentLines = db
-    .select({
-      amount: posClearingPayments.amount,
-      accountId: posPaymentMethods.accountId,
-      methodName: posPaymentMethods.name,
-    })
-    .from(posClearingPayments)
-    .innerJoin(posPaymentMethods, eq(posPaymentMethods.id, posClearingPayments.paymentMethodId))
-    .where(eq(posClearingPayments.clearingId, id))
-    .all();
+function posJournalInput(
+  db: Db,
+  clearing: typeof posClearings.$inferSelect,
+  configuredPaymentLines?: Array<{ amount: number; accountId: string; methodName: string }>,
+) {
+  let paymentLines =
+    configuredPaymentLines ??
+    db
+      .select({
+        amount: posClearingPayments.amount,
+        accountId: posPaymentMethods.accountId,
+        methodName: posPaymentMethods.name,
+      })
+      .from(posClearingPayments)
+      .innerJoin(posPaymentMethods, eq(posPaymentMethods.id, posClearingPayments.paymentMethodId))
+      .where(eq(posClearingPayments.clearingId, clearing.id))
+      .all();
 
   if (paymentLines.length === 0) {
     paymentLines = [
@@ -391,16 +397,30 @@ export function generatePosJournal(db: Db, id: string) {
         ]
       : []),
   ];
-  const journal = createJournalEntry(db, {
+  return {
     entryDate: clearing.clearingDate,
     referenceNo: "POS-" + clearing.clearingDate,
     memo: "POS Clearing & pengakuan HPP harian",
     lines: lines.filter(
       (line) => parseRupiahToSen(line.debit) > 0 || parseRupiahToSen(line.credit) > 0,
     ),
-    sourceModule: "POS_CLEARING",
-    sourceId: id,
-  });
+    sourceModule: "POS_CLEARING" as const,
+    sourceId: clearing.id,
+  };
+}
+
+export function generatePosJournal(db: Db, id: string) {
+  const clearing = db.select().from(posClearings).where(eq(posClearings.id, id)).get();
+  if (!clearing) throw new Error("Rekap POS tidak ditemukan");
+  if (clearing.status === "POSTED" || clearing.journalId)
+    return {
+      clearing,
+      journal: clearing.journalId
+        ? db.select().from(journals).where(eq(journals.id, clearing.journalId)).get()
+        : null,
+    };
+
+  const journal = createJournalEntry(db, posJournalInput(db, clearing));
   db.update(posClearings)
     .set({ journalId: journal.journal.id, status: "POSTED" })
     .where(eq(posClearings.id, id))
@@ -409,6 +429,71 @@ export function generatePosJournal(db: Db, id: string) {
     clearing: db.select().from(posClearings).where(eq(posClearings.id, id)).get()!,
     journal,
   };
+}
+
+export function updatePosClearing(db: Db, id: string, input: PosClearing) {
+  const parsed = PosClearingSchema.parse(input);
+  const existing = db.select().from(posClearings).where(eq(posClearings.id, id)).get();
+  if (!existing) throw new Error("Rekap POS tidak ditemukan");
+  const payments = configuredPayments(db, parsed);
+  const paymentTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const omzet = parsed.totalPosOmzet ? amountToSen(parsed.totalPosOmzet) : paymentTotal;
+  const updated = {
+    ...existing,
+    clearingDate: parsed.clearingDate,
+    shiftName: parsed.shiftName ?? null,
+    cashierName: parsed.cashierName ?? null,
+    totalPosOmzet: omzet,
+    cashReceived: amountToSen(parsed.cashReceived),
+    nonCashReceived: amountToSen(parsed.nonCashReceived),
+    cashAccountId:
+      payments.find((payment) => payment.method.code === "TUNAI")?.method.accountId ?? null,
+    nonCashAccountId:
+      payments.find((payment) => payment.method.code === "QRIS_EDC")?.method.accountId ?? null,
+    physicalCashDiff: parsed.totalPosOmzet ? paymentTotal - omzet : 0,
+    cogsAmount: amountToSen(parsed.cogsAmount),
+  };
+  const journal = existing.journalId
+    ? updateJournal(
+        db,
+        existing.journalId,
+        posJournalInput(
+          db,
+          updated,
+          payments.map((payment) => ({
+            amount: payment.amount,
+            accountId: payment.method.accountId,
+            methodName: payment.method.name,
+          })),
+        ),
+        { allowSystem: true },
+      )
+    : createJournalEntry(db, posJournalInput(db, updated));
+  db.transaction((tx) => {
+    tx.update(posClearings)
+      .set({ ...updated, journalId: journal.journal.id, status: "POSTED" })
+      .where(eq(posClearings.id, id))
+      .run();
+    tx.delete(posClearingPayments).where(eq(posClearingPayments.clearingId, id)).run();
+    tx.insert(posClearingPayments)
+      .values(
+        payments.map((payment) => ({
+          id: randomUUID(),
+          clearingId: id,
+          paymentMethodId: payment.method.id,
+          amount: payment.amount,
+        })),
+      )
+      .run();
+  });
+  return { id, clearing: db.select().from(posClearings).where(eq(posClearings.id, id)).get()! };
+}
+
+export function deletePosClearing(db: Db, id: string) {
+  const clearing = db.select().from(posClearings).where(eq(posClearings.id, id)).get();
+  if (!clearing) throw new Error("Rekap POS tidak ditemukan");
+  if (clearing.journalId) deleteJournal(db, clearing.journalId, { allowSystem: true });
+  db.delete(posClearings).where(eq(posClearings.id, id)).run();
 }
 
 export function listPbfInvoices(db: Db) {
