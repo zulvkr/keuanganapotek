@@ -1,20 +1,12 @@
 import { api, requestJson, rpc } from "./api";
 import type { QueryClient } from "@tanstack/react-query";
 import type {
-  BankReconImportInput,
-  BankReconMatchInput,
-  CashBankTransferInput,
-  ConsignmentItemInput,
-  ConsignmentSettlementInput,
-  ConsignmentVendorInput,
   JournalInput,
-  PbfInvoiceInput,
-  PosClearingInput,
   SaveAccount,
-  SaveCashier,
-  SavePaymentMethod,
-  SaveShift,
+  SaveTransactionInput,
+  SaveTransactionTypeInput,
 } from "./queries";
+import type { TransactionRecord, TransactionType } from "@keuangan-apotek/shared";
 
 export function invalidateAccountingQueries(queryClient: QueryClient) {
   return Promise.all([
@@ -23,24 +15,9 @@ export function invalidateAccountingQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: ["journals"] }),
     queryClient.invalidateQueries({ queryKey: ["reports"] }),
     queryClient.invalidateQueries({ queryKey: ["opening-balance"] }),
-    queryClient.invalidateQueries({ queryKey: ["bank-recon"] }),
-    queryClient.invalidateQueries({ queryKey: ["pos-clearings"] }),
-    queryClient.invalidateQueries({ queryKey: ["pbf-invoices"] }),
-    queryClient.invalidateQueries({ queryKey: ["consignment-items"] }),
-    queryClient.invalidateQueries({ queryKey: ["cash-bank"] }),
+    queryClient.invalidateQueries({ queryKey: ["transaction-types"] }),
+    queryClient.invalidateQueries({ queryKey: ["transactions"] }),
   ]);
-}
-
-export function savePaymentMethod(input: SavePaymentMethod) {
-  return rpc(() => api.api["pos-payment-methods"].$post({ json: input }));
-}
-
-export function saveCashier(input: SaveCashier) {
-  return rpc(() => api.api.cashiers.$post({ json: input }));
-}
-
-export function saveShift(input: SaveShift) {
-  return rpc(() => api.api.shifts.$post({ json: input }));
 }
 
 export function saveAccount(input: SaveAccount) {
@@ -67,76 +44,46 @@ export function deleteJournal(id: string) {
   return requestJson<null>(`/api/journals/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export function createPosClearing(input: PosClearingInput) {
-  return rpc(() => api.api["pos-clearings"].$post({ json: input }));
+export function createTransactionType(input: SaveTransactionTypeInput) {
+  return requestJson<TransactionType>("/api/transaction-types", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
-export function updatePosClearing(id: string, input: PosClearingInput) {
-  return requestJson(`/api/pos-clearings/${encodeURIComponent(id)}`, {
+export function updateTransactionType(id: string, input: Partial<SaveTransactionTypeInput>) {
+  return requestJson<TransactionType>(`/api/transaction-types/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-export function deletePosClearing(id: string) {
-  return requestJson<null>(`/api/pos-clearings/${encodeURIComponent(id)}`, {
+export function deleteTransactionType(id: string) {
+  return requestJson<null>(`/api/transaction-types/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 }
 
-export function generatePosJournal(id: string) {
-  return requestJson(`/api/pos-clearings/${encodeURIComponent(id)}/generate-journal`, {
-    method: "POST",
-  });
-}
-
-export function createPbfInvoice(input: PbfInvoiceInput) {
-  return rpc(() => api.api["pbf-invoices"].$post({ json: input }));
-}
-
-export function createConsignmentVendor(input: ConsignmentVendorInput) {
-  return rpc(() => api.api.consignment.vendors.$post({ json: input }));
-}
-
-export function createConsignmentItem(input: ConsignmentItemInput) {
-  return rpc(() => api.api.consignment.items.$post({ json: input }));
-}
-
-export function settleConsignment(input: ConsignmentSettlementInput) {
-  return rpc(() => api.api.consignment.settlements.$post({ json: input }));
-}
-
-export function createCashBankTransfer(input: CashBankTransferInput) {
-  return rpc(() => api.api["cash-bank"].transfers.$post({ json: input }));
-}
-
-export function importBankRecon(input: BankReconImportInput) {
-  return requestJson<{ imported: unknown[] }>("/api/bank-recon/import", {
+export function createTransaction(input: SaveTransactionInput) {
+  return requestJson<TransactionRecord>("/api/transactions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-export function autoMatchBankRecon(bankAccountId: string) {
-  return requestJson<{ matchedCount: number }>("/api/bank-recon/auto-match", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bankAccountId }),
-  });
-}
-
-export function matchBankRecon(input: BankReconMatchInput) {
-  return requestJson("/api/bank-recon/matches", {
-    method: "POST",
+export function updateTransaction(id: string, input: Partial<SaveTransactionInput>) {
+  return requestJson<TransactionRecord>(`/api/transactions/${encodeURIComponent(id)}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-export function unmatchBankRecon(id: string) {
-  return requestJson<null>(`/api/bank-recon/matches/${encodeURIComponent(id)}`, {
+export function deleteTransaction(id: string) {
+  return requestJson<null>(`/api/transactions/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 }

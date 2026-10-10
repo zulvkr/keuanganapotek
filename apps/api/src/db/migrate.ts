@@ -73,94 +73,34 @@ const migrationStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_logs_occurred_at ON audit_logs(occurred_at)`,
-  `CREATE TABLE IF NOT EXISTS pos_clearings (
-    id TEXT PRIMARY KEY NOT NULL, clearing_date TEXT NOT NULL, shift_name TEXT, cashier_name TEXT,
-    total_pos_omzet INTEGER NOT NULL DEFAULT 0 CHECK (total_pos_omzet >= 0), cash_received INTEGER NOT NULL DEFAULT 0 CHECK (cash_received >= 0),
-    non_cash_received INTEGER NOT NULL DEFAULT 0 CHECK (non_cash_received >= 0), physical_cash_diff INTEGER NOT NULL DEFAULT 0,
-    cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT, non_cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT,
-    cogs_amount INTEGER NOT NULL DEFAULT 0 CHECK (cogs_amount >= 0), journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL,
-    status TEXT NOT NULL DEFAULT 'DRAFT', created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_pos_clearings_date ON pos_clearings(clearing_date)`,
-  `CREATE TABLE IF NOT EXISTS pos_payment_methods (
-    id TEXT PRIMARY KEY NOT NULL, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
-    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT, is_cash INTEGER NOT NULL DEFAULT 0,
-    is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_pos_payment_methods_active_order ON pos_payment_methods(is_active, sort_order)`,
-  `CREATE TABLE IF NOT EXISTS cashiers (
-    id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE,
-    is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_cashiers_active_order ON cashiers(is_active, sort_order)`,
-  `CREATE TABLE IF NOT EXISTS shifts (
-    id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE,
-    is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_shifts_active_order ON shifts(is_active, sort_order)`,
-  `CREATE TABLE IF NOT EXISTS pos_clearing_payments (
-    id TEXT PRIMARY KEY NOT NULL, clearing_id TEXT NOT NULL REFERENCES pos_clearings(id) ON DELETE CASCADE,
-    payment_method_id TEXT NOT NULL REFERENCES pos_payment_methods(id) ON DELETE RESTRICT, amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),
-    UNIQUE(clearing_id, payment_method_id)
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_pos_clearing_payments_clearing ON pos_clearing_payments(clearing_id)`,
-  `CREATE TABLE IF NOT EXISTS pbf_invoices (
-    id TEXT PRIMARY KEY NOT NULL, invoice_date TEXT NOT NULL, due_date TEXT NOT NULL, pbf_name TEXT NOT NULL, invoice_number TEXT NOT NULL,
-    dpp_amount INTEGER NOT NULL DEFAULT 0 CHECK (dpp_amount >= 0), ppn_amount INTEGER NOT NULL DEFAULT 0 CHECK (ppn_amount >= 0), total_amount INTEGER NOT NULL DEFAULT 0 CHECK (total_amount >= 0),
-    payment_terms TEXT NOT NULL, account_payable_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT, is_verified INTEGER NOT NULL DEFAULT 0,
-    payment_status TEXT NOT NULL DEFAULT 'UNPAID', journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(pbf_name, invoice_number)
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_pbf_invoices_date ON pbf_invoices(invoice_date)`,
-  `CREATE TABLE IF NOT EXISTS consignment_vendors (
-    id TEXT PRIMARY KEY NOT NULL, vendor_name TEXT NOT NULL, contact_person TEXT, phone TEXT, bank_account_info TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS consignment_items (
-    id TEXT PRIMARY KEY NOT NULL, vendor_id TEXT NOT NULL REFERENCES consignment_vendors(id) ON DELETE RESTRICT, product_name TEXT NOT NULL,
-    qty_sold INTEGER NOT NULL DEFAULT 0 CHECK (qty_sold >= 0), agreed_cost_price INTEGER NOT NULL DEFAULT 0 CHECK (agreed_cost_price >= 0),
-    total_payable INTEGER NOT NULL DEFAULT 0 CHECK (total_payable >= 0), status TEXT NOT NULL DEFAULT 'READY_TO_PAY', created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS consignment_settlements (
-    id TEXT PRIMARY KEY NOT NULL, settlement_no TEXT NOT NULL UNIQUE, settlement_date TEXT NOT NULL, total_paid INTEGER NOT NULL CHECK (total_paid > 0),
-    payment_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT, reference_no TEXT, journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS consignment_settlement_items (
-    settlement_id TEXT NOT NULL REFERENCES consignment_settlements(id) ON DELETE CASCADE, consignment_item_id TEXT NOT NULL REFERENCES consignment_items(id) ON DELETE RESTRICT,
-    PRIMARY KEY (settlement_id, consignment_item_id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS cash_bank_transfers (
-    id TEXT PRIMARY KEY NOT NULL, transaction_time TEXT NOT NULL, transaction_type TEXT NOT NULL,
-    source_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT, target_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
-    net_amount INTEGER NOT NULL CHECK (net_amount > 0), admin_fee INTEGER NOT NULL DEFAULT 0 CHECK (admin_fee >= 0), total_deducted INTEGER NOT NULL,
-    reference_no TEXT, memo TEXT, journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_cash_bank_transfers_time ON cash_bank_transfers(transaction_time)`,
-  `CREATE TABLE IF NOT EXISTS bank_statements (
+  `CREATE TABLE IF NOT EXISTS transaction_types (
     id TEXT PRIMARY KEY NOT NULL,
-    bank_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
-    statement_date TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    debit_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    credit_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
     description TEXT,
-    debit INTEGER NOT NULL DEFAULT 0 CHECK (debit >= 0),
-    credit INTEGER NOT NULL DEFAULT 0 CHECK (credit >= 0),
-    is_matched INTEGER NOT NULL DEFAULT 0,
-    imported_at TEXT NOT NULL DEFAULT (datetime('now')),
-    CHECK (debit > 0 OR credit > 0),
-    CHECK (NOT (debit > 0 AND credit > 0))
+    metadata_schema TEXT NOT NULL DEFAULT '[]',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_bank_statements_account_date ON bank_statements(bank_account_id, statement_date)`,
-  `CREATE TABLE IF NOT EXISTS bank_recon_matches (
+  `CREATE INDEX IF NOT EXISTS idx_transaction_types_code ON transaction_types(code)`,
+  `CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY NOT NULL,
-    bank_statement_id TEXT NOT NULL REFERENCES bank_statements(id) ON DELETE CASCADE,
-    journal_line_id TEXT NOT NULL REFERENCES journal_lines(id) ON DELETE CASCADE,
-    matched_at TEXT NOT NULL DEFAULT (datetime('now')),
-    match_type TEXT NOT NULL DEFAULT 'MANUAL' CHECK (match_type IN ('AUTO', 'MANUAL')),
-    UNIQUE(bank_statement_id, journal_line_id),
-    UNIQUE(bank_statement_id),
-    UNIQUE(journal_line_id)
+    transaction_date TEXT NOT NULL,
+    transaction_type_id TEXT NOT NULL REFERENCES transaction_types(id) ON DELETE RESTRICT,
+    amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),
+    debit_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    credit_account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    memo TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
+  `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(transaction_type_id)`,
 ];
 
 export function runMigrations(sqlite: Database.Database): void {
@@ -174,19 +114,6 @@ export function runMigrations(sqlite: Database.Database): void {
     );
     if (!accountColumns.has("is_group"))
       sqlite.exec("ALTER TABLE accounts ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0");
-    const posColumns = new Set(
-      (sqlite.prepare("PRAGMA table_info(pos_clearings)").all() as Array<{ name: string }>).map(
-        (column) => column.name,
-      ),
-    );
-    if (!posColumns.has("cash_account_id"))
-      sqlite.exec(
-        "ALTER TABLE pos_clearings ADD COLUMN cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT",
-      );
-    if (!posColumns.has("non_cash_account_id"))
-      sqlite.exec(
-        "ALTER TABLE pos_clearings ADD COLUMN non_cash_account_id TEXT REFERENCES accounts(id) ON DELETE RESTRICT",
-      );
   });
   migrate();
 }

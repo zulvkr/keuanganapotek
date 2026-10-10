@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AccountSchema, JournalLineSchema, PbfInvoiceSchema } from "../index.js";
+import {
+  AccountSchema,
+  JournalLineSchema,
+  MetadataFieldSchema,
+  TransactionTypeSchema,
+  TransactionEntrySchema,
+} from "../index.js";
 
 describe("shared validation schemas", () => {
   it("accepts a four-digit account code and rejects malformed codes", () => {
@@ -33,22 +39,77 @@ describe("shared validation schemas", () => {
     );
   });
 
-  it("requires PBF due date to be on or after invoice date", () => {
-    const base = {
-      pbfName: "Kimia Farma",
-      invoiceNumber: "INV-001",
-      dppAmount: 100000,
-      ppnAmount: 11000,
-      totalAmount: 111000,
-      paymentTerms: "TEMPO_30" as const,
-    };
+  it("validates metadata field schemas properly", () => {
     expect(
-      PbfInvoiceSchema.safeParse({ ...base, invoiceDate: "2026-01-01", dueDate: "2026-01-31" })
-        .success,
+      MetadataFieldSchema.safeParse({
+        key: "no_faktur",
+        label: "Nomor Faktur",
+        type: "text",
+        required: true,
+      }).success,
     ).toBe(true);
+
     expect(
-      PbfInvoiceSchema.safeParse({ ...base, invoiceDate: "2026-01-31", dueDate: "2026-01-01" })
-        .success,
+      MetadataFieldSchema.safeParse({
+        key: "invalid key!",
+        label: "Invalid",
+        type: "text",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      MetadataFieldSchema.safeParse({
+        key: "metode",
+        label: "Metode",
+        type: "select",
+        options: ["Tunai", "Transfer"],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("validates transaction type and transaction entry schemas", () => {
+    expect(
+      TransactionTypeSchema.safeParse({
+        name: "Penjualan Tunai",
+        code: "TRX-001",
+        debitAccountId: "coa-1102",
+        creditAccountId: "coa-4101",
+        metadataSchema: [{ key: "no_struk", label: "No Struk", type: "text", required: false }],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      TransactionEntrySchema.safeParse({
+        transactionDate: "2026-08-20",
+        transactionTypeId: "type-1",
+        amount: "150000",
+        metadata: { no_struk: "STR-001" },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      TransactionEntrySchema.safeParse({
+        transactionDate: "2026-08-20",
+        transactionTypeId: "type-1",
+        amount: "0,00",
+        metadata: null,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      TransactionEntrySchema.safeParse({
+        transactionDate: "2026-08-20",
+        transactionTypeId: "type-1",
+        amount: 0,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      TransactionEntrySchema.safeParse({
+        transactionDate: "invalid-date",
+        transactionTypeId: "type-1",
+        amount: "150000",
+      }).success,
     ).toBe(false);
   });
 });

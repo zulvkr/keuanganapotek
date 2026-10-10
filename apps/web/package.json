@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
     "@keuangan-apotek/api": "workspace:*",
     "@keuangan-apotek/shared": "workspace:*",
     "@tanstack/react-query": "^5.62.7",

@@ -1,0 +1,427 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { createApiApp } from "../app.js";
+import { createSqliteClient } from "../db/client.js";
+import { runMigrations } from "../db/migrate.js";
+import { seedAccounts, seedSampleTransactions, seedTransactionTypes } from "../db/seed.js";
+import {
+  accounts,
+  journalLines,
+  journals,
+  openingBalances,
+  periodLocks,
+  transactionTypes,
+  transactions,
+} from "../db/schema/index.js";
+import { getBalanceSheet } from "../services/reports.service.js";
+
+const clients: Array<ReturnType<typeof createSqliteClient>> = [];
+
+afterEach(() => {
+  for (const client of clients.splice(0)) client.sqlite.close();
+});
+
+function setup() {
+  const client = createSqliteClient(":memory:");
+  clients.push(client);
+  runMigrations(client.sqlite);
+  seedAccounts(client);
+  seedTransactionTypes(client);
+  return { client, api: createApiApp(client) };
+}
+
+describe("Transaction Types and Daily Transactions Engine", () => {
+  it("seeds 4-digit accounts and transaction templates with schemas", () => {
+    const { client } = setup();
+
+    const allAccounts = client.db.select().from(accounts).all();
+    expect(allAccounts.length).toBeGreaterThanOrEqual(33);
+
+    // Verify all account codes are 4-digit
+    for (const acc of allAccounts) {
+      expect(acc.code).toMatch(/^\d{4}$/);
+    }
+
+    const types = client.db.select().from(transactionTypes).all();
+    expect(types.length).toBeGreaterThanOrEqual(38);
+
+    // Verify cash/bank 1101-1109 exist
+    const cashBankCodes = ["1101", "1102", "1103", "1104", "1105", "1106", "1107", "1108", "1109"];
+    for (const code of cashBankCodes) {
+      expect(allAccounts.some((a) => a.code === code)).toBe(true);
+    }
+  });
+
+  it("seeds sample transactions for 2026-07-31 and 2026-08-20 including zero amounts", () => {
+    const { client } = setup();
+    const seededCount = seedSampleTransactions(client);
+    expect(seededCount).toBeGreaterThanOrEqual(10);
+
+    const txRows = client.db.select().from(transactions).all();
+    expect(txRows.length).toBe(seededCount);
+
+    // Verify zero amount transaction exists
+    const zeroTx = txRows.find((tx) => tx.amount === 0);
+    expect(zeroTx).toBeDefined();
+    expect(zeroTx?.journalId).toBeNull();
+
+    // Verify non-zero transactions have journals
+    const nonZeroTx = txRows.filter((tx) => tx.amount > 0);
+    expect(nonZeroTx.every((tx) => Boolean(tx.journalId))).toBe(true);
+  });
+
+  it("manages transaction types CRUD and schema validation via API", async () => {
+    const { api } = setup();
+
+    // List transaction types
+    const listRes = await api.request("http://localhost/api/transaction-types");
+    expect(listRes.status).toBe(200);
+    const listPayload = (await listRes.json()) as { data: Array<{ id: string; code: string }> };
+    expect(listPayload.data.length).toBeGreaterThanOrEqual(38);
+
+    // Create new transaction type
+    const createRes = await api.request("http://localhost/api/transaction-types", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        code: "TRX-CUSTOM",
+        name: "Pengeluaran Khusus",
+        debitAccountId: "coa-6107",
+        creditAccountId: "coa-1103",
+        description: "Beban lain-lain via Jago",
+        metadataSchema: [
+          {
+            key: "vendor",
+            label: "Nama Vendor",
+            type: "text",
+            required: true,
+          },
+          {
+            key: "kategori",
+            label: "Kategori",
+            type: "select",
+            options: ["A", "B"],
+            required: false,
+          },
+        ],
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const createdPayload = (await createRes.json()) as { data: { id: string } };
+
+    // Get one
+    const getRes = await api.request(
+      `http://localhost/api/transaction-types/${createdPayload.data.id}`,
+    );
+    expect(getRes.status).toBe(200);
+
+    // Update
+    const updateRes = await api.request(
+      `http://localhost/api/transaction-types/${createdPayload.data.id}`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Pengeluaran Khusus Update" }),
+      },
+    );
+    expect(updateRes.status).toBe(200);
+
+    // Delete
+    const deleteRes = await api.request(
+      `http://localhost/api/transaction-types/${createdPayload.data.id}`,
+      { method: "DELETE" },
+    );
+    expect(deleteRes.status).toBe(204);
+  });
+
+  it("creates, updates, and deletes transactions while syncing double-entry journals", async () => {
+    const { api, client } = setup();
+
+    const typeRes = await api.request("http://localhost/api/transaction-types");
+    const types = ((await typeRes.json()) as { data: Array<{ id: string; code: string }> }).data;
+    const cashSaleType = types.find((t) => t.code === "TRX-01")!;
+
+    // Create transaction
+    const postRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-21",
+        transactionTypeId: cashSaleType.id,
+        amount: "500000",
+        memo: "Penjualan resep sore",
+        metadata: { no_struk: "STR-001" },
+      }),
+    });
+    expect(postRes.status).toBe(201);
+    const tx = ((await postRes.json()) as { data: { id: string; journalId: string } }).data;
+    expect(tx.journalId).toBeDefined();
+
+    // Check generated journal
+    const journal = client.db.select().from(journals).where(eq(journals.id, tx.journalId)).get();
+    expect(journal).toBeDefined();
+    expect(journal?.sourceModule).toBe("TRANSACTION");
+    expect(journal?.sourceId).toBe(tx.id);
+
+    const lines = client.db
+      .select()
+      .from(journalLines)
+      .where(eq(journalLines.journalId, tx.journalId))
+      .all();
+    expect(lines).toHaveLength(2);
+    expect(lines.find((l) => l.debit > 0)?.debit).toBe(50000000);
+    expect(lines.find((l) => l.credit > 0)?.credit).toBe(50000000);
+
+    // Update transaction amount
+    const putRes = await api.request(`http://localhost/api/transactions/${tx.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        amount: "750000",
+        memo: "Penjualan resep sore update",
+      }),
+    });
+    expect(putRes.status).toBe(200);
+
+    const updatedLines = client.db
+      .select()
+      .from(journalLines)
+      .where(eq(journalLines.journalId, tx.journalId))
+      .all();
+    expect(updatedLines.find((l) => l.debit > 0)?.debit).toBe(75000000);
+    expect(updatedLines.find((l) => l.credit > 0)?.credit).toBe(75000000);
+
+    // Delete transaction
+    const delRes = await api.request(`http://localhost/api/transactions/${tx.id}`, {
+      method: "DELETE",
+    });
+    expect(delRes.status).toBe(204);
+
+    expect(
+      client.db.select().from(journals).where(eq(journals.id, tx.journalId)).all(),
+    ).toHaveLength(0);
+    expect(
+      client.db.select().from(journalLines).where(eq(journalLines.journalId, tx.journalId)).all(),
+    ).toHaveLength(0);
+  });
+
+  it("calculates sequential running balances and mutations for the 9 cash & bank columns", async () => {
+    const { api } = setup();
+
+    const types = (
+      (await (await api.request("http://localhost/api/transaction-types")).json()) as {
+        data: Array<{ id: string; code: string }>;
+      }
+    ).data;
+
+    const modalType = types.find((t) => t.code === "TRX-42")!; // Debit 1103 (Bank Jago), Credit 3101 (Modal)
+    const tukaranType = types.find((t) => t.code === "TRX-18")!; // Debit 1101 (Tukaran), Credit 1103 (Bank Jago)
+    const jualTunaiType = types.find((t) => t.code === "TRX-01")!; // Debit 1102 (Tunai Kasir), Credit 4101 (Omset)
+    const bayarListrikType = types.find((t) => t.code === "TRX-34")!; // Debit 6103 (Listrik), Credit 1103 (Bank Jago)
+
+    // Row 1: Setor Modal Rp 10.000.000 ke Bank Jago (1103)
+    await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-01",
+        transactionTypeId: modalType.id,
+        amount: "10000000",
+      }),
+    });
+
+    // Row 2: Ambil Rp 500.000 dari Bank Jago (1103) ke Uang Tukaran (1101)
+    await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-02",
+        transactionTypeId: tukaranType.id,
+        amount: "500000",
+      }),
+    });
+
+    // Row 3: Penjualan Tunai Rp 1.500.000 ke Kasir (1102)
+    await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-03",
+        transactionTypeId: jualTunaiType.id,
+        amount: "1500000",
+      }),
+    });
+
+    // Row 4: Bayar Listrik Rp 300.000 via Bank Jago (1103)
+    await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-04",
+        transactionTypeId: bayarListrikType.id,
+        amount: "300000",
+      }),
+    });
+
+    // Query list transactions
+    const listRes = await api.request("http://localhost/api/transactions");
+    expect(listRes.status).toBe(200);
+    const rows = (
+      (await listRes.json()) as {
+        data: Array<{
+          amount: number;
+          runningBalances: Record<string, number>;
+          mutations: Record<string, number>;
+        }>;
+      }
+    ).data;
+
+    expect(rows).toHaveLength(4);
+
+    // Check Row 1: Bank Jago = 10jt (+10jt)
+    expect(rows[0]!.runningBalances["1103"]).toBe(10_000_000_00);
+    expect(rows[0]!.mutations["1103"]).toBe(10_000_000_00);
+
+    // Check Row 2: Bank Jago = 9.5jt (-500rb), Tukaran = 500rb (+500rb)
+    expect(rows[1]!.runningBalances["1103"]).toBe(9_500_000_00);
+    expect(rows[1]!.mutations["1103"]).toBe(-500_000_00);
+    expect(rows[1]!.runningBalances["1101"]).toBe(500_000_00);
+    expect(rows[1]!.mutations["1101"]).toBe(500_000_00);
+
+    // Check Row 3: Tunai Kasir = 1.5jt (+1.5jt)
+    expect(rows[2]!.runningBalances["1102"]).toBe(1_500_000_00);
+    expect(rows[2]!.mutations["1102"]).toBe(1_500_000_00);
+
+    // Check Row 4: Bank Jago = 9.2jt (-300rb)
+    expect(rows[3]!.runningBalances["1103"]).toBe(9_200_000_00);
+    expect(rows[3]!.mutations["1103"]).toBe(-300_000_00);
+
+    // Check Summary endpoint
+    const summaryRes = await api.request("http://localhost/api/transactions/summary");
+    expect(summaryRes.status).toBe(200);
+    const summary = (
+      (await summaryRes.json()) as {
+        data: {
+          accounts: Array<{ code: string; balance: number }>;
+          totalTransactions: number;
+        };
+      }
+    ).data;
+
+    expect(summary.totalTransactions).toBe(4);
+    const jagoAcc = summary.accounts.find((a) => a.code === "1103");
+    expect(jagoAcc?.balance).toBe(9_200_000_00);
+    const tukaranAcc = summary.accounts.find((a) => a.code === "1101");
+    expect(tukaranAcc?.balance).toBe(500_000_00);
+    const kasirAcc = summary.accounts.find((a) => a.code === "1102");
+    expect(kasirAcc?.balance).toBe(1_500_000_00);
+  });
+
+  it("enforces period lock on transactions", async () => {
+    const { api, client } = setup();
+
+    client.db
+      .insert(periodLocks)
+      .values({
+        id: "lock-1",
+        lockedThrough: "2026-08-31",
+        lockedBy: "owner",
+        lockedByRole: "OWNER",
+        lockedAt: "2026-09-01T00:00:00Z",
+      })
+      .run();
+
+    const types = (
+      (await (await api.request("http://localhost/api/transaction-types")).json()) as {
+        data: Array<{ id: string; code: string }>;
+      }
+    ).data;
+
+    const res = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-15",
+        transactionTypeId: types[0]!.id,
+        amount: "100000",
+      }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("maintains balance sheet equation across seeded sample transactions", () => {
+    const { client } = setup();
+    seedSampleTransactions(client);
+
+    const balanceSheet = getBalanceSheet(client.db, "2026-08-31");
+    expect(balanceSheet.isBalanced).toBe(true);
+    expect(balanceSheet.difference).toBe(0);
+  });
+
+  it("returns opening balances in transactions summary when 0 transactions exist", async () => {
+    const { api, client } = setup();
+
+    // Insert locked opening balances for cash accounts
+    client.db
+      .insert(openingBalances)
+      .values([
+        {
+          id: "ob-1",
+          cutoffDate: "2026-07-31",
+          accountId: "coa-1102", // Tunai Kasir
+          debitAmount: 7_500_000_00, // 7.5jt
+          creditAmount: 0,
+          isLocked: true,
+        },
+        {
+          id: "ob-2",
+          cutoffDate: "2026-07-31",
+          accountId: "coa-1103", // Bank Jago
+          debitAmount: 15_000_000_00, // 15jt
+          creditAmount: 0,
+          isLocked: true,
+        },
+      ])
+      .run();
+
+    // With 0 transactions, summary must reflect opening balances
+    const summaryRes = await api.request("http://localhost/api/transactions/summary");
+    expect(summaryRes.status).toBe(200);
+    const summary = (
+      (await summaryRes.json()) as {
+        data: {
+          accounts: Array<{ code: string; balance: number }>;
+          totalTransactions: number;
+        };
+      }
+    ).data;
+
+    expect(summary.totalTransactions).toBe(0);
+    expect(summary.accounts.find((a) => a.code === "1102")?.balance).toBe(7_500_000_00);
+    expect(summary.accounts.find((a) => a.code === "1103")?.balance).toBe(15_000_000_00);
+    expect(summary.accounts.find((a) => a.code === "1101")?.balance).toBe(0);
+  });
+
+  it("accepts formatted zero amount and nullish metadata via API", async () => {
+    const { api } = setup();
+    const typeRes = await api.request("http://localhost/api/transaction-types");
+    const types = ((await typeRes.json()) as { data: Array<{ id: string; code: string }> }).data;
+
+    const res = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-20",
+        transactionTypeId: types[0]!.id,
+        amount: "0,00",
+        metadata: null,
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const data = ((await res.json()) as { data: { amount: number; metadata: any } }).data;
+    expect(data.amount).toBe(0);
+    expect(data.metadata).toEqual({});
+  });
+});

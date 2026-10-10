@@ -7,21 +7,15 @@ test("adds a journal row from the last credit cell and keeps posting disabled wh
   await page.getByRole("button", { name: "Jurnal Umum" }).click();
   await expect(page.locator("h2", { hasText: "Jurnal Umum" })).toBeVisible();
 
-  await expect(page.getByRole("button", { name: "1 line" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.getByRole("columnheader", { name: "Akun debit" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Akun kredit" })).toBeVisible();
-  await expect(page.getByLabel("Akun debit jurnal draft")).toHaveCount(1);
-  await expect(page.getByLabel("Akun kredit jurnal draft")).toHaveCount(1);
+  await expect(page.getByRole("columnheader", { name: "Akun" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Debit" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Kredit" })).toBeVisible();
 
-  await page.getByRole("button", { name: "2 line" }).click();
   const creditCells = page.getByRole("textbox", { name: /Kredit baris/ });
   await expect(creditCells).toHaveCount(2);
   await creditCells.last().press("Tab");
   await expect(page.getByRole("textbox", { name: /Kredit baris/ })).toHaveCount(3);
-  await expect(page.getByRole("button", { name: "Posting Jurnal" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Posting", exact: true })).toBeDisabled();
 });
 
 test("keeps draft metadata inside the journal grid", async ({ page }) => {
@@ -43,14 +37,8 @@ test("keeps draft metadata inside the journal grid", async ({ page }) => {
 
   await expect(journalTable.getByLabel("Tanggal jurnal draft")).toHaveCount(1);
   await expect(journalTable.getByLabel("Referensi jurnal draft")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "1 line" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await page.getByRole("button", { name: "2 line" }).click();
-  await expect(page.getByLabel("Tanggal jurnal draft")).toHaveCount(1);
-  await page.getByRole("button", { name: "1 line" }).click();
-  await expect(page.getByLabel("Tanggal jurnal draft")).toHaveCount(1);
+  await expect(page.getByLabel("Akun baris 1")).toBeVisible();
+  await expect(page.getByLabel("Akun baris 2")).toBeVisible();
 });
 
 test("edits a GENERAL journal inline in its table group", async ({ page }) => {

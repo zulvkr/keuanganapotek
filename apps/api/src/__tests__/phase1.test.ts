@@ -35,17 +35,11 @@ describe("Phase 1 database and opening balance flow", () => {
       (client.sqlite.prepare("SELECT count(*) AS count FROM accounts").get() as { count: number })
         .count,
     ).toBeGreaterThanOrEqual(30);
-    expect(client.db.select().from(accounts).where(eq(accounts.code, "1100")).get()?.isGroup).toBe(
-      true,
-    );
-    expect(client.db.select().from(accounts).where(eq(accounts.code, "1200")).get()?.isGroup).toBe(
-      true,
-    );
-    expect(client.db.select().from(accounts).where(eq(accounts.code, "1113")).get()?.name).toBe(
-      "Saldo Shopee (Kas)",
+    expect(client.db.select().from(accounts).where(eq(accounts.code, "1104")).get()?.name).toBe(
+      "Saldo Penjual Shopee",
     );
     expect(client.db.select().from(accounts).where(eq(accounts.code, "1201")).get()?.name).toBe(
-      "Dana Pending Shopee (Piutang)",
+      "Dana Pending Shopee",
     );
     expect(client.db.select().from(openingBalances).all()).toHaveLength(0);
   });
@@ -53,7 +47,7 @@ describe("Phase 1 database and opening balance flow", () => {
   it("protects system groups and prevents them from receiving balances or journals", async () => {
     const { api } = setup();
     expect(
-      (await api.request("http://localhost/api/accounts/coa-1100", { method: "DELETE" })).status,
+      (await api.request("http://localhost/api/accounts/coa-1000", { method: "DELETE" })).status,
     ).toBe(409);
     const opening = await api.request("http://localhost/api/opening-balances/save", {
       method: "POST",
@@ -61,7 +55,7 @@ describe("Phase 1 database and opening balance flow", () => {
       body: JSON.stringify({
         cutoffDate: "2026-01-01",
         lines: [
-          { accountId: "coa-1100", debitAmount: "1000000", creditAmount: "0" },
+          { accountId: "coa-1000", debitAmount: "1000000", creditAmount: "0" },
           { accountId: "coa-3101", debitAmount: "0", creditAmount: "1000000" },
         ],
       }),
@@ -73,7 +67,7 @@ describe("Phase 1 database and opening balance flow", () => {
       body: JSON.stringify({
         entryDate: "2026-01-02",
         lines: [
-          { accountId: "coa-1100", debit: "1000000", credit: "0" },
+          { accountId: "coa-1000", debit: "1000000", credit: "0" },
           { accountId: "coa-4101", debit: "0", credit: "1000000" },
         ],
       }),
@@ -142,6 +136,55 @@ describe("Phase 1 database and opening balance flow", () => {
         .all()
         .every((row) => row.isLocked),
     ).toBe(true);
+  });
+
+  it("allows updating opening balances after being locked and syncs the opening journal lines", async () => {
+    const { api, client } = setup();
+    const initialLines = [
+      { accountId: "coa-1101", debitAmount: "1000000", creditAmount: "0" },
+      { accountId: "coa-3101", debitAmount: "0", creditAmount: "1000000" },
+    ];
+    await api.request("http://localhost/api/opening-balances/save", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01", lines: initialLines }),
+    });
+    await api.request("http://localhost/api/opening-balances/lock", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01" }),
+    });
+
+    const updatedLines = [
+      { accountId: "coa-1101", debitAmount: "2500000", creditAmount: "0" },
+      { accountId: "coa-3101", debitAmount: "0", creditAmount: "2500000" },
+    ];
+    const updateRes = await api.request("http://localhost/api/opening-balances/save", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01", lines: updatedLines }),
+    });
+    expect(updateRes.status).toBe(200);
+
+    const lockRes = await api.request("http://localhost/api/opening-balances/lock", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutoffDate: "2026-01-01" }),
+    });
+    expect(lockRes.status).toBe(200);
+
+    const journal = client.db
+      .select()
+      .from(journals)
+      .where(eq(journals.sourceModule, "OPENING_BALANCE"))
+      .get();
+    const postedLines = client.db
+      .select()
+      .from(journalLines)
+      .where(eq(journalLines.journalId, journal!.id))
+      .all();
+    expect(postedLines.reduce((sum, line) => sum + line.debit, 0)).toBe(250_000_000);
+    expect(postedLines.reduce((sum, line) => sum + line.credit, 0)).toBe(250_000_000);
   });
 
   it("returns opening balance plus posted movements without counting the opening journal twice", async () => {

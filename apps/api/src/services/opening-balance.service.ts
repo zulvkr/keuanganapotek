@@ -220,14 +220,6 @@ export async function saveOpeningBalances(db: Db, input: SaveOpeningBalances): P
       // draft instead of treating the date as a second opening-balance set.
       tx.delete(openingBalances).where(ne(openingBalances.cutoffDate, input.cutoffDate)).run();
     }
-    const locked = tx
-      .select({ id: openingBalances.id })
-      .from(openingBalances)
-      .where(
-        and(eq(openingBalances.cutoffDate, input.cutoffDate), eq(openingBalances.isLocked, true)),
-      )
-      .get();
-    if (locked) throw new Error("Saldo awal pada tanggal cut-off sudah dikunci");
     tx.delete(openingBalances).where(eq(openingBalances.cutoffDate, input.cutoffDate)).run();
 
     for (const row of rows) {
@@ -329,34 +321,38 @@ export async function lockOpeningBalance(db: Db, cutoffDate: string) {
       .from(journals)
       .where(and(eq(journals.sourceModule, "OPENING_BALANCE"), eq(journals.sourceId, cutoffDate)))
       .get();
-    if (existing) {
-      tx.update(openingBalances)
-        .set({ isLocked: true })
-        .where(eq(openingBalances.cutoffDate, cutoffDate))
-        .run();
-      return existing;
-    }
 
-    const period = accountingPeriod(cutoffDate);
-    const prefix = `JU-${period}-`;
-    const last = tx
-      .select({ journalNo: journals.journalNo })
-      .from(journals)
-      .where(like(journals.journalNo, `${prefix}%`))
-      .orderBy(sql`${journals.journalNo} DESC`)
-      .get();
-    const sequence = last ? Number(last.journalNo.slice(-4)) + 1 : 1;
-    const journal = {
-      id: randomUUID(),
-      journalNo: `${prefix}${String(sequence).padStart(4, "0")}`,
-      entryDate: cutoffDate,
-      referenceNo: `OPENING-${period}`,
-      sourceModule: "OPENING_BALANCE",
-      sourceId: cutoffDate,
-      memo: `Jurnal pembuka per ${cutoffDate}`,
-      isPosted: true,
-    } as const;
-    tx.insert(journals).values(journal).run();
+    let journalId: string;
+    let journalResult: { id: string; journalNo: string };
+
+    if (existing) {
+      journalId = existing.id;
+      journalResult = existing;
+      tx.delete(journalLines).where(eq(journalLines.journalId, existing.id)).run();
+    } else {
+      const period = accountingPeriod(cutoffDate);
+      const prefix = `JU-${period}-`;
+      const last = tx
+        .select({ journalNo: journals.journalNo })
+        .from(journals)
+        .where(like(journals.journalNo, `${prefix}%`))
+        .orderBy(sql`${journals.journalNo} DESC`)
+        .get();
+      const sequence = last ? Number(last.journalNo.slice(-4)) + 1 : 1;
+      const newJournal = {
+        id: randomUUID(),
+        journalNo: `${prefix}${String(sequence).padStart(4, "0")}`,
+        entryDate: cutoffDate,
+        referenceNo: `OPENING-${period}`,
+        sourceModule: "OPENING_BALANCE",
+        sourceId: cutoffDate,
+        memo: `Jurnal pembuka per ${cutoffDate}`,
+        isPosted: true,
+      } as const;
+      tx.insert(journals).values(newJournal).run();
+      journalId = newJournal.id;
+      journalResult = newJournal;
+    }
 
     let lineNumber = 1;
     for (const row of rows) {
@@ -364,7 +360,7 @@ export async function lockOpeningBalance(db: Db, cutoffDate: string) {
         tx.insert(journalLines)
           .values({
             id: randomUUID(),
-            journalId: journal.id,
+            journalId,
             lineNumber: lineNumber++,
             accountId: row.accountId,
             description: row.notes,
@@ -376,7 +372,7 @@ export async function lockOpeningBalance(db: Db, cutoffDate: string) {
         tx.insert(journalLines)
           .values({
             id: randomUUID(),
-            journalId: journal.id,
+            journalId,
             lineNumber: lineNumber++,
             accountId: row.accountId,
             description: row.notes,
@@ -391,10 +387,10 @@ export async function lockOpeningBalance(db: Db, cutoffDate: string) {
       .run();
     recordAudit(tx, {
       entityType: "JOURNAL",
-      entityId: journal.id,
-      action: "CREATE",
-      after: { journal, lines: rows },
+      entityId: journalId,
+      action: "UPDATE",
+      after: { journal: journalResult, lines: rows },
     });
-    return journal;
+    return journalResult;
   });
 }

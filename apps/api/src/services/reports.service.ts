@@ -178,7 +178,7 @@ export function getIncomeStatement(
   const accountsList = db
     .select()
     .from(accounts)
-    .where(eq(accounts.isActive, true))
+    .where(and(eq(accounts.isActive, true), eq(accounts.isGroup, false)))
     .orderBy(asc(accounts.code))
     .all();
   const currentTotals = collectTotals(db, input.period);
@@ -292,7 +292,7 @@ export function getBalanceSheet(db: Db, asOfDate: string) {
   const accountsList = db
     .select()
     .from(accounts)
-    .where(eq(accounts.isActive, true))
+    .where(and(eq(accounts.isActive, true), eq(accounts.isGroup, false)))
     .orderBy(asc(accounts.code))
     .all();
   const totals = collectTotalsThrough(db, asOfDate);
@@ -368,7 +368,7 @@ export function getTrialBalance(db: Db, period: ReportPeriod) {
   const accountsList = db
     .select()
     .from(accounts)
-    .where(eq(accounts.isActive, true))
+    .where(and(eq(accounts.isActive, true), eq(accounts.isGroup, false)))
     .orderBy(asc(accounts.code))
     .all();
   const totals = collectTotals(db, period);

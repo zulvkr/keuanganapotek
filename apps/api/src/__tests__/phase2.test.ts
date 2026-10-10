@@ -96,7 +96,7 @@ describe("Phase 2 double-entry ledger", () => {
       expect.arrayContaining([
         expect.objectContaining({
           accountCode: "1101",
-          accountName: "Kas Toko / Kasir",
+          accountName: "Uang tukaran kasir permanen",
           debit: 100_000_000,
           credit: 0,
         }),

@@ -4,49 +4,39 @@ import {
   BarChart3,
   BookOpen,
   ChevronRight,
-  CircleDollarSign,
   LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
   Settings2,
-  WalletCards,
+  Table,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { SourceModule } from "@keuangan-apotek/shared";
 import CoAPage from "./pages/CoAPage";
 import GeneralJournalPage from "./pages/GeneralJournalPage";
-import CashBankPage from "./pages/CashBankPage";
-import ConsignmentPage from "./pages/ConsignmentPage";
-import PBFInvoicesPage from "./pages/PBFInvoicesPage";
-import POSClearingPage from "./pages/POSClearingPage";
-import BankReconPage from "./pages/BankReconPage";
+import DailyTransactionsPage from "./pages/DailyTransactionsPage";
+import MasterTransactionPage from "./pages/MasterTransactionPage";
 import ReportsPage from "./pages/ReportsPage";
-import StressTestPage from "./pages/StressTestPage";
 import SettingsPage from "./pages/SettingsPage";
+import StressTestPage from "./pages/StressTestPage";
 
 const foundationSourceModule: SourceModule = "GENERAL";
 
 const modules = [
   { label: "Ringkasan", icon: LayoutDashboard },
-  { label: "Bagan Akun", icon: BookOpen },
+  { label: "Buku Transaksi", icon: Table },
+  { label: "Master Transaksi", icon: SlidersHorizontal },
   { label: "Jurnal Umum", icon: Activity },
-  { label: "POS Clearing", icon: CircleDollarSign },
-  { label: "Faktur PBF", icon: CircleDollarSign },
-  { label: "Konsinyasi", icon: CircleDollarSign },
-  { label: "Kas & Bank", icon: WalletCards },
-  { label: "Rekonsiliasi Bank", icon: WalletCards },
+  { label: "Bagan Akun", icon: BookOpen },
   { label: "Laporan Keuangan", icon: BarChart3 },
-  { label: "Uji Beban", icon: Activity },
 ];
 
 const modulePaths: Record<string, string> = {
   Ringkasan: "/",
-  "Bagan Akun": "/coa",
+  "Buku Transaksi": "/transaksi",
+  "Master Transaksi": "/master-transaksi",
   "Jurnal Umum": "/jurnal",
-  "POS Clearing": "/pos-clearing",
-  "Faktur PBF": "/faktur-pbf",
-  Konsinyasi: "/konsinyasi",
-  "Kas & Bank": "/kas-bank",
-  "Rekonsiliasi Bank": "/rekonsiliasi-bank",
+  "Bagan Akun": "/coa",
   "Laporan Keuangan": "/laporan-keuangan",
   "Uji Beban": "/uji-beban",
   Pengaturan: "/pengaturan",
@@ -65,7 +55,7 @@ function navigateTo(pathname: string) {
 
 function App() {
   const [activeModule, setActiveModule] = useState(() => routeForPath(window.location.pathname));
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const handlePopState = () => setActiveModule(routeForPath(window.location.pathname));
@@ -84,20 +74,20 @@ function App() {
         <div
           className={`flex h-16 items-center border-b border-slate-100 ${sidebarCollapsed ? "justify-center px-3" : "gap-3 px-6"}`}
         >
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-sm font-bold text-white">
+          <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-sm font-bold text-white shadow-sm">
             KA
           </div>
           {!sidebarCollapsed && (
             <div>
               <p className="text-sm font-bold tracking-tight">Keuangan Apotek</p>
-              <p className="text-[11px] text-muted">Finance workspace</p>
+              <p className="text-[11px] text-muted">Akuntansi & Mutasi Kas</p>
             </div>
           )}
         </div>
         <nav className="space-y-1 px-3 py-5" aria-label="Navigasi utama">
           {!sidebarCollapsed && (
             <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Menu utama
+              Menu Utama
             </p>
           )}
           {modules.map(({ label, icon: Icon }) => (
@@ -158,7 +148,7 @@ function App() {
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-              Sistem siap
+              Sistem Aktif
             </span>
             <div className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
               IZ
@@ -169,20 +159,14 @@ function App() {
         <div className="mx-auto max-w-none space-y-6 p-6 lg:p-10">
           {activeModule === "Pengaturan" ? (
             <SettingsPage />
-          ) : activeModule === "Bagan Akun" ? (
-            <CoAPage />
+          ) : activeModule === "Buku Transaksi" ? (
+            <DailyTransactionsPage />
+          ) : activeModule === "Master Transaksi" ? (
+            <MasterTransactionPage />
           ) : activeModule === "Jurnal Umum" ? (
             <GeneralJournalPage />
-          ) : activeModule === "POS Clearing" ? (
-            <POSClearingPage />
-          ) : activeModule === "Faktur PBF" ? (
-            <PBFInvoicesPage />
-          ) : activeModule === "Konsinyasi" ? (
-            <ConsignmentPage />
-          ) : activeModule === "Kas & Bank" ? (
-            <CashBankPage />
-          ) : activeModule === "Rekonsiliasi Bank" ? (
-            <BankReconPage />
+          ) : activeModule === "Bagan Akun" ? (
+            <CoAPage />
           ) : activeModule === "Laporan Keuangan" ? (
             <ReportsPage />
           ) : activeModule === "Uji Beban" ? (
@@ -192,41 +176,50 @@ function App() {
               <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
                 <div className="max-w-2xl">
                   <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand">
-                    Phase 0 · Foundation
+                    Dashboard Keuangan Apotek
                   </p>
                   <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                    Ruang kerja finansial apotek yang rapi dan terukur.
+                    Ruang kerja akuntansi dan pencatatan transaksi apotek.
                   </h2>
                   <p className="mt-3 leading-7 text-muted">
-                    Fondasi aplikasi telah disiapkan untuk pencatatan double-entry, data grid cepat,
-                    dan laporan yang dapat ditelusuri sampai ke jurnal pembentuknya.
+                    Sistem pencatatan terintegrasi dengan pembentukan jurnal double-entry otomatis,
+                    pelacakan mutasi dan saldo berjalan 9 akun kas & bank, serta skema metadata
+                    dinamis.
                   </p>
                 </div>
               </section>
 
               <section className="grid gap-4 sm:grid-cols-3">
-                {[
-                  ["Saldo kas & bank", "Rp 0", "Belum ada transaksi"],
-                  ["Jurnal bulan ini", "0", "Draft & posted"],
-                  ["Status database", "Ready", "SQLite WAL enabled"],
-                ].map(([label, value, note]) => (
-                  <article
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                    key={label}
-                  >
-                    <p className="text-sm text-muted">{label}</p>
-                    <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">{value}</p>
-                    <p className="mt-1 text-xs text-slate-400">{note}</p>
-                  </article>
-                ))}
-              </section>
-
-              <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
-                <p className="text-sm font-semibold">Modul {activeModule} siap dikembangkan</p>
-                <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted">
-                  Shell navigasi ini menjadi titik awal implementasi modul sesuai roadmap. Data
-                  nyata akan muncul setelah database dan alur transaksi diaktifkan.
-                </p>
+                <article
+                  onClick={() => navigateTo(modulePaths["Buku Transaksi"]!)}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-brand cursor-pointer transition"
+                >
+                  <p className="text-sm font-semibold text-brand">Buku Transaksi</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">Spreadsheet Harian</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Input transaksi dengan 9 kolom saldo kas/bank live
+                  </p>
+                </article>
+                <article
+                  onClick={() => navigateTo(modulePaths["Master Transaksi"]!)}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-brand cursor-pointer transition"
+                >
+                  <p className="text-sm font-semibold text-brand">Master Transaksi</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">Skema & Template</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Atur pemetaan debit/kredit dan visual schema builder
+                  </p>
+                </article>
+                <article
+                  onClick={() => navigateTo(modulePaths["Laporan Keuangan"]!)}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-brand cursor-pointer transition"
+                >
+                  <p className="text-sm font-semibold text-brand">Laporan Keuangan</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">Neraca & Laba Rugi</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Sinkron otomatis dengan drill-down ke jurnal
+                  </p>
+                </article>
               </section>
             </>
           )}

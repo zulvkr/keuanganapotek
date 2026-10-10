@@ -13,15 +13,8 @@ import {
   MoveOpeningBalanceSchema,
   nowIsoInstant,
   SaveOpeningBalancesSchema,
-  CashBankTransferSchema,
-  CashierSchema,
-  ConsignmentItemSchema,
-  ConsignmentSettlementSchema,
-  ConsignmentVendorSchema,
-  PbfInvoiceSchema,
-  PosClearingSchema,
-  PosPaymentMethodSchema,
-  ShiftSchema,
+  TransactionTypeSchema,
+  TransactionEntrySchema,
   AccountJournalDrillDownQuerySchema,
   BalanceSheetQuerySchema,
   IncomeStatementQuerySchema,
@@ -29,8 +22,6 @@ import {
   TrialBalanceQuerySchema,
   LockPeriodSchema,
   UnlockPeriodSchema,
-  BankReconMatchSchema,
-  BankStatementImportSchema,
 } from "@keuangan-apotek/shared";
 import type { SourceModule } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "./db/client.js";
@@ -52,37 +43,18 @@ import {
   listJournals,
   updateJournal,
 } from "./services/ledger.service.js";
-import type { HealthResponse } from "@keuangan-apotek/shared";
 import {
-  createCashBankTransfer,
-  listCashiers,
-  createConsignmentItem,
-  createConsignmentVendor,
-  createPbfInvoice,
-  createPosClearing,
-  deletePosClearing,
-  generatePosJournal,
-  getCashBankSummary,
-  listPosPaymentMethods,
-  listCashBankTransfers,
-  listConsignmentItems,
-  listPbfInvoices,
-  listPosClearings,
-  listShifts,
-  updatePosClearing,
-  savePosPaymentMethod,
-  saveCashier,
-  saveShift,
-  settleConsignment,
-} from "./services/operational.service.js";
-import {
-  autoMatch,
-  getReconData,
-  importBankStatementCsv,
-  importBankStatements,
-  manualMatch,
-  removeMatch,
-} from "./services/recon.service.js";
+  createTransaction,
+  createTransactionType,
+  deleteTransaction,
+  deleteTransactionType,
+  getTransactionTypeById,
+  getTransactionsSummary,
+  listTransactionTypes,
+  listTransactions,
+  updateTransaction,
+  updateTransactionType,
+} from "./services/transaction.service.js";
 import {
   getAccountJournalDrillDown,
   getBalanceSheet,
@@ -91,6 +63,7 @@ import {
 } from "./services/reports.service.js";
 import { listAuditLogs } from "./services/audit.service.js";
 import { listPeriodLocks, lockPeriod, unlockPeriod } from "./services/period-lock.service.js";
+import type { HealthResponse } from "@keuangan-apotek/shared";
 
 function healthHandler(context: Context) {
   const response: HealthResponse = {
@@ -104,7 +77,6 @@ function healthHandler(context: Context) {
 /** Lightweight health-check app kept for existing API consumers and tests. */
 export const app = new Hono().get("/health", healthHandler);
 
-/** Runtime Zod validation also becomes the JSON input contract exposed by Hono RPC. */
 type JsonValidator<S extends z.ZodTypeAny> = MiddlewareHandler<
   any,
   any,
@@ -142,7 +114,10 @@ const JournalListQuerySchema = z.object({
   endDate: z.string().optional(),
   sourceModule: z.string().optional(),
 });
-const BankReconQuerySchema = z.object({ bankAccountId: z.string().min(1) });
+const TransactionListQuerySchema = z.object({
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
 const ReportQuerySchema = z.object({
   periodStart: z.string().optional(),
   periodEnd: z.string().optional(),
@@ -155,11 +130,6 @@ const ReportQuerySchema = z.object({
   asOfDate: z.string().optional(),
   accountId: z.string().optional(),
 });
-
-const BankReconImportRequestSchema = z.union([
-  z.object({ bankAccountId: z.string().min(1), csv: z.string() }),
-  BankStatementImportSchema,
-]);
 
 function errorResponse(context: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Permintaan tidak valid";
@@ -176,16 +146,9 @@ function errorResponse(context: Context, error: unknown) {
   return context.json({ error: message }, status);
 }
 
-const sourceModules: SourceModule[] = [
-  "GENERAL",
-  "OPENING_BALANCE",
-  "POS_CLEARING",
-  "PBF_INVOICE",
-  "CONSIGNMENT",
-  "CASH_BANK",
-];
+const sourceModules: SourceModule[] = ["GENERAL", "OPENING_BALANCE", "TRANSACTION"];
 
-/** Creates the Phase 1 API with a caller-owned database connection. */
+/** Creates the API with a caller-owned database connection. */
 export function createApiApp(client: SqliteClient) {
   function readPeriod(
     context: Context,
@@ -344,8 +307,7 @@ export function createApiApp(client: SqliteClient) {
           .from(accounts)
           .where(eq(accounts.code, "3101"))
           .get();
-        if (!equity)
-          return context.json({ error: "Akun 3101 Ekuitas Saldo Awal belum tersedia" }, 500);
+        if (!equity) return context.json({ error: "Akun 3101 Akun Modal belum tersedia" }, 500);
         const lines = autoBalanceOpeningBalances(parsed.data.lines, equity.id);
         return context.json({
           data: {
@@ -502,175 +464,91 @@ export function createApiApp(client: SqliteClient) {
       }
     })
 
-    .get("/api/pos-clearings", (context) => context.json({ data: listPosClearings(client.db) }))
-    .post("/api/pos-payment-methods", validateJson(PosPaymentMethodSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
+    // Transaction Types endpoints
+    .get("/api/transaction-types", (context) => {
+      const includeInactive = context.req.query("includeInactive") === "true";
+      return context.json({ data: listTransactionTypes(client.db, { includeInactive }) });
+    })
+
+    .get("/api/transaction-types/:id", (context) => {
+      const item = getTransactionTypeById(client.db, context.req.param("id"));
+      return item
+        ? context.json({ data: item })
+        : context.json({ error: "Tipe transaksi tidak ditemukan" }, 404);
+    })
+
+    .post("/api/transaction-types", validateJson(TransactionTypeSchema), async (context) => {
       try {
-        return context.json({ data: savePosPaymentMethod(client.db, parsed.data) });
+        const body = context.req.valid("json");
+        return context.json({ data: createTransactionType(client.db, body) }, 201);
       } catch (error) {
         return errorResponse(context, error);
       }
     })
-    .get("/api/pos-payment-methods", (context) => {
+
+    .put(
+      "/api/transaction-types/:id",
+      validateJson(TransactionTypeSchema.partial()),
+      async (context) => {
+        try {
+          const body = context.req.valid("json");
+          return context.json({
+            data: updateTransactionType(client.db, context.req.param("id")!, body),
+          });
+        } catch (error) {
+          return errorResponse(context, error);
+        }
+      },
+    )
+
+    .delete("/api/transaction-types/:id", (context) => {
       try {
-        return context.json({ data: listPosPaymentMethods(client.db) });
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-    .get("/api/cashiers", (context) => context.json({ data: listCashiers(client.db) }))
-    .post("/api/cashiers", validateJson(CashierSchema), async (context) => {
-      try {
-        return context.json({ data: saveCashier(client.db, context.req.valid("json")) });
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-    .get("/api/shifts", (context) => context.json({ data: listShifts(client.db) }))
-    .post("/api/shifts", validateJson(ShiftSchema), async (context) => {
-      try {
-        return context.json({ data: saveShift(client.db, context.req.valid("json")) });
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-    .post("/api/pos-clearings", validateJson(PosClearingSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
-      try {
-        return context.json({ data: createPosClearing(client.db, parsed.data) }, 201);
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-    .put("/api/pos-clearings/:id", validateJson(PosClearingSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
-      try {
-        return context.json({
-          data: updatePosClearing(client.db, context.req.param("id")!, parsed.data),
-        });
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-    .delete("/api/pos-clearings/:id", (context) => {
-      try {
-        deletePosClearing(client.db, context.req.param("id"));
+        deleteTransactionType(client.db, context.req.param("id")!);
         return context.body(null, 204);
       } catch (error) {
         return errorResponse(context, error);
       }
     })
-    .post("/api/pos-clearings/:id/generate-journal", (context) => {
-      try {
-        return context.json({ data: generatePosJournal(client.db, context.req.param("id")) });
-      } catch (error) {
-        return errorResponse(context, error);
-      }
+
+    // Transactions endpoints
+    .get("/api/transactions/summary", (context) => {
+      return context.json({ data: getTransactionsSummary(client.db) });
     })
 
-    .get("/api/pbf-invoices", (context) => context.json({ data: listPbfInvoices(client.db) }))
-    .post("/api/pbf-invoices", validateJson(PbfInvoiceSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
-      try {
-        return context.json({ data: createPbfInvoice(client.db, parsed.data) }, 201);
-      } catch (error) {
-        return errorResponse(context, error);
-      }
+    .get("/api/transactions", validateQuery(TransactionListQuerySchema), (context) => {
+      const startDate = context.req.query("startDate");
+      const endDate = context.req.query("endDate");
+      return context.json({ data: listTransactions(client.db, { startDate, endDate }) });
     })
 
-    .get("/api/consignment/items", (context) =>
-      context.json({ data: listConsignmentItems(client.db) }),
-    )
-    .post("/api/consignment/vendors", validateJson(ConsignmentVendorSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
-      try {
-        return context.json({ data: createConsignmentVendor(client.db, parsed.data) }, 201);
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-    .post("/api/consignment/items", validateJson(ConsignmentItemSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
-      try {
-        return context.json({ data: createConsignmentItem(client.db, parsed.data) }, 201);
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-    .post(
-      "/api/consignment/settlements",
-      validateJson(ConsignmentSettlementSchema),
-      async (context) => {
-        const parsed = { data: context.req.valid("json") };
-        try {
-          return context.json({ data: settleConsignment(client.db, parsed.data) }, 201);
-        } catch (error) {
-          return errorResponse(context, error);
-        }
-      },
-    )
-
-    .get("/api/cash-bank/transfers", (context) =>
-      context.json({ data: listCashBankTransfers(client.db) }),
-    )
-    .get("/api/cash-bank/summary", (context) =>
-      context.json({ data: getCashBankSummary(client.db) }),
-    )
-    .post("/api/cash-bank/transfers", validateJson(CashBankTransferSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
-      try {
-        return context.json({ data: createCashBankTransfer(client.db, parsed.data) }, 201);
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-
-    .get("/api/bank-recon", validateQuery(BankReconQuerySchema), (context) => {
-      const bankAccountId = context.req.valid("query").bankAccountId;
-      try {
-        return context.json({ data: getReconData(client.db, bankAccountId) });
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-
-    .post("/api/bank-recon/import", validateJson(BankReconImportRequestSchema), async (context) => {
+    .post("/api/transactions", validateJson(TransactionEntrySchema), async (context) => {
       try {
         const body = context.req.valid("json");
-        const result =
-          "csv" in body
-            ? importBankStatementCsv(client.db, body.bankAccountId, body.csv)
-            : importBankStatements(client.db, body);
-        return context.json({ data: result }, 201);
+        return context.json({ data: createTransaction(client.db, body) }, 201);
       } catch (error) {
         return errorResponse(context, error);
       }
     })
 
-    .post(
-      "/api/bank-recon/auto-match",
-      validateJson(z.object({ bankAccountId: z.string().min(1) })),
+    .put(
+      "/api/transactions/:id",
+      validateJson(TransactionEntrySchema.partial()),
       async (context) => {
         try {
           const body = context.req.valid("json");
-          return context.json({ data: autoMatch(client.db, body.bankAccountId) });
+          return context.json({
+            data: updateTransaction(client.db, context.req.param("id")!, body),
+          });
         } catch (error) {
           return errorResponse(context, error);
         }
       },
     )
 
-    .post("/api/bank-recon/matches", validateJson(BankReconMatchSchema), async (context) => {
+    .delete("/api/transactions/:id", (context) => {
       try {
-        return context.json({ data: manualMatch(client.db, context.req.valid("json")) }, 201);
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-
-    .delete("/api/bank-recon/matches/:id", (context) => {
-      try {
-        return context.json({ data: removeMatch(client.db, context.req.param("id")) });
+        deleteTransaction(client.db, context.req.param("id")!);
+        return context.body(null, 204);
       } catch (error) {
         return errorResponse(context, error);
       }
@@ -681,5 +559,4 @@ export function createApiApp(client: SqliteClient) {
 }
 
 export type AppType = ReturnType<typeof createApiApp>;
-/** @deprecated Use AppType. Kept as a source-compatible alias for consumers. */
 export type ApiApp = AppType;

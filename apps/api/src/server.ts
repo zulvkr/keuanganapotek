@@ -2,11 +2,16 @@ import { serve } from "@hono/node-server";
 import { createApiApp } from "./app.js";
 import { createSqliteClient } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
-import { seedAccounts } from "./db/seed.js";
+import { getOpeningBalanceCutoff } from "./services/opening-balance.service.js";
+import { seedAccounts, seedOpeningBalances, seedTransactionTypes } from "./db/seed.js";
 
 const client = createSqliteClient();
 runMigrations(client.sqlite);
 seedAccounts(client);
+seedTransactionTypes(client);
+if (!getOpeningBalanceCutoff(client.db)) {
+  await seedOpeningBalances(client);
+}
 const app = createApiApp(client);
 
 const port = Number(process.env.API_PORT ?? 3000);

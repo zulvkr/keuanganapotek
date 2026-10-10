@@ -20,7 +20,9 @@ export const NormalBalanceSchema = z.enum(["DEBIT", "KREDIT"]);
 
 export const AccountSchema = z.object({
   id: z.string().optional(),
-  code: z.string().regex(/^\d{4}$/, "Kode akun harus terdiri dari 4 digit angka"),
+  code: z
+    .string()
+    .regex(/^(\d{4}|\d-\d{4})$/, "Kode akun harus terdiri dari 4 digit angka atau format X-XXXX"),
   name: z.string().trim().min(1),
   parentId: z.string().nullable().optional(),
   classification: AccountClassificationSchema,
@@ -127,133 +129,63 @@ export const UnlockPeriodSchema = z.object({
   role: z.literal("OWNER"),
 });
 
-export const PaymentTermsSchema = z.enum(["TUNAI", "TEMPO_14", "TEMPO_30", "TEMPO_45", "TEMPO_60"]);
-const NonNegativeMoneySchema = RupiahAmountSchema.refine(
-  (value) => positiveAmount(value) || String(value).trim() === "0",
-  "Nominal tidak boleh negatif",
-);
+export const NonNegativeMoneySchema = RupiahAmountSchema.refine((value) => {
+  try {
+    const sen = parseRupiahToSen(typeof value === "number" ? String(value) : value);
+    return sen >= 0;
+  } catch {
+    return false;
+  }
+}, "Nominal tidak boleh negatif");
 
-export const PbfInvoiceSchema = z
-  .object({
-    id: z.string().optional(),
-    invoiceDate: IsoDateSchema,
-    dueDate: IsoDateSchema,
-    pbfName: z.string().trim().min(1),
-    invoiceNumber: z.string().trim().min(1),
-    dppAmount: NonNegativeMoneySchema,
-    ppnAmount: NonNegativeMoneySchema.optional(),
-    totalAmount: NonNegativeMoneySchema.optional(),
-    paymentTerms: PaymentTermsSchema,
-    accountPayableId: z.string().optional(),
-    isVerified: z.boolean().default(false),
-  })
-  .refine((invoice) => invoice.dueDate >= invoice.invoiceDate, {
-    message: "Tanggal jatuh tempo tidak boleh sebelum tanggal faktur",
-    path: ["dueDate"],
-  });
+export const MetadataFieldTypeSchema = z.enum([
+  "text",
+  "textarea",
+  "number",
+  "currency",
+  "date",
+  "select",
+  "multi-select",
+  "boolean",
+]);
 
-export const PosClearingSchema = z.object({
-  id: z.string().optional(),
-  clearingDate: IsoDateSchema,
-  shiftName: z.string().trim().optional(),
-  cashierName: z.string().trim().optional(),
-  totalPosOmzet: NonNegativeMoneySchema.optional(),
-  cashReceived: NonNegativeMoneySchema.default("0"),
-  nonCashReceived: NonNegativeMoneySchema.default("0"),
-  cogsAmount: NonNegativeMoneySchema.default("0"),
-  cashAccountId: z.string().min(1).optional(),
-  nonCashAccountId: z.string().min(1).optional(),
-  payments: z
-    .array(z.object({ paymentMethodId: z.string().min(1), amount: NonNegativeMoneySchema }))
+export const MetadataFieldSchema = z.object({
+  key: z
+    .string()
+    .trim()
     .min(1)
-    .optional(),
-  salesAccountCode: z.enum(["4101", "4102"]).default("4101"),
-  cogsAccountCode: z.enum(["5101", "5102"]).default("5101"),
+    .regex(/^[a-zA-Z0-9_-]+$/, "Key hanya boleh huruf, angka, _, atau -"),
+  label: z.string().trim().min(1),
+  type: MetadataFieldTypeSchema,
+  required: z.boolean().default(false),
+  defaultValue: z.any().optional(),
+  placeholder: z.string().trim().optional(),
+  options: z.array(z.string().trim().min(1)).optional(),
+  width: z.enum(["full", "half"]).default("full"),
+  helpText: z.string().trim().optional(),
 });
 
-export const PosPaymentMethodSchema = z.object({
+export const TransactionTypeSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1),
-  accountId: z.string().min(1),
-  isCash: z.boolean().default(false),
+  code: z.string().trim().min(1),
+  debitAccountId: z.string().min(1),
+  creditAccountId: z.string().min(1),
+  description: z.string().trim().optional(),
+  metadataSchema: z.array(MetadataFieldSchema).default([]),
   isActive: z.boolean().default(true),
-  sortOrder: z.number().int().nonnegative().default(0),
 });
 
-export const CashierSchema = z.object({
+export const TransactionEntrySchema = z.object({
   id: z.string().optional(),
-  name: z.string().trim().min(1).max(120),
-  isActive: z.boolean().default(true),
-  sortOrder: z.number().int().nonnegative().default(0),
-});
-
-export const ShiftSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().trim().min(1).max(120),
-  isActive: z.boolean().default(true),
-  sortOrder: z.number().int().nonnegative().default(0),
-});
-
-export const ConsignmentVendorSchema = z.object({
-  id: z.string().optional(),
-  vendorName: z.string().trim().min(1),
-  contactPerson: z.string().trim().optional(),
-  phone: z.string().trim().optional(),
-  bankAccountInfo: z.string().trim().optional(),
-});
-
-export const ConsignmentItemSchema = z.object({
-  id: z.string().optional(),
-  vendorId: z.string().min(1),
-  productName: z.string().trim().min(1),
-  qtySold: z.number().int().nonnegative(),
-  agreedCostPrice: NonNegativeMoneySchema,
-});
-
-export const ConsignmentSettlementSchema = z.object({
-  itemIds: z.array(z.string().min(1)).min(1),
-  settlementDate: IsoDateSchema,
-  paymentAccountId: z.string().min(1),
-  referenceNo: z.string().trim().optional(),
-});
-
-export const CashBankTransferSchema = z
-  .object({
-    transactionTime: z.string().trim().min(10),
-    transactionType: z.enum(["DEPOSIT", "BANK_TRANSFER", "EXPENSE", "OTHER"]),
-    sourceAccountId: z.string().min(1),
-    targetAccountId: z.string().min(1),
-    netAmount: NonNegativeMoneySchema.refine(
-      positiveAmount,
-      "Nominal transaksi harus lebih besar dari nol",
-    ),
-    adminFee: NonNegativeMoneySchema.default("0"),
-    referenceNo: z.string().trim().optional(),
-    memo: z.string().trim().optional(),
-  })
-  .refine((input) => input.sourceAccountId !== input.targetAccountId, {
-    message: "Akun sumber dan tujuan harus berbeda",
-  });
-
-export const BankStatementImportRowSchema = z
-  .object({
-    statementDate: IsoDateSchema,
-    description: z.string().trim().optional(),
-    debit: NonNegativeMoneySchema.default("0"),
-    credit: NonNegativeMoneySchema.default("0"),
-  })
-  .refine((row) => positiveAmount(row.debit) !== positiveAmount(row.credit), {
-    message: "Baris rekening koran harus memiliki tepat satu nominal debit atau kredit",
-  });
-
-export const BankStatementImportSchema = z.object({
-  bankAccountId: z.string().min(1),
-  rows: z.array(BankStatementImportRowSchema).min(1),
-});
-
-export const BankReconMatchSchema = z.object({
-  bankStatementId: z.string().min(1),
-  journalLineId: z.string().min(1),
+  transactionDate: IsoDateSchema,
+  transactionTypeId: z.string().min(1),
+  amount: NonNegativeMoneySchema.default("0"),
+  memo: z.string().trim().optional(),
+  metadata: z
+    .record(z.string(), z.any())
+    .nullish()
+    .transform((val) => val ?? {}),
 });
 
 export const ReportPeriodSchema = z
@@ -285,18 +217,9 @@ export const AccountJournalDrillDownQuerySchema = z.object({
 export type Account = z.infer<typeof AccountSchema>;
 export type JournalLine = z.infer<typeof JournalLineSchema>;
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
-export type PbfInvoice = z.infer<typeof PbfInvoiceSchema>;
-export type PosClearing = z.infer<typeof PosClearingSchema>;
-export type PosPaymentMethod = z.infer<typeof PosPaymentMethodSchema>;
-export type Cashier = z.infer<typeof CashierSchema>;
-export type Shift = z.infer<typeof ShiftSchema>;
-export type ConsignmentVendor = z.infer<typeof ConsignmentVendorSchema>;
-export type ConsignmentItem = z.infer<typeof ConsignmentItemSchema>;
-export type ConsignmentSettlement = z.infer<typeof ConsignmentSettlementSchema>;
-export type CashBankTransfer = z.infer<typeof CashBankTransferSchema>;
-export type BankStatementImportRow = z.infer<typeof BankStatementImportRowSchema>;
-export type BankStatementImport = z.infer<typeof BankStatementImportSchema>;
-export type BankReconMatch = z.infer<typeof BankReconMatchSchema>;
+export type MetadataField = z.infer<typeof MetadataFieldSchema>;
+export type TransactionTypeInput = z.infer<typeof TransactionTypeSchema>;
+export type TransactionEntryInput = z.infer<typeof TransactionEntrySchema>;
 export type OpeningBalanceLine = z.infer<typeof OpeningBalanceLineSchema>;
 export type SaveOpeningBalances = z.infer<typeof SaveOpeningBalancesSchema>;
 export type MoveOpeningBalance = z.infer<typeof MoveOpeningBalanceSchema>;

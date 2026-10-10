@@ -117,7 +117,6 @@ function GeneralJournalPage() {
   const [history, setHistory] = useState<DraftLine[][]>([]);
   const [future, setFuture] = useState<DraftLine[][]>([]);
   const [inlineEdit, setInlineEdit] = useState<InlineJournalEdit | null>(null);
-  const [singleLine, setSingleLine] = useState(true);
   const [activePreset, setActivePreset] = useState<DatePreset>("ALL");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -377,7 +376,6 @@ function GeneralJournalPage() {
 
   async function startInlineEdit(journal: JournalSummary) {
     if (journal.sourceModule !== "GENERAL") return;
-    if (singleLine && journal.lines.length !== 2) setSingleLine(false);
     setInlineEdit({
       id: journal.id,
       entryDate: journal.entryDate,
@@ -426,27 +424,8 @@ function GeneralJournalPage() {
     saveMutation.mutate({ id: inlineEdit.id, input: parsed.data });
   }
 
-  function accountSummary(journal: JournalSummary, side: "debit" | "credit") {
-    return (
-      journal.lines
-        .filter((line) => line[side] > 0)
-        .map((line) => `${line.accountCode} · ${line.accountName}`)
-        .join(" · ") || "—"
-    );
-  }
-
   function renderTableHeader() {
-    return singleLine ? (
-      <tr>
-        <th className="w-40 px-3 py-3">Tanggal</th>
-        <th className="w-48 px-3 py-3">Referensi</th>
-        <th className="min-w-[230px] px-3 py-3">Akun debit</th>
-        <th className="min-w-[230px] px-3 py-3">Akun kredit</th>
-        <th className="w-48 px-3 py-3 text-right">Nominal (Rp)</th>
-        <th className="min-w-[190px] px-3 py-3">Keterangan</th>
-        <th className="w-28 px-3 py-3 text-center">Aksi</th>
-      </tr>
-    ) : (
+    return (
       <tr>
         <th className="w-40 px-3 py-3">Tanggal</th>
         <th className="w-48 px-3 py-3">Referensi</th>
@@ -460,115 +439,13 @@ function GeneralJournalPage() {
   }
 
   function renderDraftRows() {
-    if (singleLine) {
-      const debitRow = rows[0] ?? emptyLine();
-      const creditRow = rows[1] ?? emptyLine();
-      const amount = debitRow.debit || creditRow.credit;
-      return (
-        <tr ref={draftRowRef}>
-          <td className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top">
-            <input
-              aria-label="Tanggal jurnal draft"
-              className="w-full rounded-md border border-transparent bg-white px-2 py-2 text-sm tabular-nums outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
-              onChange={(event) => setEntryDate(event.target.value)}
-              type="date"
-              value={entryDate}
-            />
-          </td>
-          <td className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top">
-            <input
-              aria-label="Referensi jurnal draft"
-              className="w-full rounded-md border border-transparent bg-white px-2 py-2 text-sm outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
-              onChange={(event) => setReferenceNo(event.target.value)}
-              placeholder="No. bukti / referensi"
-              value={referenceNo}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <input
-              aria-label="Akun debit jurnal draft"
-              className={`w-full rounded-md border bg-transparent px-2 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-blue-100 ${debitRow.accountQuery && !debitRow.accountId ? "border-red-300" : "border-transparent hover:border-slate-200"}`}
-              list="journal-accounts"
-              onChange={(event) => accountChanged(0, event.target.value)}
-              value={debitRow.accountQuery}
-              placeholder="Akun debit..."
-            />
-          </td>
-          <td className="px-3 py-2">
-            <input
-              aria-label="Akun kredit jurnal draft"
-              className={`w-full rounded-md border bg-transparent px-2 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-blue-100 ${creditRow.accountQuery && !creditRow.accountId ? "border-red-300" : "border-transparent hover:border-slate-200"}`}
-              list="journal-accounts"
-              onChange={(event) => accountChanged(1, event.target.value)}
-              value={creditRow.accountQuery}
-              placeholder="Akun kredit..."
-            />
-          </td>
-          <td className="px-3 py-2">
-            <input
-              aria-label="Nominal jurnal draft"
-              className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-right font-mono tabular-nums outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
-              onBlur={(event) => {
-                const value = formatAmount(event.currentTarget.value);
-                commitRows((current) =>
-                  current.map((row, rowIndex) =>
-                    rowIndex === 0
-                      ? { ...row, debit: value, credit: "" }
-                      : rowIndex === 1
-                        ? { ...row, debit: "", credit: value }
-                        : row,
-                  ),
-                );
-              }}
-              onChange={(event) => {
-                const value = event.target.value;
-                setRows((current) =>
-                  current.map((row, rowIndex) =>
-                    rowIndex === 0
-                      ? { ...row, debit: value, credit: "" }
-                      : rowIndex === 1
-                        ? { ...row, debit: "", credit: value }
-                        : row,
-                  ),
-                );
-              }}
-              placeholder="0,00"
-              value={amount}
-            />
-          </td>
-          <td className="px-3 py-2">
-            <input
-              aria-label="Keterangan jurnal draft"
-              className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
-              onChange={(event) => updateRow(0, { description: event.target.value })}
-              value={debitRow.description || creditRow.description}
-              placeholder="Uraian transaksi"
-            />
-          </td>
-          <td className="bg-blue-50/50 px-3 py-2 text-center align-top">
-            <button
-              className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-              disabled={!canPost || saveMutation.isPending}
-              onClick={submitJournal}
-              type="button"
-            >
-              <Save size={14} /> Posting
-            </button>
-          </td>
-        </tr>
-      );
-    }
     return rows.map((row, index) => (
-      <tr
-        className={singleLine && index % 2 ? "bg-blue-50/30" : ""}
-        key={`draft-${index}`}
-        ref={index === 0 ? draftRowRef : undefined}
-      >
-        {(singleLine || index === 0) && (
+      <tr key={`draft-${index}`} ref={index === 0 ? draftRowRef : undefined}>
+        {index === 0 && (
           <>
             <td
               className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top"
-              rowSpan={singleLine ? undefined : rows.length}
+              rowSpan={rows.length}
             >
               <input
                 aria-label="Tanggal jurnal draft"
@@ -580,7 +457,7 @@ function GeneralJournalPage() {
             </td>
             <td
               className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top"
-              rowSpan={singleLine ? undefined : rows.length}
+              rowSpan={rows.length}
             >
               <input
                 aria-label="Referensi jurnal draft"
@@ -672,10 +549,7 @@ function GeneralJournalPage() {
           />
         </td>
         {index === 0 ? (
-          <td
-            className="bg-blue-50/50 px-3 py-2 text-center align-top"
-            rowSpan={singleLine ? undefined : rows.length}
-          >
+          <td className="bg-blue-50/50 px-3 py-2 text-center align-top" rowSpan={rows.length}>
             <div className="flex flex-col items-center gap-1.5">
               <button
                 className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
@@ -705,172 +579,14 @@ function GeneralJournalPage() {
     const edit = inlineEdit?.id === journal.id ? inlineEdit : null;
     const displayRows = edit?.rows ?? toDraftRows(journal);
     const isEditing = Boolean(edit);
-    if (singleLine) {
-      const debitRow = edit?.rows[0] ?? emptyLine();
-      const creditRow = edit?.rows[1] ?? emptyLine();
-      const amount = debitRow.debit || creditRow.credit || String(journal.totalDebit / 100);
-      return (
-        <tr key={`${journal.id}-single`}>
-          <td className="border-r border-slate-100 px-3 py-3 align-top">
-            {isEditing ? (
-              <input
-                aria-label={`Tanggal jurnal ${journal.journalNo}`}
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                onChange={(event) =>
-                  setInlineEdit((current) =>
-                    current ? { ...current, entryDate: event.target.value } : current,
-                  )
-                }
-                type="date"
-                value={edit!.entryDate}
-              />
-            ) : (
-              journal.entryDate
-            )}
-          </td>
-          <td className="border-r border-slate-100 px-3 py-3 align-top">
-            {isEditing ? (
-              <input
-                aria-label={`Referensi jurnal ${journal.journalNo}`}
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                onChange={(event) =>
-                  setInlineEdit((current) =>
-                    current ? { ...current, referenceNo: event.target.value } : current,
-                  )
-                }
-                placeholder="No. referensi"
-                value={edit!.referenceNo}
-              />
-            ) : (
-              <p>{journal.referenceNo || "—"}</p>
-            )}
-          </td>
-          <td className="px-3 py-3 align-top">
-            {isEditing ? (
-              <input
-                aria-label={`Akun debit ${journal.journalNo}`}
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                list="journal-accounts"
-                onChange={(event) => inlineAccountChanged(0, event.target.value)}
-                value={debitRow.accountQuery}
-              />
-            ) : (
-              accountSummary(journal, "debit")
-            )}
-          </td>
-          <td className="px-3 py-3 align-top">
-            {isEditing ? (
-              <input
-                aria-label={`Akun kredit ${journal.journalNo}`}
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                list="journal-accounts"
-                onChange={(event) => inlineAccountChanged(1, event.target.value)}
-                value={creditRow.accountQuery}
-              />
-            ) : (
-              accountSummary(journal, "credit")
-            )}
-          </td>
-          <td className="px-3 py-3 text-right align-top font-mono tabular-nums">
-            {isEditing ? (
-              <input
-                aria-label={`Nominal ${journal.journalNo}`}
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-right font-mono tabular-nums outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setInlineEdit((current) =>
-                    current
-                      ? {
-                          ...current,
-                          rows: current.rows.map((row, rowIndex) =>
-                            rowIndex === 0
-                              ? { ...row, debit: value, credit: "" }
-                              : rowIndex === 1
-                                ? { ...row, debit: "", credit: value }
-                                : row,
-                          ),
-                        }
-                      : current,
-                  );
-                }}
-                value={amount}
-              />
-            ) : (
-              <JournalAmount value={journal.totalDebit} />
-            )}
-          </td>
-          <td className="px-3 py-3 align-top text-slate-600">
-            {isEditing ? (
-              <input
-                aria-label={`Keterangan ${journal.journalNo}`}
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
-                onChange={(event) => updateInlineRow(0, { description: event.target.value })}
-                value={debitRow.description || creditRow.description}
-              />
-            ) : (
-              journal.lines
-                .map((line) => line.description)
-                .filter(Boolean)
-                .join(" · ") || "—"
-            )}
-          </td>
-          <td className="px-3 py-3 text-center align-top">
-            {isEditing ? (
-              <div className="flex flex-col items-center gap-1">
-                <button
-                  aria-label={`Simpan ${journal.journalNo}`}
-                  className="inline-flex items-center gap-1 rounded-lg bg-brand px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                  disabled={saveMutation.isPending}
-                  onClick={submitInlineEdit}
-                  type="button"
-                >
-                  <Save size={13} /> Simpan
-                </button>
-                <button
-                  aria-label={`Batal edit ${journal.journalNo}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-600"
-                  onClick={() => setInlineEdit(null)}
-                  type="button"
-                >
-                  <X size={13} /> Batal
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-1">
-                <button
-                  aria-label={`Edit ${journal.journalNo}`}
-                  className="rounded p-1.5 text-slate-400 hover:bg-blue-50 hover:text-brand disabled:opacity-30"
-                  disabled={journal.sourceModule !== "GENERAL" || inlineEdit !== null}
-                  onClick={() => void startInlineEdit(journal)}
-                  type="button"
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  aria-label={`Hapus ${journal.journalNo}`}
-                  className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
-                  disabled={journal.sourceModule !== "GENERAL" || removeMutation.isPending}
-                  onClick={() => removeMutation.mutate(journal.id)}
-                  type="button"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            )}
-          </td>
-        </tr>
-      );
-    }
+
     return displayRows.map((row, index) => (
-      <tr
-        className={singleLine && index % 2 ? "bg-slate-50/60" : ""}
-        key={`${journal.id}-${index}`}
-      >
-        {(singleLine || index === 0) && (
+      <tr key={`${journal.id}-${index}`}>
+        {index === 0 && (
           <>
             <td
               className="border-r border-slate-100 px-3 py-3 align-top"
-              rowSpan={singleLine ? undefined : displayRows.length}
+              rowSpan={displayRows.length}
             >
               {isEditing ? (
                 <input
@@ -890,7 +606,7 @@ function GeneralJournalPage() {
             </td>
             <td
               className="border-r border-slate-100 px-3 py-3 align-top"
-              rowSpan={singleLine ? undefined : displayRows.length}
+              rowSpan={displayRows.length}
             >
               {isEditing ? (
                 <input
@@ -991,10 +707,7 @@ function GeneralJournalPage() {
           </>
         )}
         {index === 0 ? (
-          <td
-            className="px-3 py-3 text-center align-top"
-            rowSpan={singleLine ? undefined : displayRows.length}
-          >
+          <td className="px-3 py-3 text-center align-top" rowSpan={displayRows.length}>
             {isEditing ? (
               <div className="flex flex-col items-center gap-1">
                 <button
@@ -1143,30 +856,13 @@ function GeneralJournalPage() {
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div></div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Jurnal Umum (Double-Entry)</h2>
+              <p className="text-xs text-slate-500">
+                Pencatatan multibaris debit dan kredit terpisah dengan validasi keseimbangan
+              </p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div
-                aria-label="Mode tampilan grid jurnal"
-                className="inline-flex items-center rounded-lg border border-slate-200 p-1"
-                role="group"
-              >
-                <button
-                  aria-pressed={singleLine}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${singleLine ? "bg-blue-50 text-brand" : "text-slate-500 hover:bg-slate-50"}`}
-                  onClick={() => setSingleLine(true)}
-                  type="button"
-                >
-                  1 line
-                </button>
-                <button
-                  aria-pressed={!singleLine}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${!singleLine ? "bg-blue-50 text-brand" : "text-slate-500 hover:bg-slate-50"}`}
-                  onClick={() => setSingleLine(false)}
-                  type="button"
-                >
-                  2 line
-                </button>
-              </div>
               <button
                 className="inline-flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm font-semibold text-brand hover:bg-brand hover:text-white transition"
                 onClick={newJournal}
