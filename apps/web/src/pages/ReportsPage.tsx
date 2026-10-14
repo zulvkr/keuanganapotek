@@ -1,6 +1,16 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, BookOpen, FileText, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  BarChart3,
+  BookOpen,
+  CheckCircle2,
+  Columns,
+  FileText,
+  Printer,
+  RefreshCw,
+  Rows,
+} from "lucide-react";
 import { senToRupiah, todayIsoDate } from "@keuangan-apotek/shared";
 import DrillDownDrawer from "../components/drilldown/DrillDownDrawer";
 import {
@@ -41,7 +51,14 @@ type IncomeReport = {
   nonOperatingExpenses: ReportTotal;
   netProfit: ReportTotal;
 };
-type BalanceRow = { accountId: string; code: string; name: string; balance: number };
+type BalanceRow = {
+  accountId: string;
+  code: string;
+  name: string;
+  balance: number;
+  classification?: string;
+  normalBalance?: string;
+};
 type BalanceReport = {
   asOfDate: string;
   sections: Array<{ key: string; label: string; rows: BalanceRow[]; total: number }>;
@@ -114,18 +131,33 @@ function formatAbsoluteMoney(value: number): string {
   return parts[0]!.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + parts[1];
 }
 
-function ReportAmount({ value, onClick }: { value: number; onClick?: () => void }) {
-  const content = <>Rp {formatMoney(value)}</>;
+function formatCurrency(value: number): string {
+  const decimal = senToRupiah(value);
+  const sign = decimal.isNegative() ? "-Rp " : "Rp ";
+  const parts = decimal.abs().toFixed(2).split(".");
+  return sign + parts[0]!.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + parts[1];
+}
+
+function ReportAmount({
+  value,
+  onClick,
+  className,
+}: {
+  value: number;
+  onClick?: () => void;
+  className?: string;
+}) {
+  const content = formatCurrency(value);
   return onClick ? (
     <button
-      className="font-mono tabular-nums text-right text-brand underline decoration-blue-200 underline-offset-2 hover:decoration-brand text-xs"
+      className={`font-mono tabular-nums text-right text-brand underline decoration-blue-200 underline-offset-2 hover:decoration-brand text-xs ${className ?? ""}`}
       onClick={onClick}
       type="button"
     >
       {content}
     </button>
   ) : (
-    <span className="font-mono tabular-nums text-xs">{content}</span>
+    <span className={`font-mono tabular-nums text-xs ${className ?? ""}`}>{content}</span>
   );
 }
 
@@ -207,6 +239,7 @@ export default function ReportsPage() {
   const today = todayIsoDate();
   const monthStart = today.slice(0, 7) + "-01";
   const [tab, setTab] = useState<Tab>("income");
+  const [neracaFormat, setNeracaFormat] = useState<"skontro" | "stafel">("skontro");
   const [periodStart, setPeriodStart] = useState(monthStart);
   const [periodEnd, setPeriodEnd] = useState(today);
   const [compareStart, setCompareStart] = useState(() => previousMonthPeriod(monthStart).startDate);
@@ -330,95 +363,586 @@ export default function ReportsPage() {
 
   function balanceView() {
     if (!balance) return null;
+
+    const assetSection = balance.sections.find((s) => s.key === "ASSETS");
+    const liabilitySection = balance.sections.find((s) => s.key === "LIABILITIES");
+    const equitySection = balance.sections.find((s) => s.key === "EQUITY");
+
+    const assetRows = assetSection?.rows ?? [];
+    const isCurrentAsset = (r: BalanceRow) =>
+      r.classification === "ASET_LANCAR" ||
+      (!r.classification &&
+        (r.code.startsWith("11") ||
+          r.code.startsWith("12") ||
+          r.code.startsWith("13") ||
+          r.code.startsWith("14") ||
+          r.code.startsWith("15")));
+
+    const currentAssets = assetRows.filter(isCurrentAsset);
+    const fixedAssets = assetRows.filter((r) => !isCurrentAsset(r));
+
+    const totalCurrentAssets = currentAssets.reduce((sum, r) => sum + r.balance, 0);
+    const totalFixedAssets = fixedAssets.reduce((sum, r) => sum + r.balance, 0);
+    const totalAssets = balance.totalAssets;
+
+    const liabilities = liabilitySection?.rows ?? [];
+    const totalLiabilities = balance.totalLiabilities;
+
+    const equityAccounts = equitySection?.rows ?? [];
+    const currentEarnings = balance.currentEarnings;
+    const totalEquity = balance.totalEquity;
+
+    const totalPasiva = totalLiabilities + totalEquity;
+
     return (
       <div className="space-y-1.5">
-        <div
-          className={
-            "flex items-center justify-between border px-2 py-1 text-xs " +
-            (balance.isBalanced
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800")
-          }
-        >
-          <span className="font-semibold">
-            Persamaan Dasar Akuntansi (Aset = Kewajiban + Ekuitas)
-          </span>
-          <span className="font-mono font-bold tabular-nums">
-            {balance.isBalanced ? "✓ Seimbang" : "Selisih Rp " + formatMoney(balance.difference)}
-          </span>
-        </div>
-        <div className="grid gap-1.5 md:grid-cols-3">
-          {balance.sections.map((section) => (
-            <section className="border border-slate-200 bg-white flex flex-col" key={section.key}>
-              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-2 py-1">
-                <h3 className="text-xs font-bold text-slate-800">{section.label}</h3>
-                <span className="font-mono text-xs font-bold tabular-nums text-slate-900">
-                  Rp {formatMoney(section.total)}
+        {/* Status & Options Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-2 py-1 text-xs">
+          <div
+            className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-semibold tabular-nums ${
+              balance.isBalanced
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {balance.isBalanced ? (
+              <>
+                <CheckCircle2 size={13} className="text-emerald-600" />
+                <span>Persamaan Dasar Akuntansi: Seimbang (Aktiva = Pasiva)</span>
+              </>
+            ) : (
+              <>
+                <AlertTriangle size={13} className="text-red-600" />
+                <span>
+                  Persamaan Akuntansi Selisih: Rp {formatAbsoluteMoney(balance.difference)}
                 </span>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <div className="inline-flex rounded border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-semibold text-slate-600">
+              <button
+                type="button"
+                onClick={() => setNeracaFormat("skontro")}
+                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 transition ${
+                  neracaFormat === "skontro"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "hover:text-slate-900"
+                }`}
+                title="Bentuk Skontro (2 Kolom: Aktiva & Pasiva)"
+              >
+                <Columns size={12} />
+                <span>Skontro</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNeracaFormat("stafel")}
+                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 transition ${
+                  neracaFormat === "stafel"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "hover:text-slate-900"
+                }`}
+                title="Bentuk Stafel (Vertikal)"
+              >
+                <Rows size={12} />
+                <span>Stafel</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition"
+              title="Cetak Laporan Neraca"
+            >
+              <Printer size={12} />
+              <span>Cetak</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Neraca Report Sheet */}
+        <div className="border border-slate-300 bg-white shadow-xs">
+          {/* Header Laporan */}
+          <div className="text-center py-2.5 border-b-2 border-slate-900 bg-white">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
+              Laporan Neraca
+            </h2>
+            <div className="text-xs font-semibold text-slate-700 mt-0.5">
+              {neracaFormat === "skontro" ? "Bentuk Skontro" : "Bentuk Stafel"}
+            </div>
+            <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+              Per Tanggal {balance.asOfDate}
+            </div>
+          </div>
+
+          {neracaFormat === "skontro" ? (
+            /* BENTUK SKONTRO (2 KOLOM: AKTIVA vs PASIVA) */
+            <div className="grid grid-cols-1 md:grid-cols-2 text-xs">
+              {/* SISI KIRI: AKTIVA */}
+              <div className="flex flex-col justify-between border-b md:border-b-0 md:border-r-2 border-slate-900">
+                <div className="divide-y divide-slate-100">
+                  {/* Header Kolom Aktiva */}
+                  <div className="border-b-2 border-slate-900 bg-slate-50 px-3 py-1">
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900">
+                      Aktiva
+                    </h3>
+                  </div>
+
+                  {/* Sub-grup: Aktiva Lancar */}
+                  <div className="px-3 py-2 space-y-1.5">
+                    <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                      Aktiva Lancar
+                    </div>
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {currentAssets.map((row) => (
+                          <tr key={row.accountId} className="hover:bg-blue-50/30">
+                            <td className="py-0.5 pl-2 pr-1 text-slate-800">
+                              <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                                {row.code}
+                              </span>
+                              <span>{row.name}</span>
+                            </td>
+                            <td className="py-0.5 text-right whitespace-nowrap">
+                              <ReportAmount
+                                onClick={() =>
+                                  void openDrillDown(row.accountId, {
+                                    startDate: "0001-01-01",
+                                    endDate: balance.asOfDate,
+                                  })
+                                }
+                                value={row.balance}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                        {currentAssets.length === 0 && (
+                          <tr>
+                            <td colSpan={2} className="py-1 pl-2 text-slate-400 italic">
+                              Tidak ada akun aktiva lancar
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                          <td className="py-1 pl-2">Total Aktiva Lancar</td>
+                          <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                            {formatCurrency(totalCurrentAssets)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Sub-grup: Aktiva Tetap */}
+                  <div className="px-3 py-2 space-y-1.5">
+                    <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                      Aktiva Tetap
+                    </div>
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {fixedAssets.map((row) => (
+                          <tr key={row.accountId} className="hover:bg-blue-50/30">
+                            <td className="py-0.5 pl-2 pr-1 text-slate-800">
+                              <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                                {row.code}
+                              </span>
+                              <span>{row.name}</span>
+                            </td>
+                            <td className="py-0.5 text-right whitespace-nowrap">
+                              <ReportAmount
+                                onClick={() =>
+                                  void openDrillDown(row.accountId, {
+                                    startDate: "0001-01-01",
+                                    endDate: balance.asOfDate,
+                                  })
+                                }
+                                value={row.balance}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                        {fixedAssets.length === 0 && (
+                          <tr>
+                            <td colSpan={2} className="py-1 pl-2 text-slate-400 italic">
+                              Tidak ada akun aktiva tetap
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                          <td className="py-1 pl-2">Total Aktiva Tetap</td>
+                          <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                            {formatCurrency(totalFixedAssets)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Footer Bawah: TOTAL AKTIVA */}
+                <div className="border-t-2 border-b-2 border-slate-900 bg-slate-100 px-3 py-1.5 flex items-center justify-between font-bold text-xs uppercase tracking-wide text-slate-900 mt-4">
+                  <span>Total Aktiva</span>
+                  <span className="font-mono text-xs font-bold tabular-nums whitespace-nowrap">
+                    {formatCurrency(totalAssets)}
+                  </span>
+                </div>
               </div>
-              <div className="overflow-x-auto flex-1">
-                <table className="w-full text-xs">
-                  <tbody>
-                    {section.rows.map((row, idx) => (
-                      <tr
-                        className={
-                          (idx % 2 ? "bg-slate-50/60" : "bg-white") +
-                          " hover:bg-blue-50/40 border-b border-slate-100"
-                        }
-                        key={row.accountId}
-                      >
-                        <td className="px-2 py-1">
-                          <span className="font-mono text-xs tabular-nums text-slate-600 font-semibold">
-                            {row.code}
-                          </span>
-                          <span className="ml-1.5 text-slate-800">{row.name}</span>
-                        </td>
-                        <td className="px-2 py-1 text-right">
-                          <ReportAmount
-                            onClick={() =>
-                              void openDrillDown(row.accountId, {
-                                startDate: "0001-01-01",
-                                endDate: balance.asOfDate,
-                              })
-                            }
-                            value={row.balance}
-                          />
+
+              {/* SISI KANAN: PASIVA */}
+              <div className="flex flex-col justify-between">
+                <div className="divide-y divide-slate-100">
+                  {/* Header Kolom Pasiva */}
+                  <div className="border-b-2 border-slate-900 bg-slate-50 px-3 py-1">
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900">
+                      Pasiva
+                    </h3>
+                  </div>
+
+                  {/* Sub-grup: Kewajiban */}
+                  <div className="px-3 py-2 space-y-1.5">
+                    <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                      Kewajiban
+                    </div>
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {liabilities.map((row) => (
+                          <tr key={row.accountId} className="hover:bg-blue-50/30">
+                            <td className="py-0.5 pl-2 pr-1 text-slate-800">
+                              <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                                {row.code}
+                              </span>
+                              <span>{row.name}</span>
+                            </td>
+                            <td className="py-0.5 text-right whitespace-nowrap">
+                              <ReportAmount
+                                onClick={() =>
+                                  void openDrillDown(row.accountId, {
+                                    startDate: "0001-01-01",
+                                    endDate: balance.asOfDate,
+                                  })
+                                }
+                                value={row.balance}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                        {liabilities.length === 0 && (
+                          <tr>
+                            <td colSpan={2} className="py-1 pl-2 text-slate-400 italic">
+                              Tidak ada akun kewajiban
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                          <td className="py-1 pl-2">Total Kewajiban</td>
+                          <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                            {formatCurrency(totalLiabilities)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Sub-grup: Ekuitas */}
+                  <div className="px-3 py-2 space-y-1.5">
+                    <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                      Ekuitas
+                    </div>
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {equityAccounts.map((row) => (
+                          <tr key={row.accountId} className="hover:bg-blue-50/30">
+                            <td className="py-0.5 pl-2 pr-1 text-slate-800">
+                              <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                                {row.code}
+                              </span>
+                              <span>{row.name}</span>
+                            </td>
+                            <td className="py-0.5 text-right whitespace-nowrap">
+                              <ReportAmount
+                                onClick={() =>
+                                  void openDrillDown(row.accountId, {
+                                    startDate: "0001-01-01",
+                                    endDate: balance.asOfDate,
+                                  })
+                                }
+                                value={row.balance}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Laba Periode Berjalan */}
+                        <tr className="hover:bg-blue-50/30">
+                          <td className="py-0.5 pl-2 pr-1 text-slate-800">
+                            <span className="font-mono text-[10px] text-slate-400 mr-1.5">-</span>
+                            <span>Laba Periode Berjalan</span>
+                          </td>
+                          <td className="py-0.5 text-right whitespace-nowrap">
+                            <span className="font-mono tabular-nums text-xs">
+                              {formatCurrency(currentEarnings)}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                          <td className="py-1 pl-2">Total Ekuitas</td>
+                          <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                            {formatCurrency(totalEquity)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Footer Bawah: TOTAL PASIVA */}
+                <div className="border-t-2 border-b-2 border-slate-900 bg-slate-100 px-3 py-1.5 flex items-center justify-between font-bold text-xs uppercase tracking-wide text-slate-900 mt-4">
+                  <span>Total Pasiva</span>
+                  <span className="font-mono text-xs font-bold tabular-nums whitespace-nowrap">
+                    {formatCurrency(totalPasiva)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* BENTUK STAFEL (VERTIKAL) */
+            <div className="p-3 space-y-4 text-xs max-w-3xl mx-auto">
+              {/* 1. AKTIVA */}
+              <div className="space-y-3">
+                <div className="border-b-2 border-slate-900 pb-1">
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900">
+                    Aktiva
+                  </h3>
+                </div>
+
+                {/* Aktiva Lancar */}
+                <div className="pl-2 space-y-1.5">
+                  <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                    Aktiva Lancar
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {currentAssets.map((row) => (
+                        <tr key={row.accountId} className="hover:bg-blue-50/30">
+                          <td className="py-0.5 pl-2 text-slate-800">
+                            <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                              {row.code}
+                            </span>
+                            <span>{row.name}</span>
+                          </td>
+                          <td className="py-0.5 text-right whitespace-nowrap">
+                            <ReportAmount
+                              onClick={() =>
+                                void openDrillDown(row.accountId, {
+                                  startDate: "0001-01-01",
+                                  endDate: balance.asOfDate,
+                                })
+                              }
+                              value={row.balance}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                      {currentAssets.length === 0 && (
+                        <tr>
+                          <td colSpan={2} className="py-1 pl-2 text-slate-400 italic">
+                            Tidak ada akun aktiva lancar
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                        <td className="py-1 pl-2">Total Aktiva Lancar</td>
+                        <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                          {formatCurrency(totalCurrentAssets)}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Aktiva Tetap */}
+                <div className="pl-2 space-y-1.5">
+                  <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                    Aktiva Tetap
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {fixedAssets.map((row) => (
+                        <tr key={row.accountId} className="hover:bg-blue-50/30">
+                          <td className="py-0.5 pl-2 text-slate-800">
+                            <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                              {row.code}
+                            </span>
+                            <span>{row.name}</span>
+                          </td>
+                          <td className="py-0.5 text-right whitespace-nowrap">
+                            <ReportAmount
+                              onClick={() =>
+                                void openDrillDown(row.accountId, {
+                                  startDate: "0001-01-01",
+                                  endDate: balance.asOfDate,
+                                })
+                              }
+                              value={row.balance}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                      {fixedAssets.length === 0 && (
+                        <tr>
+                          <td colSpan={2} className="py-1 pl-2 text-slate-400 italic">
+                            Tidak ada akun aktiva tetap
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                        <td className="py-1 pl-2">Total Aktiva Tetap</td>
+                        <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                          {formatCurrency(totalFixedAssets)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Total Aktiva */}
+                <div className="border-t-2 border-b-2 border-slate-900 bg-slate-100 px-3 py-1.5 flex items-center justify-between font-bold text-xs uppercase tracking-wide text-slate-900">
+                  <span>Total Aktiva</span>
+                  <span className="font-mono text-xs font-bold tabular-nums whitespace-nowrap">
+                    {formatCurrency(totalAssets)}
+                  </span>
+                </div>
               </div>
-            </section>
-          ))}
-        </div>
-        <div className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-            <span>
-              Total Aset:{" "}
-              <strong className="font-mono tabular-nums text-slate-900">
-                Rp {formatMoney(balance.totalAssets)}
-              </strong>
-            </span>
-            <span>
-              Total Kewajiban:{" "}
-              <strong className="font-mono tabular-nums text-slate-900">
-                Rp {formatMoney(balance.totalLiabilities)}
-              </strong>
-            </span>
-            <span>
-              Total Ekuitas:{" "}
-              <strong className="font-mono tabular-nums text-slate-900">
-                Rp {formatMoney(balance.totalEquity)}
-              </strong>
-            </span>
-            <span>
-              Laba Berjalan:{" "}
-              <strong className="font-mono tabular-nums text-emerald-700">
-                Rp {formatMoney(balance.currentEarnings)}
-              </strong>
-            </span>
-          </div>
+
+              {/* 2. PASIVA */}
+              <div className="space-y-3 pt-2">
+                <div className="border-b-2 border-slate-900 pb-1">
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900">
+                    Pasiva
+                  </h3>
+                </div>
+
+                {/* Kewajiban */}
+                <div className="pl-2 space-y-1.5">
+                  <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                    Kewajiban
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {liabilities.map((row) => (
+                        <tr key={row.accountId} className="hover:bg-blue-50/30">
+                          <td className="py-0.5 pl-2 text-slate-800">
+                            <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                              {row.code}
+                            </span>
+                            <span>{row.name}</span>
+                          </td>
+                          <td className="py-0.5 text-right whitespace-nowrap">
+                            <ReportAmount
+                              onClick={() =>
+                                void openDrillDown(row.accountId, {
+                                  startDate: "0001-01-01",
+                                  endDate: balance.asOfDate,
+                                })
+                              }
+                              value={row.balance}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                      {liabilities.length === 0 && (
+                        <tr>
+                          <td colSpan={2} className="py-1 pl-2 text-slate-400 italic">
+                            Tidak ada akun kewajiban
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                        <td className="py-1 pl-2">Total Kewajiban</td>
+                        <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                          {formatCurrency(totalLiabilities)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Ekuitas */}
+                <div className="pl-2 space-y-1.5">
+                  <div className="font-bold text-slate-900 text-[11px] uppercase tracking-wide">
+                    Ekuitas
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {equityAccounts.map((row) => (
+                        <tr key={row.accountId} className="hover:bg-blue-50/30">
+                          <td className="py-0.5 pl-2 text-slate-800">
+                            <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                              {row.code}
+                            </span>
+                            <span>{row.name}</span>
+                          </td>
+                          <td className="py-0.5 text-right whitespace-nowrap">
+                            <ReportAmount
+                              onClick={() =>
+                                void openDrillDown(row.accountId, {
+                                  startDate: "0001-01-01",
+                                  endDate: balance.asOfDate,
+                                })
+                              }
+                              value={row.balance}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="hover:bg-blue-50/30">
+                        <td className="py-0.5 pl-2 text-slate-800">
+                          <span className="font-mono text-[10px] text-slate-400 mr-1.5">-</span>
+                          <span>Laba Periode Berjalan</span>
+                        </td>
+                        <td className="py-0.5 text-right whitespace-nowrap">
+                          <span className="font-mono tabular-nums text-xs">
+                            {formatCurrency(currentEarnings)}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                        <td className="py-1 pl-2">Total Ekuitas</td>
+                        <td className="py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                          {formatCurrency(totalEquity)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Total Pasiva */}
+                <div className="border-t-2 border-b-2 border-slate-900 bg-slate-100 px-3 py-1.5 flex items-center justify-between font-bold text-xs uppercase tracking-wide text-slate-900">
+                  <span>Total Pasiva</span>
+                  <span className="font-mono text-xs font-bold tabular-nums whitespace-nowrap">
+                    {formatCurrency(totalPasiva)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -547,17 +1071,19 @@ export default function ReportsPage() {
             </nav>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {tab !== "balance" && (
+              <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
+                Mulai
+                <input
+                  className={inputClass}
+                  onChange={(event) => setPeriodStart(event.target.value)}
+                  type="date"
+                  value={periodStart}
+                />
+              </label>
+            )}
             <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
-              Mulai
-              <input
-                className={inputClass}
-                onChange={(event) => setPeriodStart(event.target.value)}
-                type="date"
-                value={periodStart}
-              />
-            </label>
-            <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
-              Sampai
+              {tab === "balance" ? "Per Tanggal" : "Sampai"}
               <input
                 className={inputClass}
                 onChange={(event) => setPeriodEnd(event.target.value)}
