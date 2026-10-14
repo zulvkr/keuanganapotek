@@ -167,7 +167,7 @@ export async function getOpeningBalances(db: Db, cutoffDate: string) {
     })
     .from(journalLines)
     .innerJoin(journals, eq(journals.id, journalLines.journalId))
-    .where(and(eq(journals.isPosted, true), ne(journals.sourceModule, "OPENING_BALANCE")))
+    .where(ne(journals.sourceModule, "OPENING_BALANCE"))
     .all();
   const movementByAccount = new Map<string, Decimal>();
   for (const movement of movements) {
@@ -347,7 +347,6 @@ export async function lockOpeningBalance(db: Db, cutoffDate: string) {
         sourceModule: "OPENING_BALANCE",
         sourceId: cutoffDate,
         memo: `Jurnal pembuka per ${cutoffDate}`,
-        isPosted: true,
       } as const;
       tx.insert(journals).values(newJournal).run();
       journalId = newJournal.id;

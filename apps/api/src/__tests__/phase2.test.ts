@@ -60,7 +60,6 @@ describe("Phase 2 double-entry ledger", () => {
     expect(journal).toMatchObject({
       journalNo: "JU-202601-0001",
       sourceModule: "GENERAL",
-      isPosted: true,
     });
     const lines = client.db
       .select()

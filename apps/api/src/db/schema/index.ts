@@ -61,7 +61,6 @@ export const journals = sqliteTable("journals", {
   sourceModule: text("source_module").notNull(),
   sourceId: text("source_id"),
   memo: text("memo"),
-  isPosted: integer("is_posted", { mode: "boolean" }).notNull().default(true),
   createdBy: text("created_by"),
   createdAt: text("created_at").notNull().default("(datetime('now'))"),
   updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
@@ -87,14 +86,6 @@ export const journalLines = sqliteTable(
     journalIndex: index("idx_journal_lines_journal_id").on(table.journalId),
   }),
 );
-
-export const periodLocks = sqliteTable("period_locks", {
-  id: text("id").primaryKey().notNull(),
-  lockedThrough: text("locked_through").notNull().unique(),
-  lockedBy: text("locked_by").notNull(),
-  lockedByRole: text("locked_by_role").notNull(),
-  lockedAt: text("locked_at").notNull(),
-});
 
 export const auditLogs = sqliteTable(
   "audit_logs",
@@ -187,7 +178,6 @@ export type AccountRow = typeof accounts.$inferSelect;
 export type OpeningBalanceRow = typeof openingBalances.$inferSelect;
 export type JournalRow = typeof journals.$inferSelect;
 export type JournalLineRow = typeof journalLines.$inferSelect;
-export type PeriodLockRow = typeof periodLocks.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type TransactionTypeRow = typeof transactionTypes.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;

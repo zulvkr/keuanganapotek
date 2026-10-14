@@ -25,7 +25,6 @@ import {
   transactions,
 } from "../db/schema/index.js";
 import { recordAudit } from "./audit.service.js";
-import { assertPeriodUnlocked } from "./period-lock.service.js";
 
 type Db = SqliteClient["db"];
 type Executor = Pick<Db, "select" | "insert" | "update" | "delete">;
@@ -378,7 +377,6 @@ function syncTransactionJournal(
       sourceModule: "TRANSACTION",
       sourceId: transaction.id,
       memo,
-      isPosted: true,
       createdBy: "system",
       createdAt: now,
       updatedAt: now,
@@ -423,8 +421,6 @@ export function createTransaction(
   allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
   return db.transaction((tx) => {
-    assertPeriodUnlocked(tx, input.transactionDate);
-
     const type = tx
       .select()
       .from(transactionTypes)
@@ -550,11 +546,6 @@ export function updateTransaction(
     }
 
     const targetDate = input.transactionDate ?? existing.transactionDate;
-    assertPeriodUnlocked(tx, existing.transactionDate);
-    if (targetDate !== existing.transactionDate) {
-      assertPeriodUnlocked(tx, targetDate);
-    }
-
     const typeId = input.transactionTypeId ?? existing.transactionTypeId;
     const type = tx.select().from(transactionTypes).where(eq(transactionTypes.id, typeId)).get();
     if (!type) throw new Error("Tipe transaksi tidak ditemukan");
@@ -665,8 +656,6 @@ export function deleteTransaction(
         throw new Error("Akses ditolak: Anda tidak memiliki izin untuk transaksi ini");
       }
     }
-
-    assertPeriodUnlocked(tx, existing.transactionDate);
 
     if (existing.journalId) {
       tx.delete(journals).where(eq(journals.id, existing.journalId)).run();

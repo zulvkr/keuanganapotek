@@ -12,7 +12,6 @@ import type { JournalEntry, JournalLine, SourceModule } from "@keuangan-apotek/s
 import type { SqliteClient } from "../db/client.js";
 import { accounts, journalLines, journals, openingBalances } from "../db/schema/index.js";
 import { recordAudit } from "./audit.service.js";
-import { assertPeriodUnlocked } from "./period-lock.service.js";
 
 type Db = SqliteClient["db"];
 type Executor = Pick<Db, "select" | "insert" | "update" | "delete">;
@@ -46,7 +45,6 @@ function parseEntry(input: JournalEntryInput): JournalEntry {
 }
 
 function assertPeriodOpen(db: Executor, entryDate: string): void {
-  assertPeriodUnlocked(db, entryDate);
   const locked = db
     .select({ id: openingBalances.id })
     .from(openingBalances)
@@ -127,7 +125,6 @@ export function createJournalEntry(db: Db, input: JournalEntryInput): JournalWit
       sourceModule: input.sourceModule ?? "GENERAL",
       sourceId: input.sourceId ?? null,
       memo: entry.memo || null,
-      isPosted: true,
       createdBy: input.createdBy ?? null,
       createdAt: nowIsoInstant(),
       updatedAt: nowIsoInstant(),

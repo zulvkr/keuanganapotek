@@ -9,7 +9,6 @@ import {
   journalLines,
   journals,
   openingBalances,
-  periodLocks,
   transactionTypes,
   transactions,
 } from "../db/schema/index.js";
@@ -315,39 +314,6 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(tukaranAcc?.balance).toBe(500_000_00);
     const kasirAcc = summary.accounts.find((a) => a.code === "1102");
     expect(kasirAcc?.balance).toBe(1_500_000_00);
-  });
-
-  it("enforces period lock on transactions", async () => {
-    const { api, client } = setup();
-
-    client.db
-      .insert(periodLocks)
-      .values({
-        id: "lock-1",
-        lockedThrough: "2026-08-31",
-        lockedBy: "owner",
-        lockedByRole: "OWNER",
-        lockedAt: "2026-09-01T00:00:00Z",
-      })
-      .run();
-
-    const types = (
-      (await (await api.request("http://localhost/api/transaction-types")).json()) as {
-        data: Array<{ id: string; code: string }>;
-      }
-    ).data;
-
-    const res = await api.request("http://localhost/api/transactions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        transactionDate: "2026-08-15",
-        transactionTypeId: types[0]!.id,
-        amount: "100000",
-      }),
-    });
-
-    expect(res.status).toBe(403);
   });
 
   it("maintains balance sheet equation across seeded sample transactions", () => {

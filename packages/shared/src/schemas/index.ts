@@ -116,19 +116,6 @@ export const MoveOpeningBalanceSchema = z
     path: ["toDate"],
   });
 
-export const UserRoleSchema = z.enum(["OWNER", "APOTEKER_PENGELOLA", "AKUNTAN", "KASIR"]);
-
-export const LockPeriodSchema = z.object({
-  lockedThrough: IsoDateSchema,
-  actor: z.string().trim().min(1).max(120).default("system"),
-  role: z.enum(["OWNER", "APOTEKER_PENGELOLA"]),
-});
-
-export const UnlockPeriodSchema = z.object({
-  actor: z.string().trim().min(1).max(120).default("system"),
-  role: z.literal("OWNER"),
-});
-
 export const NonNegativeMoneySchema = RupiahAmountSchema.refine((value) => {
   try {
     const sen = parseRupiahToSen(typeof value === "number" ? String(value) : value);
@@ -253,8 +240,6 @@ export type TransactionEntryInput = z.infer<typeof TransactionEntrySchema>;
 export type OpeningBalanceLine = z.infer<typeof OpeningBalanceLineSchema>;
 export type SaveOpeningBalances = z.infer<typeof SaveOpeningBalancesSchema>;
 export type MoveOpeningBalance = z.infer<typeof MoveOpeningBalanceSchema>;
-export type LockPeriod = z.infer<typeof LockPeriodSchema>;
-export type UnlockPeriod = z.infer<typeof UnlockPeriodSchema>;
 export type ReportPeriod = z.infer<typeof ReportPeriodSchema>;
 export type IncomeStatementQuery = z.infer<typeof IncomeStatementQuerySchema>;
 export type BalanceSheetQuery = z.infer<typeof BalanceSheetQuerySchema>;

@@ -20,8 +20,6 @@ import {
   IncomeStatementQuerySchema,
   ReportPeriodSchema,
   TrialBalanceQuerySchema,
-  LockPeriodSchema,
-  UnlockPeriodSchema,
   LoginInputSchema,
   CreateUserInputSchema,
   UpdateUserInputSchema,
@@ -69,7 +67,6 @@ import {
   getTrialBalance,
 } from "./services/reports.service.js";
 import { listAuditLogs } from "./services/audit.service.js";
-import { listPeriodLocks, lockPeriod, unlockPeriod } from "./services/period-lock.service.js";
 import {
   authenticateUser,
   createUser,
@@ -150,17 +147,16 @@ const ReportQuerySchema = z.object({
 
 function errorResponse(context: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Permintaan tidak valid";
-  const status =
-    message.startsWith("PERIOD_LOCKED") || message.includes("Akses ditolak")
-      ? (403 as const)
-      : message.includes("tidak ditemukan")
-        ? (404 as const)
-        : message.includes("sudah dikunci") ||
-            message.includes("hanya boleh memiliki satu") ||
-            message.includes("sistem") ||
-            message.includes("grup")
-          ? (409 as const)
-          : (400 as const);
+  const status = message.includes("Akses ditolak")
+    ? (403 as const)
+    : message.includes("tidak ditemukan")
+      ? (404 as const)
+      : message.includes("sudah dikunci") ||
+          message.includes("hanya boleh memiliki satu") ||
+          message.includes("sistem") ||
+          message.includes("grup")
+        ? (409 as const)
+        : (400 as const);
   return context.json({ error: message }, status);
 }
 
@@ -570,32 +566,6 @@ export function createApiApp(client: SqliteClient) {
         return errorResponse(context, error);
       }
     })
-
-    .get("/api/period-locks", (context) => context.json({ data: listPeriodLocks(client.db) }))
-
-    .post("/api/period-locks", validateJson(LockPeriodSchema), async (context) => {
-      const parsed = { data: context.req.valid("json") };
-      try {
-        return context.json({ data: lockPeriod(client.db, parsed.data) }, 201);
-      } catch (error) {
-        return errorResponse(context, error);
-      }
-    })
-
-    .post(
-      "/api/period-locks/:lockedThrough/unlock",
-      validateJson(UnlockPeriodSchema, 403),
-      async (context) => {
-        const parsed = { data: context.req.valid("json") };
-        try {
-          return context.json({
-            data: unlockPeriod(client.db, context.req.param("lockedThrough")!, parsed.data.actor),
-          });
-        } catch (error) {
-          return errorResponse(context, error);
-        }
-      },
-    )
 
     .get("/api/audit-logs", (context) =>
       context.json({

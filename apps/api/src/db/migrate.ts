@@ -37,7 +37,6 @@ const migrationStatements = [
     source_module TEXT NOT NULL,
     source_id TEXT,
     memo TEXT,
-    is_posted INTEGER NOT NULL DEFAULT 1,
     created_by TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -54,13 +53,6 @@ const migrationStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_journal_lines_account_id ON journal_lines(account_id)`,
   `CREATE INDEX IF NOT EXISTS idx_journal_lines_journal_id ON journal_lines(journal_id)`,
-  `CREATE TABLE IF NOT EXISTS period_locks (
-    id TEXT PRIMARY KEY NOT NULL,
-    locked_through TEXT NOT NULL UNIQUE,
-    locked_by TEXT NOT NULL,
-    locked_by_role TEXT NOT NULL CHECK (locked_by_role IN ('OWNER', 'APOTEKER_PENGELOLA')),
-    locked_at TEXT NOT NULL
-  )`,
   `CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY NOT NULL,
     entity_type TEXT NOT NULL,

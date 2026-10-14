@@ -52,15 +52,11 @@ function totalsForAccount(totals: Map<string, AccountTotals>, accountId: string)
 }
 
 function rangeConditions(period: ReportPeriod) {
-  return and(
-    eq(journals.isPosted, true),
-    gte(journals.entryDate, period.startDate),
-    lte(journals.entryDate, period.endDate),
-  );
+  return and(gte(journals.entryDate, period.startDate), lte(journals.entryDate, period.endDate));
 }
 
 function allThroughConditions(asOfDate: string) {
-  return and(eq(journals.isPosted, true), lte(journals.entryDate, asOfDate));
+  return lte(journals.entryDate, asOfDate);
 }
 
 function collectTotals(db: Db, period: ReportPeriod): Map<string, AccountTotals> {
