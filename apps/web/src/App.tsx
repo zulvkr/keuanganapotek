@@ -1,51 +1,72 @@
 import { useEffect, useState } from "react";
 import {
-  Activity,
   BarChart3,
-  BookOpen,
   ChevronRight,
-  LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings2,
-  Table,
   SlidersHorizontal,
+  Table,
+  Shield,
+  ArrowRightLeft,
+  Lock,
+  ShieldAlert,
+  X,
+  KeyRound,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { SourceModule } from "@keuangan-apotek/shared";
-import CoAPage from "./pages/CoAPage";
-import GeneralJournalPage from "./pages/GeneralJournalPage";
 import DailyTransactionsPage from "./pages/DailyTransactionsPage";
-import MasterTransactionPage from "./pages/MasterTransactionPage";
 import ReportsPage from "./pages/ReportsPage";
-import SettingsPage from "./pages/SettingsPage";
-import StressTestPage from "./pages/StressTestPage";
+import AdvancedPage, { advancedTabs, type AdvancedTab } from "./pages/AdvancedPage";
+import { ToastContainer } from "./components/ToastContainer";
+import { useAuth } from "./lib/auth";
+import { invalidateAccountingQueries } from "./lib/mutations";
+import { toast } from "./lib/toast";
 
 const foundationSourceModule: SourceModule = "GENERAL";
 
 const modules = [
-  { label: "Ringkasan", icon: LayoutDashboard },
-  { label: "Buku Transaksi", icon: Table },
-  { label: "Master Transaksi", icon: SlidersHorizontal },
-  { label: "Jurnal Umum", icon: Activity },
-  { label: "Bagan Akun", icon: BookOpen },
-  { label: "Laporan Keuangan", icon: BarChart3 },
+  { label: "Buku Transaksi", icon: Table, minRole: "asisten" },
+  { label: "Laporan Keuangan", icon: BarChart3, minRole: "admin" },
+  { label: "Advanced", icon: SlidersHorizontal, minRole: "admin" },
 ];
 
 const modulePaths: Record<string, string> = {
-  Ringkasan: "/",
   "Buku Transaksi": "/transaksi",
-  "Master Transaksi": "/master-transaksi",
-  "Jurnal Umum": "/jurnal",
-  "Bagan Akun": "/coa",
   "Laporan Keuangan": "/laporan-keuangan",
-  "Uji Beban": "/uji-beban",
-  Pengaturan: "/pengaturan",
+  Advanced: "/advanced",
 };
 
-const moduleByPath = new Map(Object.entries(modulePaths).map(([label, path]) => [path, label]));
+const advancedPathToTab: Record<string, AdvancedTab> = {
+  "/advanced": "Master Transaksi",
+  "/master-transaksi": "Master Transaksi",
+  "/jurnal": "Jurnal Umum",
+  "/coa": "Bagan Akun",
+  "/pengaturan": "Pengaturan",
+};
 
-function routeForPath(pathname: string): string {
-  return moduleByPath.get(pathname) ?? "Ringkasan";
+const validPaths = new Set([
+  "/",
+  "/transaksi",
+  "/laporan-keuangan",
+  "/advanced",
+  "/master-transaksi",
+  "/jurnal",
+  "/coa",
+  "/pengaturan",
+]);
+
+function resolveRoute(pathname: string): { module: string; advancedTab: AdvancedTab } {
+  if (pathname === "/" || pathname === "/transaksi") {
+    return { module: "Buku Transaksi", advancedTab: "Master Transaksi" };
+  }
+  if (pathname === "/laporan-keuangan") {
+    return { module: "Laporan Keuangan", advancedTab: "Master Transaksi" };
+  }
+  if (pathname in advancedPathToTab) {
+    return { module: "Advanced", advancedTab: advancedPathToTab[pathname]! };
+  }
+  return { module: "Buku Transaksi", advancedTab: "Master Transaksi" };
 }
 
 function navigateTo(pathname: string) {
@@ -54,177 +75,379 @@ function navigateTo(pathname: string) {
 }
 
 function App() {
-  const [activeModule, setActiveModule] = useState(() => routeForPath(window.location.pathname));
+  const queryClient = useQueryClient();
+  const { user, quickSwitchUser, login } = useAuth();
+
+  const [route, setRoute] = useState(() => resolveRoute(window.location.pathname));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
 
   useEffect(() => {
-    const handlePopState = () => setActiveModule(routeForPath(window.location.pathname));
+    const handlePopState = () => setRoute(resolveRoute(window.location.pathname));
     window.addEventListener("popstate", handlePopState);
-    if (!moduleByPath.has(window.location.pathname)) {
-      window.history.replaceState({}, "", modulePaths.Ringkasan);
+    if (!validPaths.has(window.location.pathname)) {
+      window.history.replaceState({}, "", modulePaths["Buku Transaksi"]);
     }
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  const { module: activeModule, advancedTab: activeAdvancedTab } = route;
+  const isAsisten = user.role === "asisten";
+
+  function handleSwitchRole(targetRole: "admin" | "asisten") {
+    quickSwitchUser(targetRole)
+      .then(() => {
+        invalidateAccountingQueries(queryClient);
+        setShowUserDropdown(false);
+        toast.success(`Berhasil beralih ke role ${targetRole === "admin" ? "Admin" : "Asisten"}`);
+        if (targetRole === "asisten" && activeModule !== "Buku Transaksi") {
+          navigateTo(modulePaths["Buku Transaksi"]!);
+        }
+      })
+      .catch((err) => toast.error(err.message));
+  }
+
+  async function handleCustomLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginLoading(true);
+    try {
+      await login(loginUsername, loginPassword);
+      invalidateAccountingQueries(queryClient);
+      setShowLoginModal(false);
+      setLoginUsername("");
+      setLoginPassword("");
+      toast.success("Login berhasil");
+    } catch (err: any) {
+      toast.error(err.message || "Login gagal");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-canvas text-ink">
+    <div className="min-h-screen bg-slate-100/70 text-ink text-xs font-sans">
       <aside
-        className={`fixed inset-y-0 left-0 hidden border-r border-slate-200 bg-white transition-[width] duration-200 lg:block ${sidebarCollapsed ? "w-20" : "w-64"}`}
+        className={`fixed inset-y-0 left-0 hidden border-r border-slate-200 bg-white transition-[width] duration-150 lg:block z-30 ${sidebarCollapsed ? "w-11" : "w-44"}`}
       >
         <div
-          className={`flex h-16 items-center border-b border-slate-100 ${sidebarCollapsed ? "justify-center px-3" : "gap-3 px-6"}`}
+          className={`flex h-8 items-center border-b border-slate-200 bg-slate-50 ${sidebarCollapsed ? "justify-center px-1" : "gap-2 px-2.5"}`}
         >
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-sm font-bold text-white shadow-sm">
+          <div className="grid h-5 w-5 place-items-center rounded bg-brand text-[10px] font-bold text-white shrink-0">
             KA
           </div>
           {!sidebarCollapsed && (
-            <div>
-              <p className="text-sm font-bold tracking-tight">Keuangan Apotek</p>
-              <p className="text-[11px] text-muted">Akuntansi & Mutasi Kas</p>
+            <div className="min-w-0">
+              <p className="text-xs font-bold leading-none truncate text-slate-800">
+                Keuangan Apotek
+              </p>
+              <p className="text-[10px] text-muted leading-tight truncate">Terminal Keuangan</p>
             </div>
           )}
         </div>
-        <nav className="space-y-1 px-3 py-5" aria-label="Navigasi utama">
+        <nav className="space-y-0.5 p-1" aria-label="Navigasi utama">
           {!sidebarCollapsed && (
-            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <p className="px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Menu Utama
             </p>
           )}
-          {modules.map(({ label, icon: Icon }) => (
-            <button
-              aria-label={sidebarCollapsed ? label : undefined}
-              className={`flex w-full items-center rounded-lg py-2.5 text-sm transition ${sidebarCollapsed ? "justify-center px-2" : "gap-3 px-3 text-left"} ${activeModule === label ? "bg-blue-50 font-semibold text-brand" : "text-slate-600 hover:bg-slate-50"}`}
-              key={label}
-              onClick={() => navigateTo(modulePaths[label]!)}
-              title={sidebarCollapsed ? label : undefined}
-              type="button"
-            >
-              <Icon size={17} strokeWidth={activeModule === label ? 2.4 : 1.8} />
-              {!sidebarCollapsed && <span>{label}</span>}
-              {!sidebarCollapsed && activeModule === label && (
-                <ChevronRight className="ml-auto" size={15} />
-              )}
-            </button>
-          ))}
+          {modules.map(({ label, icon: Icon, minRole }) => {
+            const isRestricted = isAsisten && minRole === "admin";
+            return (
+              <button
+                aria-label={sidebarCollapsed ? label : undefined}
+                className={`flex w-full items-center rounded py-1 text-xs transition ${
+                  sidebarCollapsed ? "justify-center px-1" : "gap-2 px-2 text-left"
+                } ${
+                  activeModule === label
+                    ? "bg-brand text-white font-semibold"
+                    : isRestricted
+                      ? "text-slate-400 hover:bg-slate-50"
+                      : "text-slate-700 hover:bg-slate-100"
+                }`}
+                key={label}
+                onClick={() => navigateTo(modulePaths[label]!)}
+                title={sidebarCollapsed ? label : undefined}
+                type="button"
+              >
+                <Icon
+                  size={14}
+                  strokeWidth={activeModule === label ? 2.2 : 1.8}
+                  className="shrink-0"
+                />
+                {!sidebarCollapsed && (
+                  <span className="truncate flex items-center justify-between w-full">
+                    <span>{label}</span>
+                    {isRestricted && <Lock size={11} className="text-slate-400 ml-1 shrink-0" />}
+                  </span>
+                )}
+                {!sidebarCollapsed && activeModule === label && (
+                  <ChevronRight className="ml-auto shrink-0 opacity-80" size={13} />
+                )}
+              </button>
+            );
+          })}
         </nav>
-        <div className="absolute bottom-5 left-3 right-3">
-          <button
-            aria-label={sidebarCollapsed ? "Pengaturan" : undefined}
-            className={`flex w-full items-center rounded-lg py-2.5 text-sm transition ${sidebarCollapsed ? "justify-center px-2" : "gap-3 px-3 text-left"} ${activeModule === "Pengaturan" ? "bg-blue-50 font-semibold text-brand" : "text-slate-600 hover:bg-slate-50"}`}
-            onClick={() => navigateTo(modulePaths.Pengaturan!)}
-            title={sidebarCollapsed ? "Pengaturan" : undefined}
-            type="button"
-          >
-            <Settings2 size={17} strokeWidth={activeModule === "Pengaturan" ? 2.4 : 1.8} />
-            {!sidebarCollapsed && (
-              <>
-                Pengaturan
-                {activeModule === "Pengaturan" && <ChevronRight className="ml-auto" size={15} />}
-              </>
-            )}
-          </button>
-        </div>
       </aside>
 
       <main
-        className={sidebarCollapsed ? "lg:pl-20" : "lg:pl-64"}
+        className={`transition-[padding] duration-150 ${sidebarCollapsed ? "lg:pl-11" : "lg:pl-44"}`}
         data-source-module={foundationSourceModule}
       >
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6 lg:px-10">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-20 flex h-8 items-center justify-between border-b border-slate-200 bg-white/95 px-2.5 backdrop-blur-xs">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               aria-label={sidebarCollapsed ? "Perluas navigasi" : "Ciutkan navigasi"}
-              className="hidden rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 lg:inline-flex"
+              className="hidden rounded p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 lg:inline-flex"
               onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
               title={sidebarCollapsed ? "Perluas navigasi" : "Ciutkan navigasi"}
               type="button"
             >
-              {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
             </button>
-            <div>
-              <p className="text-xs text-muted">Workspace / Modul</p>
-              <h1 className="text-lg font-semibold">{activeModule}</h1>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-[11px] text-muted">Apotek /</span>
+              <h1 className="text-xs font-bold text-slate-900 truncate">
+                {activeModule === "Advanced" ? "Advanced" : activeModule}
+              </h1>
+              {activeModule === "Advanced" && (
+                <>
+                  <span className="text-[11px] text-muted">/</span>
+                  <span className="text-xs font-semibold text-slate-700 truncate">
+                    {activeAdvancedTab}
+                  </span>
+                </>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+          <div className="flex items-center gap-2 relative">
+            <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 tabular-nums">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Sistem Aktif
             </span>
-            <div className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
-              IZ
-            </div>
+
+            {/* Role & User Badge */}
+            <button
+              type="button"
+              onClick={() => setShowUserDropdown((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-semibold transition ${
+                isAsisten
+                  ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                  : "border-purple-200 bg-purple-50 text-purple-900 hover:bg-purple-100"
+              }`}
+            >
+              <Shield size={12} className={isAsisten ? "text-amber-600" : "text-purple-600"} />
+              <span className="font-bold">{isAsisten ? "Asisten" : "Admin"}</span>
+              <span className="text-[10px] opacity-75 font-normal">({user.username})</span>
+            </button>
+
+            {/* User Dropdown */}
+            {showUserDropdown && (
+              <div className="absolute right-0 top-8 z-50 w-64 rounded-lg border border-slate-200 bg-white shadow-xl p-2.5 space-y-2 text-xs">
+                <div className="border-b border-slate-100 pb-2">
+                  <p className="font-bold text-slate-800">{user.name}</p>
+                  <p className="text-[11px] text-slate-500 font-mono">@{user.username}</p>
+                  <div className="mt-1">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.2 text-[10px] font-bold ${
+                        isAsisten
+                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                          : "bg-purple-100 text-purple-800 border border-purple-200"
+                      }`}
+                    >
+                      {isAsisten
+                        ? "Role: Asisten (Akses Terbatas: Non-Gaji)"
+                        : "Role: Admin (Akses Lengkap)"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Beralih Pengguna Cepat
+                  </p>
+                  {isAsisten ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchRole("admin")}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs font-semibold text-slate-700 hover:bg-purple-50 hover:text-purple-900 transition"
+                    >
+                      <ArrowRightLeft size={13} className="text-purple-600" />
+                      <span>Masuk sebagai Admin Apoteker</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchRole("asisten")}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-900 transition"
+                    >
+                      <ArrowRightLeft size={13} className="text-amber-600" />
+                      <span>Masuk sebagai Asisten Kasir</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      setShowLoginModal(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs font-medium text-slate-600 hover:bg-slate-100 transition"
+                  >
+                    <KeyRound size={13} />
+                    <span>Login dengan Akun Lain...</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </header>
 
-        <div className="mx-auto max-w-none space-y-6 p-6 lg:p-10">
-          {activeModule === "Pengaturan" ? (
-            <SettingsPage />
-          ) : activeModule === "Buku Transaksi" ? (
-            <DailyTransactionsPage />
-          ) : activeModule === "Master Transaksi" ? (
-            <MasterTransactionPage />
-          ) : activeModule === "Jurnal Umum" ? (
-            <GeneralJournalPage />
-          ) : activeModule === "Bagan Akun" ? (
-            <CoAPage />
+        <div className="p-2 space-y-1.5 max-w-full">
+          {/* If Asisten attempts to open restricted module */}
+          {isAsisten && activeModule !== "Buku Transaksi" ? (
+            <div className="rounded border border-amber-200 bg-amber-50/80 p-8 text-center space-y-3 max-w-lg mx-auto my-8">
+              <ShieldAlert size={40} className="mx-auto text-amber-600" />
+              <h2 className="text-sm font-bold text-slate-800">
+                Akses Terbatas — Khusus Admin Apotek
+              </h2>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Modul <strong>{activeModule}</strong> hanya dapat diakses oleh Admin. Akun ber-role{" "}
+                <strong>Asisten</strong> hanya memiliki akses ke <strong>Buku Transaksi</strong>{" "}
+                dengan CoA yang telah diizinkan (transaksi sensitif seperti Gaji disembunyikan).
+              </p>
+              <div className="pt-2 flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigateTo(modulePaths["Buku Transaksi"]!)}
+                  className="rounded bg-brand px-3.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+                >
+                  Buka Buku Transaksi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchRole("admin")}
+                  className="rounded border border-purple-300 bg-white px-3.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-50 transition"
+                >
+                  Beralih ke Admin
+                </button>
+              </div>
+            </div>
           ) : activeModule === "Laporan Keuangan" ? (
             <ReportsPage />
-          ) : activeModule === "Uji Beban" ? (
-            <StressTestPage />
+          ) : activeModule === "Advanced" ? (
+            <AdvancedPage
+              activeTab={activeAdvancedTab}
+              onTabChange={(tab) => {
+                const target = advancedTabs.find((t) => t.id === tab);
+                if (target) {
+                  navigateTo(target.path);
+                }
+              }}
+            />
           ) : (
-            <>
-              <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-                <div className="max-w-2xl">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand">
-                    Dashboard Keuangan Apotek
-                  </p>
-                  <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                    Ruang kerja akuntansi dan pencatatan transaksi apotek.
-                  </h2>
-                  <p className="mt-3 leading-7 text-muted">
-                    Sistem pencatatan terintegrasi dengan pembentukan jurnal double-entry otomatis,
-                    pelacakan mutasi dan saldo berjalan 9 akun kas & bank, serta skema metadata
-                    dinamis.
-                  </p>
-                </div>
-              </section>
-
-              <section className="grid gap-4 sm:grid-cols-3">
-                <article
-                  onClick={() => navigateTo(modulePaths["Buku Transaksi"]!)}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-brand cursor-pointer transition"
-                >
-                  <p className="text-sm font-semibold text-brand">Buku Transaksi</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">Spreadsheet Harian</p>
-                  <p className="mt-1 text-xs text-muted">
-                    Input transaksi dengan 9 kolom saldo kas/bank live
-                  </p>
-                </article>
-                <article
-                  onClick={() => navigateTo(modulePaths["Master Transaksi"]!)}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-brand cursor-pointer transition"
-                >
-                  <p className="text-sm font-semibold text-brand">Master Transaksi</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">Skema & Template</p>
-                  <p className="mt-1 text-xs text-muted">
-                    Atur pemetaan debit/kredit dan visual schema builder
-                  </p>
-                </article>
-                <article
-                  onClick={() => navigateTo(modulePaths["Laporan Keuangan"]!)}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-brand cursor-pointer transition"
-                >
-                  <p className="text-sm font-semibold text-brand">Laporan Keuangan</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">Neraca & Laba Rugi</p>
-                  <p className="mt-1 text-xs text-muted">
-                    Sinkron otomatis dengan drill-down ke jurnal
-                  </p>
-                </article>
-              </section>
-            </>
+            <DailyTransactionsPage />
           )}
         </div>
       </main>
+
+      {/* LOGIN MODAL */}
+      {showLoginModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-3 py-2">
+              <div className="flex items-center gap-1.5">
+                <KeyRound size={15} className="text-brand" />
+                <h3 className="text-xs font-bold text-slate-800">Login Sistem Keuangan</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLoginModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-blue-50/50 border-b border-slate-100 text-[11px] text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-700">Akun Bawaan Sistem:</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginUsername("admin");
+                    setLoginPassword("admin123");
+                  }}
+                  className="rounded bg-white border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-purple-700 hover:bg-purple-50"
+                >
+                  Admin (admin / admin123)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginUsername("asisten");
+                    setLoginPassword("asisten123");
+                  }}
+                  className="rounded bg-white border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-50"
+                >
+                  Asisten (asisten / asisten123)
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleCustomLogin} className="p-3 space-y-2.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  placeholder="admin atau asisten"
+                  className="w-full rounded border border-slate-300 px-2 py-1 text-xs outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Password"
+                  className="w-full rounded border border-slate-300 px-2 py-1 text-xs outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowLoginModal(false)}
+                  className="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="rounded bg-brand px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+                >
+                  {loginLoading ? "Memproses..." : "Masuk"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <ToastContainer />
     </div>
   );
 }

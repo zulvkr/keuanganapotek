@@ -48,74 +48,85 @@ export default function DrillDownDrawer({ data, loading, error, onClose, formatM
         }
         role="dialog"
       >
-        <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+        <header className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-1.5">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">
-              Drill-down jurnal
-            </p>
-            <h2 className="mt-1 text-lg font-bold">
-              {data ? data.account.code + " · " + data.account.name : "Rincian akun"}
+            <h2 className="text-xs font-bold text-slate-800">
+              {data ? data.account.code + " · " + data.account.name : "Rincian Akun"}
             </h2>
-            <p className="mt-1 text-xs text-muted">Daftar transaksi pembentuk nominal laporan.</p>
+            <p className="text-[11px] text-slate-500">
+              Drill-down jurnal pembentuk nominal laporan
+            </p>
           </div>
           <button
             aria-label="Tutup rincian jurnal"
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
             onClick={onClose}
             type="button"
           >
-            <X size={19} />
+            <X size={15} />
           </button>
         </header>
-        {loading && <p className="p-6 text-sm text-muted">Memuat jurnal...</p>}
+        {loading && <p className="p-3 text-xs text-slate-500">Memuat jurnal...</p>}
         {error && (
-          <p className="m-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p className="m-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
             {error}
           </p>
         )}
         {data && !loading && (
           <>
-            <div className="grid grid-cols-2 gap-3 border-b border-slate-100 p-5">
-              <div className="rounded-xl bg-blue-50 p-3">
-                <p className="text-xs text-muted">Total debit</p>
-                <p className="mt-1 font-mono font-bold tabular-nums">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-1 text-xs">
+              <span>
+                Total Debit:{" "}
+                <strong className="font-mono tabular-nums text-slate-800">
                   Rp {formatMoney(data.totalDebit)}
-                </p>
-              </div>
-              <div className="rounded-xl bg-emerald-50 p-3">
-                <p className="text-xs text-muted">Total kredit</p>
-                <p className="mt-1 font-mono font-bold tabular-nums">
+                </strong>
+              </span>
+              <span>
+                Total Kredit:{" "}
+                <strong className="font-mono tabular-nums text-slate-800">
                   Rp {formatMoney(data.totalCredit)}
-                </p>
-              </div>
+                </strong>
+              </span>
             </div>
             <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-100 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
                   <tr>
-                    <th className="px-5 py-3">Jurnal</th>
-                    <th className="px-3 py-3">Sumber</th>
-                    <th className="px-3 py-3 text-right">Debit</th>
-                    <th className="px-5 py-3 text-right">Kredit</th>
+                    <th className="px-2 py-1">Jurnal</th>
+                    <th className="px-2 py-1">Sumber</th>
+                    <th className="px-2 py-1 text-right">Debit</th>
+                    <th className="px-2 py-1 text-right">Kredit</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.entries.map((entry) => (
-                    <tr className="border-b border-slate-100 align-top" key={entry.lineId}>
-                      <td className="px-5 py-3">
-                        <p className="font-mono font-semibold tabular-nums">{entry.journalNo}</p>
-                        <p className="font-mono text-xs tabular-nums text-slate-500">
-                          {entry.entryDate}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                  {data.entries.map((entry, index) => (
+                    <tr
+                      className={
+                        (index % 2 ? "bg-slate-50/60" : "bg-white") +
+                        " hover:bg-blue-50/40 border-b border-slate-100 align-top"
+                      }
+                      key={entry.lineId}
+                    >
+                      <td className="px-2 py-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-semibold tabular-nums text-slate-800">
+                            {entry.journalNo}
+                          </span>
+                          <span className="font-mono text-[11px] tabular-nums text-slate-500">
+                            {entry.entryDate}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600">
                           {entry.description || entry.memo || entry.referenceNo || "—"}
                         </p>
                       </td>
-                      <td className="px-3 py-3 text-xs text-slate-500">{entry.sourceModule}</td>
-                      <td className="px-3 py-3 text-right font-mono tabular-nums">
+                      <td className="px-2 py-1 text-[11px] font-mono text-slate-600">
+                        {entry.sourceModule}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-800">
                         {entry.debit ? "Rp " + formatMoney(entry.debit) : "—"}
                       </td>
-                      <td className="px-5 py-3 text-right font-mono tabular-nums">
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-800">
                         {entry.credit ? "Rp " + formatMoney(entry.credit) : "—"}
                       </td>
                     </tr>
@@ -123,7 +134,7 @@ export default function DrillDownDrawer({ data, loading, error, onClose, formatM
                 </tbody>
               </table>
               {data.entries.length === 0 && (
-                <p className="p-8 text-center text-sm text-muted">
+                <p className="p-4 text-center text-xs text-slate-500">
                   Tidak ada jurnal pada periode ini.
                 </p>
               )}

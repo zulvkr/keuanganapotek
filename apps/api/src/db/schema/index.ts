@@ -164,6 +164,25 @@ export const transactions = sqliteTable(
   }),
 );
 
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").primaryKey().notNull(),
+    username: text("username").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    salt: text("salt").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull(), // 'admin' | 'asisten'
+    allowedCoaCodes: text("allowed_coa_codes").notNull().default("[]"),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull().default("(datetime('now'))"),
+    updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
+  },
+  (table) => ({
+    usernameIndex: index("idx_users_username").on(table.username),
+  }),
+);
+
 export type AccountRow = typeof accounts.$inferSelect;
 export type OpeningBalanceRow = typeof openingBalances.$inferSelect;
 export type JournalRow = typeof journals.$inferSelect;
@@ -172,3 +191,4 @@ export type PeriodLockRow = typeof periodLocks.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type TransactionTypeRow = typeof transactionTypes.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
+export type UserRow = typeof users.$inferSelect;

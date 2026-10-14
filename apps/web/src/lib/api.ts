@@ -4,7 +4,23 @@ import type { AppType } from "@keuangan-apotek/api";
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 /** The generated Hono RPC client. Route names, params, bodies, and responses are inferred from the API. */
-export const api = hc<AppType>(apiBase);
+export const api = hc<AppType>(apiBase, {
+  headers: () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("ka_auth_token") : null;
+    const userRaw = typeof window !== "undefined" ? localStorage.getItem("ka_auth_user") : null;
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (userRaw) {
+      try {
+        const u = JSON.parse(userRaw);
+        if (u?.role) headers["x-user-role"] = u.role;
+      } catch {
+        // ignore parse error
+      }
+    }
+    return headers;
+  },
+});
 
 type RpcCall = (...args: any[]) => Promise<ClientResponse<any, any, any>>;
 type RpcBody<T extends RpcCall> =
@@ -39,7 +55,24 @@ export async function rpc<T extends RpcCall>(call: T): Promise<RpcSuccess<T>> {
 }
 
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBase}${path}`, init);
+  const token = typeof window !== "undefined" ? localStorage.getItem("ka_auth_token") : null;
+  const userRaw = typeof window !== "undefined" ? localStorage.getItem("ka_auth_user") : null;
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  if (userRaw && !headers.has("x-user-role")) {
+    try {
+      const u = JSON.parse(userRaw);
+      if (u?.role) headers.set("x-user-role", u.role);
+    } catch {
+      // ignore
+    }
+  }
+  const response = await fetch(`${apiBase}${path}`, {
+    ...init,
+    headers,
+  });
   if (response.status === 204) return undefined as T;
   const body = (await response.json()) as { data?: T; error?: unknown };
   if (!response.ok || body.error !== undefined) {

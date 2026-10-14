@@ -48,6 +48,7 @@ test("manages transaction types with metadata schema builder", async ({ page }) 
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Master Transaksi" }).click();
   await expect(page.getByRole("heading", { name: "Master Tipe Transaksi" })).toBeVisible();
 
@@ -180,9 +181,8 @@ test("creates and saves a transaction row in Buku Transaksi with 9 cash bank col
   await page.goto("/transaksi");
   await expect(page.getByRole("heading", { name: "Buku Transaksi" })).toBeVisible();
 
-  // Verify 9 cash & bank columns / summary cards
-  await expect(page.getByText("1101 Tukaran").first()).toBeVisible();
-  await expect(page.getByText("1109 Sav. Sewa").first()).toBeVisible();
+  // Verify filter bar elements
+  await expect(page.getByRole("button", { name: "Filter Akun" })).toBeVisible();
 
   // Click Baris Baru
   await page.getByRole("button", { name: "Baris Baru" }).click();
@@ -191,18 +191,14 @@ test("creates and saves a transaction row in Buku Transaksi with 9 cash bank col
   const amountInput = page.getByPlaceholder("0,00").first();
   await amountInput.fill("50000");
 
-  const memoInput = page.getByPlaceholder("Keterangan...").first();
-  await memoInput.fill("Penjualan shift pagi");
+  const memoInput = page.getByPlaceholder("PIC").first();
+  await memoInput.fill("KSR1");
 
-  // Open metadata popover
+  // Open metadata row
   await page.getByRole("button", { name: "+ Metadata" }).click();
-  await expect(page.getByText("Metadata: Penjualan Tunai Kasir")).toBeVisible();
-
-  // Fill metadata field
   const shiftInput = page.getByPlaceholder("Masukkan shift kasir");
-  if (await shiftInput.isVisible()) {
-    await shiftInput.fill("Pagi");
-  }
+  await expect(shiftInput).toBeVisible();
+  await shiftInput.fill("Pagi");
   await page.getByRole("button", { name: "Terapkan Metadata" }).click();
 
   // Save row

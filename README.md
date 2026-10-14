@@ -1,84 +1,109 @@
 # Sistem Keuangan Apotek (Pharmacy Financial Application)
 
-Aplikasi manajemen finansial dan akuntansi modern yang dirancang khusus untuk operasional apotek. Sistem ini mengadopsi prinsip double-entry accounting otomatis, pencatatan batch faktur PBF, integrasi POS clearing & pengakuan HPP harian, pengelolaan konsinyasi, rekonsiliasi bank dual-pane, dan penyusunan laporan keuangan interaktif dengan kemampuan drill-down.
+Aplikasi manajemen finansial dan akuntansi modern yang dirancang khusus untuk operasional apotek. Sistem ini mengadopsi prinsip _double-entry accounting_ otomatis, arsitektur Master Transaksi dengan skema metadata dinamis, pencatatan transaksi harian cepat, pengelolaan Bagan Akun (CoA) & Saldo Awal, Jurnal Umum, serta Laporan Keuangan interaktif dengan kemampuan _drill-down_.
 
 ---
 
-## 📁 Struktur Dokumentasi & Proyek
+## 📁 Struktur Proyek Monorepo
 
 ```text
 KeuanganApotek/
-├── docs/
-│   ├── 01_PRD.md                     # Product Requirements Document (Kebutuhan & Lingkup Sistem)
-│   ├── 02_UI_UX_SPECIFICATION.md     # Spesifikasi Desain Antarmuka & Panduan Interaksi Keyboard
-│   ├── 03_ACCOUNTING_LOGIC_AND_COA.md# Bagan Akun Standar (CoA), Saldo Awal, & Logika Jurnal
-│   ├── 04_DATABASE_SCHEMA.md         # Rancangan Skema Relasi Database & Integritas Data
-│   ├── 05_DEVELOPMENT_ROADMAP.md     # Rencana Arsitektur Teknologi & Tahapan Implementasi
-│   ├── 06_AI_PHASED_DEVELOPMENT_GOALS.md # Panduan Master & Sasaran Pengembangan AI Berkelanjutan
-│   └── 07_TESTING_STRATEGY_AND_TEST_SUITES.md # Strategi Pengujian, Test Runner & Spesifikasi Suite
-└── README.md                         # Ringkasan Proyek & Panduan Memulai
+├── apps/
+│   ├── api/                           # Backend Server (Hono + SQLite + Drizzle ORM)
+│   │   ├── src/
+│   │   │   ├── db/                    # Client SQLite, Skema Drizzle, Migrasi, Seed & Backup
+│   │   │   ├── services/              # Service Buku Besar, Transaksi, CoA, Laporan, Period Lock, Audit
+│   │   │   ├── app.ts                 # Definisi REST API endpoints & route handlers
+│   │   │   └── server.ts              # Bootstrap server Hono Node.js
+│   │   └── package.json
+│   │
+│   └── web/                           # Frontend Client (Vite + React + Tailwind CSS + TanStack)
+│       ├── src/
+│       │   ├── components/            # Virtualized grid, Dynamic metadata form/builder, Drill-down drawer
+│       │   ├── pages/                 # Halaman Buku Transaksi, Laporan, Advanced (Master Transaksi, Jurnal, CoA, Pengaturan)
+│       │   ├── lib/                   # API client, React Query hooks & mutations
+│       │   └── App.tsx                # Routing & layout aplikasi
+│       └── package.json
+│
+├── packages/
+│   └── shared/                        # Shared Types, Zod Schemas & Financial Math (decimal.js)
+│       ├── src/
+│       │   ├── schemas/               # Zod validation schemas
+│       │   ├── types/                 # Inferred TypeScript types
+│       │   └── math/                  # Kalkulasi presisi finansial & konversi sen
+│       └── package.json
+│
+├── AGENTS.md                          # Pedoman kontribusi AI & standar kode (oxfmt & oxlint)
+├── package.json                       # Root Workspace Configuration
+└── pnpm-workspace.yaml                # Monorepo Workspace Definitions
 ```
 
 ---
 
 ## 🧭 Ringkasan Modul Aplikasi
 
-1. **Bagan Akun (Chart of Accounts - CoA) & Saldo Awal**
-   - Manajemen hierarki tree-grid akun finansial.
-   - Dual-mode: _Mode Struktur Akun_ & _Mode Input Saldo Awal_.
-   - Auto-Balancing Equity & Jurnal Pembuka otomatis.
-2. **Jurnal Umum (General Journal Entry Grid)**
-   - Entri debit-kredit berpasangan multi-baris berbasis grid cepat.
-   - Live Sticky Balance Validation Bar (merah jika selisih ≠ Rp 0).
-3. **Ringkasan Penjualan & Pengakuan HPP Harian (POS Clearing)**
-   - Rekap omzet POS harian, penerimaan tunai/non-tunai (QRIS/EDC), selisih kas fisik.
-   - Pengakuan HPP / COGS obat harian & auto-generate jurnal.
-4. **Faktur Pembelian PBF & Utang Usaha (AP Batch Ledger)**
-   - Entri tumpukan faktur Pedagang Besar Farmasi (PBF) beruntun.
-   - Dukungan _copy-paste_ tabular langsung dari Excel (`Ctrl + V`).
-   - Kalkulasi otomatis DPP, PPN 11%, dan jatuh tempo.
-5. **Konsinyasi & Bagi Hasil (Consignment Ledger)**
-   - Perhitungan bagi hasil produk titip jual (suplemen, madu, alkes).
-   - Multi-select settlement dengan floating batch action bar.
-6. **Kas, Bank & Mutasi Rekening (Cash & Bank Register)**
-   - Pencatatan mutasi kas toko, setoran tunai harian, transfer antar bank, dan biaya admin.
-   - Otomatisasi mutasi ganda buku besar tanpa jurnal manual.
-7. **Rekonsiliasi Bank (Dual Pane Split-Grid)**
-   - Perbandingan berdampingan: Mutasi Internal Sistem vs Rekening Koran Bank.
-   - Fitur _Auto-Match_ tanggal ±1 hari & nominal identik serta pencocokan manual satu-klik.
-8. **Laporan Keuangan Dinamis & Drill-Down**
-   - Laba Rugi Komparatif, Neraca, Neraca Saldo.
-   - Interaktif: Mengklik nominal membuka slide-over drawer rincian jurnal pembentuk.
+1. **Buku Transaksi (`/transaksi`)**
+   - Pencatatan transaksi harian operasional apotek secara cepat berdasarkan template Master Transaksi.
+   - Formulir metadata dinamis (_Dynamic Metadata Form_) yang otomatis menyesuaikan field kustom per jenis transaksi.
+   - Otomatisasi pembentukan jurnal ganda (_double-entry_) dan ringkasan Neraca harian.
 
----
+2. **Laporan Keuangan Dinamis & Drill-Down (`/laporan-keuangan`)**
+   - Laporan Laba Rugi Komparatif (dengan analisis pertumbuhan/varians), Neraca (_Balance Sheet_), dan Neraca Saldo (_Trial Balance_).
+   - _Interactive Drill-Down Drawer_: Mengklik angka nominal akun membuka slide-over drawer berisi rincian jurnal transaksi pembentuknya.
 
-## 📐 Standar Desain & UX
-
-- **Tipografi Angka:** Wajib Monospaced/Tabular Figures (`tabular-nums`) untuk kode, nominal, dan tanggal.
-- **Alignment:** Teks (kiri), Angka/Nominal/Qty (kanan), Tanggal/Badge/Aksi (tengah).
-- **Data Grid:** Sticky Header, Frozen Key Column, Zebra Striping (`#FAFAFA`), Hover (`#F0F4F8`), Active Cell Outline (2px biru).
-- **Keyboard Mastery:** Navigasi cepat tanpa mouse (`Tab`, `Shift+Tab`, `Enter`, `F2`, `Esc`, `Ctrl+Z`, `Ctrl+V`).
+3. **Advanced (`/advanced`)**
+   - Modul pengaturan mendalam dan konfigurasi akuntansi tingkat lanjut yang terorganisasi dalam tab:
+     - **Master Transaksi (`/master-transaksi`)**: Katalog tipe transaksi & _Metadata Schema Builder_ visual.
+     - **Jurnal Umum (`/jurnal`)**: Entri jurnal berpasangan manual dengan sticky balance bar & navigasi keyboard.
+     - **Bagan Akun (CoA) & Saldo Awal (`/coa`)**: Tata kelola hierarki akun, input saldo awal per cut-off, & auto-balancing equity.
+     - **Pengaturan & Identitas (`/pengaturan`)**: Identitas apotek, buku kas/bank, status arsitektur akuntansi & keamanan.
 
 ---
 
 ## 🛠️ Arsitektur Teknologi (Tech Stack)
 
-- **Frontend:** Vite + React 18/19 (TypeScript), TanStack Table v8, TanStack Query, Tailwind CSS.
-- **Backend:** Node.js + tRPC / Hono Server (End-to-End Type Safety).
-- **Database:** SQLite (WAL Mode, synchronous NORMAL, Foreign Keys ON, Busy Timeout 5s).
-- **ORM:** Drizzle ORM.
-- **Financial Precision:** `decimal.js` / `dinero.js` (Integer minor units / sen di database).
-- **Validation:** Zod (Shared schemas antara backend DTO & frontend form/grid).
+- **Frontend:** Vite + React 19 (TypeScript), TanStack Query, TanStack Virtual, Tailwind CSS, Lucide React.
+- **Backend:** Node.js + Hono Server (REST API).
+- **Database:** SQLite (Mode WAL, `PRAGMA synchronous = NORMAL`, `PRAGMA foreign_keys = ON`, `PRAGMA busy_timeout = 5000`).
+- **ORM:** Drizzle ORM (`better-sqlite3`).
+- **Financial Precision:** `decimal.js` (Penyimpanan integer sen/minor units di database untuk menjamin presisi tanpa pembulatan _floating point_).
+- **Validation:** Zod (Shared schemas antara backend dan frontend di paket `@keuangan-apotek/shared`).
+- **Code Quality:** `oxfmt` (formatter) & `oxlint` (linter).
 
 ---
 
-Silakan eksplorasi folder `docs/` untuk membaca rincian spesifikasi lengkap.
+## 🚀 Panduan Memulai (Getting Started)
 
-## 🚀 Menjalankan Banyak Dev Instance
+### Prasyarat
 
-`pnpm dev` otomatis memilih port kosong untuk API dan web, sehingga beberapa worktree dapat dijalankan bersamaan pada mesin yang sama. URL yang terpilih akan dicetak di terminal.
+- Node.js `^20.0.0` atau `^22.0.0`
+- pnpm `^10.0.0`
 
-Untuk port yang konsisten pada worktree tertentu, set `API_PORT` dan `WEB_PORT` sebelum menjalankan perintah. `VITE_API_URL` akan mengikuti port API secara otomatis:
+### Instalasi & Menjalankan Aplikasi
+
+1. **Install dependensi:**
+
+   ```powershell
+   pnpm install
+   ```
+
+2. **Inisialisasi Database (Migrasi & Seed):**
+
+   ```powershell
+   pnpm run db:migrate
+   pnpm run db:seed
+   ```
+
+3. **Jalankan Aplikasi Mode Development:**
+   ```powershell
+   pnpm dev
+   ```
+
+### Menjalankan Banyak Dev Instance
+
+`pnpm dev` otomatis mendeteksi dan memilih port kosong untuk API dan web, memungkinkan beberapa worktree dijalankan bersamaan pada mesin yang sama.
+
+Untuk mengunci port tertentu pada worktree, set variabel lingkungan sebelum menjalankan:
 
 ```powershell
 $env:API_PORT = "3101"
@@ -86,9 +111,26 @@ $env:WEB_PORT = "5274"
 pnpm dev
 ```
 
-Variabel yang tersedia:
+Variabel lingkungan yang didukung:
 
-- `API_PORT`: port server API, default mulai dari `3000` dan otomatis mencari port berikutnya yang kosong.
-- `WEB_PORT`: port Vite, default mulai dari `5173` dan otomatis mencari port berikutnya yang kosong.
-- `VITE_API_URL`: URL API eksplisit jika API dijalankan di host/port berbeda.
-- `DATABASE_PATH`: lokasi database SQLite per instance/worktree jika diperlukan.
+- `API_PORT`: Port server API (default mulai dari `3000`).
+- `WEB_PORT`: Port Vite client (default mulai dari `5173`).
+- `VITE_API_URL`: URL API kustom jika backend dijalankan di host/port terpisah.
+- `DATABASE_PATH`: Lokasi file database SQLite per instance jika diperlukan.
+
+---
+
+## 🧪 Validasi & Pengujian
+
+Sebelum mengajukan perubahan kode, pastikan seluruh pemeriksaan kualitas lulus:
+
+```powershell
+# Format kode
+pnpm run fmt
+
+# Periksa format, lint, dan typecheck
+pnpm run check
+
+# Jalankan automated tests
+pnpm test
+```

@@ -87,7 +87,7 @@ type DrillDown = {
 };
 
 const inputClass =
-  "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono tabular-nums outline-none focus:border-brand focus:ring-2 focus:ring-blue-100";
+  "rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-mono tabular-nums outline-none focus:border-brand focus:ring-1 focus:ring-brand";
 
 function previousMonthPeriod(date: string): Period {
   const parts = date.split("-").map(Number);
@@ -118,14 +118,14 @@ function ReportAmount({ value, onClick }: { value: number; onClick?: () => void 
   const content = <>Rp {formatMoney(value)}</>;
   return onClick ? (
     <button
-      className="font-mono tabular-nums text-right text-brand underline decoration-blue-200 underline-offset-2 hover:decoration-brand"
+      className="font-mono tabular-nums text-right text-brand underline decoration-blue-200 underline-offset-2 hover:decoration-brand text-xs"
       onClick={onClick}
       type="button"
     >
       {content}
     </button>
   ) : (
-    <span className="font-mono tabular-nums">{content}</span>
+    <span className="font-mono tabular-nums text-xs">{content}</span>
   );
 }
 
@@ -138,38 +138,44 @@ function ComparativeTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-sm">
-        <thead className="text-left text-[11px] uppercase tracking-wide text-slate-400">
+      <table className="w-full min-w-[640px] text-xs">
+        <thead className="sticky top-0 bg-slate-100 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
           <tr>
-            <th className="px-5 py-3">Akun</th>
-            <th className="px-3 py-3 text-right">Bulan berjalan</th>
-            <th className="px-3 py-3 text-right">Bulan pembanding</th>
-            <th className="px-5 py-3 text-right">Varians</th>
+            <th className="px-2 py-1">Akun</th>
+            <th className="px-2 py-1 text-right">Bulan Berjalan</th>
+            <th className="px-2 py-1 text-right">Bulan Pembanding</th>
+            <th className="px-2 py-1 text-right">Varians</th>
           </tr>
         </thead>
         <tbody>
           {section.rows.map((row, index) => (
-            <tr className={index % 2 ? "bg-slate-50/60" : "bg-white"} key={row.accountId}>
-              <td className="px-5 py-3">
-                <span className="font-mono font-semibold tabular-nums text-slate-600">
+            <tr
+              className={
+                (index % 2 ? "bg-slate-50/60" : "bg-white") +
+                " hover:bg-blue-50/40 border-b border-slate-100"
+              }
+              key={row.accountId}
+            >
+              <td className="px-2 py-1">
+                <span className="font-mono font-semibold tabular-nums text-slate-700">
                   {row.code}
                 </span>
-                <span className="ml-2">{row.name}</span>
+                <span className="ml-1.5 text-slate-800">{row.name}</span>
               </td>
-              <td className="px-3 py-3 text-right">
+              <td className="px-2 py-1 text-right">
                 <ReportAmount onClick={() => openDrillDown(row)} value={row.amount} />
               </td>
-              <td className="px-3 py-3 text-right">
+              <td className="px-2 py-1 text-right">
                 <ReportAmount value={row.compareAmount} />
               </td>
               <td
                 className={
-                  "px-5 py-3 text-right font-mono tabular-nums " +
+                  "px-2 py-1 text-right font-mono tabular-nums text-xs " +
                   (row.variance >= 0 ? "text-emerald-700" : "text-red-700")
                 }
               >
                 {row.variance >= 0 ? "+" : "−"}Rp {formatAbsoluteMoney(row.variance)}{" "}
-                <span className="ml-1 text-xs">
+                <span className="ml-1 text-[11px]">
                   ({row.growthPercent === null ? "—" : row.growthPercent.toFixed(2) + "%"})
                 </span>
               </td>
@@ -177,15 +183,15 @@ function ComparativeTable({
           ))}
         </tbody>
         <tfoot>
-          <tr className="border-t border-slate-200 bg-slate-50 font-semibold">
-            <td className="px-5 py-3">Total {section.label}</td>
-            <td className="px-3 py-3 text-right">
+          <tr className="border-t border-slate-200 bg-slate-100 font-semibold text-slate-800">
+            <td className="px-2 py-1">Total {section.label}</td>
+            <td className="px-2 py-1 text-right">
               <ReportAmount value={section.total.amount} />
             </td>
-            <td className="px-3 py-3 text-right">
+            <td className="px-2 py-1 text-right">
               <ReportAmount value={section.total.compareAmount} />
             </td>
-            <td className="px-5 py-3 text-right font-mono tabular-nums">
+            <td className="px-2 py-1 text-right font-mono tabular-nums text-xs">
               {section.total.growthPercent === null
                 ? "—"
                 : section.total.growthPercent.toFixed(2) + "%"}
@@ -264,34 +270,52 @@ export default function ReportsPage() {
 
   function incomeView() {
     if (!income) return null;
-    const summary = [
-      { label: "Pendapatan", value: income.revenue.amount },
-      { label: "Laba kotor", value: income.grossProfit.amount },
-      { label: "Laba bersih usaha", value: income.netProfit.amount },
-    ];
     return (
-      <>
-        <div className="grid gap-3 md:grid-cols-3">
-          {summary.map((item) => (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4" key={item.label}>
-              <p className="text-xs text-muted">{item.label}</p>
-              <p className="mt-2 font-mono text-xl font-bold tabular-nums">
-                Rp {formatMoney(item.value)}
-              </p>
-            </div>
-          ))}
+      <div className="space-y-1.5">
+        <div className="overflow-x-auto border border-slate-200 bg-white">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
+                <th className="px-2 py-1 text-left">Ringkasan Laba Rugi</th>
+                <th className="px-2 py-1 text-right">Pendapatan</th>
+                <th className="px-2 py-1 text-right">HPP</th>
+                <th className="px-2 py-1 text-right">Laba Kotor</th>
+                <th className="px-2 py-1 text-right">Beban Operasional</th>
+                <th className="px-2 py-1 text-right">Laba Bersih Usaha</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="bg-white font-mono tabular-nums font-semibold">
+                <td className="px-2 py-1 font-sans text-slate-500 font-medium">Bulan Berjalan</td>
+                <td className="px-2 py-1 text-right text-slate-800">
+                  Rp {formatMoney(income.revenue.amount)}
+                </td>
+                <td className="px-2 py-1 text-right text-slate-800">
+                  Rp {formatMoney(income.cogs.amount)}
+                </td>
+                <td className="px-2 py-1 text-right text-slate-800">
+                  Rp {formatMoney(income.grossProfit.amount)}
+                </td>
+                <td className="px-2 py-1 text-right text-slate-800">
+                  Rp {formatMoney(income.operatingExpenses.amount)}
+                </td>
+                <td
+                  className={`px-2 py-1 text-right ${income.netProfit.amount >= 0 ? "text-emerald-700" : "text-red-700"}`}
+                >
+                  Rp {formatMoney(income.netProfit.amount)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div className="space-y-4">
+        <div className="space-y-1.5">
           {income.sections.map((section) => (
-            <section
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-              key={section.key}
-            >
-              <div className="border-b border-slate-100 px-5 py-4">
-                <h3 className="font-semibold">{section.label}</h3>
-                <p className="mt-1 text-xs text-muted">
-                  Klik nominal bulan berjalan untuk melihat jurnal pembentuk.
-                </p>
+            <section className="border border-slate-200 bg-white" key={section.key}>
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-2 py-1">
+                <h3 className="text-xs font-bold text-slate-800">{section.label}</h3>
+                <span className="text-[11px] text-slate-500">
+                  Klik nominal bulan berjalan untuk rincian jurnal
+                </span>
               </div>
               <ComparativeTable
                 openDrillDown={(row) => void openDrillDown(row.accountId)}
@@ -300,161 +324,161 @@ export default function ReportsPage() {
             </section>
           ))}
         </div>
-      </>
+      </div>
     );
   }
 
   function balanceView() {
     if (!balance) return null;
     return (
-      <>
+      <div className="space-y-1.5">
         <div
           className={
-            "rounded-xl border p-4 " +
-            (balance.isBalanced ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50")
+            "flex items-center justify-between border px-2 py-1 text-xs " +
+            (balance.isBalanced
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800")
           }
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold">Persamaan dasar akuntansi</p>
-              <p className="mt-1 text-xs text-muted">
-                Aset = Kewajiban + Ekuitas termasuk laba periode berjalan.
-              </p>
-            </div>
-            <span
-              className={
-                "font-mono text-sm font-bold tabular-nums " +
-                (balance.isBalanced ? "text-emerald-700" : "text-red-700")
-              }
-            >
-              {balance.isBalanced ? "✓ Seimbang" : "Selisih Rp " + formatMoney(balance.difference)}
-            </span>
-          </div>
+          <span className="font-semibold">
+            Persamaan Dasar Akuntansi (Aset = Kewajiban + Ekuitas)
+          </span>
+          <span className="font-mono font-bold tabular-nums">
+            {balance.isBalanced ? "✓ Seimbang" : "Selisih Rp " + formatMoney(balance.difference)}
+          </span>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-1.5 md:grid-cols-3">
           {balance.sections.map((section) => (
-            <section
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-              key={section.key}
-            >
-              <div className="border-b border-slate-100 px-5 py-4">
-                <h3 className="font-semibold">{section.label}</h3>
-                <p className="mt-1 font-mono text-lg font-bold tabular-nums">
+            <section className="border border-slate-200 bg-white flex flex-col" key={section.key}>
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-2 py-1">
+                <h3 className="text-xs font-bold text-slate-800">{section.label}</h3>
+                <span className="font-mono text-xs font-bold tabular-nums text-slate-900">
                   Rp {formatMoney(section.total)}
-                </p>
+                </span>
               </div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {section.rows.map((row) => (
-                    <tr className="border-b border-slate-50" key={row.accountId}>
-                      <td className="px-5 py-3">
-                        <span className="font-mono text-xs tabular-nums text-slate-500">
-                          {row.code}
-                        </span>
-                        <span className="ml-2">{row.name}</span>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <ReportAmount
-                          onClick={() =>
-                            void openDrillDown(row.accountId, {
-                              startDate: "0001-01-01",
-                              endDate: balance.asOfDate,
-                            })
-                          }
-                          value={row.balance}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto flex-1">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {section.rows.map((row, idx) => (
+                      <tr
+                        className={
+                          (idx % 2 ? "bg-slate-50/60" : "bg-white") +
+                          " hover:bg-blue-50/40 border-b border-slate-100"
+                        }
+                        key={row.accountId}
+                      >
+                        <td className="px-2 py-1">
+                          <span className="font-mono text-xs tabular-nums text-slate-600 font-semibold">
+                            {row.code}
+                          </span>
+                          <span className="ml-1.5 text-slate-800">{row.name}</span>
+                        </td>
+                        <td className="px-2 py-1 text-right">
+                          <ReportAmount
+                            onClick={() =>
+                              void openDrillDown(row.accountId, {
+                                startDate: "0001-01-01",
+                                endDate: balance.asOfDate,
+                              })
+                            }
+                            value={row.balance}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           ))}
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
+        <div className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <span>
-              Total aset{" "}
-              <strong className="ml-2 font-mono tabular-nums">
+              Total Aset:{" "}
+              <strong className="font-mono tabular-nums text-slate-900">
                 Rp {formatMoney(balance.totalAssets)}
               </strong>
             </span>
             <span>
-              Total kewajiban{" "}
-              <strong className="ml-2 font-mono tabular-nums">
+              Total Kewajiban:{" "}
+              <strong className="font-mono tabular-nums text-slate-900">
                 Rp {formatMoney(balance.totalLiabilities)}
               </strong>
             </span>
             <span>
-              Total ekuitas{" "}
-              <strong className="ml-2 font-mono tabular-nums">
+              Total Ekuitas:{" "}
+              <strong className="font-mono tabular-nums text-slate-900">
                 Rp {formatMoney(balance.totalEquity)}
               </strong>
             </span>
             <span>
-              Laba berjalan{" "}
-              <strong className="ml-2 font-mono tabular-nums">
+              Laba Berjalan:{" "}
+              <strong className="font-mono tabular-nums text-emerald-700">
                 Rp {formatMoney(balance.currentEarnings)}
               </strong>
             </span>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
   function trialView() {
     if (!trial) return null;
     return (
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="border border-slate-200 bg-white">
         <div
           className={
-            "flex flex-wrap items-center justify-between gap-3 border-b p-5 " +
-            (trial.isBalanced ? "border-emerald-100 bg-emerald-50" : "border-red-100 bg-red-50")
+            "flex items-center justify-between border-b px-2 py-1 text-xs " +
+            (trial.isBalanced
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800")
           }
         >
           <div>
-            <h3 className="font-semibold">Neraca Saldo</h3>
-            <p className="mt-1 text-xs text-muted">
-              Saldo bersih seluruh akun pada periode yang dipilih.
-            </p>
+            <h3 className="font-bold">Neraca Saldo</h3>
           </div>
-          <span
-            className={
-              "font-mono text-sm font-bold tabular-nums " +
-              (trial.isBalanced ? "text-emerald-700" : "text-red-700")
-            }
-          >
-            Debit {formatMoney(trial.totalDebit)} · Kredit {formatMoney(trial.totalCredit)}
+          <span className="font-mono font-bold tabular-nums">
+            Debit: Rp {formatMoney(trial.totalDebit)} · Kredit: Rp {formatMoney(trial.totalCredit)}
+            {trial.isBalanced
+              ? " (Seimbang)"
+              : " (Selisih Rp " + formatMoney(trial.difference) + ")"}
           </span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
+          <table className="w-full min-w-[640px] text-xs">
+            <thead className="sticky top-0 bg-slate-100 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
               <tr>
-                <th className="px-5 py-3">Kode / Akun</th>
-                <th className="px-3 py-3">Klasifikasi</th>
-                <th className="px-3 py-3 text-right">Saldo debit</th>
-                <th className="px-5 py-3 text-right">Saldo kredit</th>
+                <th className="px-2 py-1">Kode / Akun</th>
+                <th className="px-2 py-1">Klasifikasi</th>
+                <th className="px-2 py-1 text-right">Saldo Debit</th>
+                <th className="px-2 py-1 text-right">Saldo Kredit</th>
               </tr>
             </thead>
             <tbody>
               {trial.rows.map((row, index) => (
-                <tr className={index % 2 ? "bg-slate-50/60" : "bg-white"} key={row.accountId}>
-                  <td className="px-5 py-3">
-                    <span className="font-mono font-semibold tabular-nums text-slate-600">
+                <tr
+                  className={
+                    (index % 2 ? "bg-slate-50/60" : "bg-white") +
+                    " hover:bg-blue-50/40 border-b border-slate-100"
+                  }
+                  key={row.accountId}
+                >
+                  <td className="px-2 py-1">
+                    <span className="font-mono font-semibold tabular-nums text-slate-700">
                       {row.code}
                     </span>
-                    <span className="ml-2">{row.name}</span>
+                    <span className="ml-1.5 text-slate-800">{row.name}</span>
                   </td>
-                  <td className="px-3 py-3 text-xs text-slate-500">{row.classification}</td>
-                  <td className="px-3 py-3 text-right">
+                  <td className="px-2 py-1 text-[11px] text-slate-500">{row.classification}</td>
+                  <td className="px-2 py-1 text-right">
                     <ReportAmount
                       onClick={() => void openDrillDown(row.accountId)}
                       value={row.debitBalance}
                     />
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-2 py-1 text-right">
                     <ReportAmount
                       onClick={() => void openDrillDown(row.accountId)}
                       value={row.creditBalance}
@@ -464,14 +488,14 @@ export default function ReportsPage() {
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t border-slate-200 bg-slate-50 font-bold">
-                <td className="px-5 py-3" colSpan={2}>
+              <tr className="border-t border-slate-200 bg-slate-100 font-bold text-slate-800">
+                <td className="px-2 py-1" colSpan={2}>
                   Total
                 </td>
-                <td className="px-3 py-3 text-right">
+                <td className="px-2 py-1 text-right">
                   <ReportAmount value={trial.totalDebit} />
                 </td>
-                <td className="px-5 py-3 text-right">
+                <td className="px-2 py-1 text-right">
                   <ReportAmount value={trial.totalCredit} />
                 </td>
               </tr>
@@ -483,32 +507,59 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">
-              Phase 5 · Modul 8
-            </p>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">Laporan Keuangan</h2>
-            <p className="mt-1 text-sm text-muted">
-              Analisis real-time dengan rincian sampai ke jurnal pembentuk nominal.
-            </p>
+    <div className="space-y-1.5">
+      <section className="border border-slate-200 bg-white px-2 py-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xs font-bold text-slate-800">Laporan Keuangan</h2>
+            <span className="text-[11px] text-slate-300">|</span>
+            <nav aria-label="Jenis laporan" className="flex items-center gap-1">
+              <button
+                className={
+                  "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded " +
+                  (tab === "income" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100")
+                }
+                onClick={() => setTab("income")}
+                type="button"
+              >
+                <BarChart3 size={12} /> Laba Rugi Komparatif
+              </button>
+              <button
+                className={
+                  "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded " +
+                  (tab === "balance" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100")
+                }
+                onClick={() => setTab("balance")}
+                type="button"
+              >
+                <BookOpen size={12} /> Neraca
+              </button>
+              <button
+                className={
+                  "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded " +
+                  (tab === "trial" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100")
+                }
+                onClick={() => setTab("trial")}
+                type="button"
+              >
+                <FileText size={12} /> Neraca Saldo
+              </button>
+            </nav>
           </div>
-          <div className="flex flex-wrap items-end gap-2\">
-            <label className="text-xs font-semibold text-slate-500">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
               Mulai
               <input
-                className={inputClass + " mt-1 block"}
+                className={inputClass}
                 onChange={(event) => setPeriodStart(event.target.value)}
                 type="date"
                 value={periodStart}
               />
             </label>
-            <label className="text-xs font-semibold text-slate-500">
+            <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
               Sampai
               <input
-                className={inputClass + " mt-1 block"}
+                className={inputClass}
                 onChange={(event) => setPeriodEnd(event.target.value)}
                 type="date"
                 value={periodEnd}
@@ -516,19 +567,20 @@ export default function ReportsPage() {
             </label>
             {tab === "income" && (
               <>
-                <label className="text-xs font-semibold text-slate-500">
-                  Bandingkan dari
+                <span className="text-slate-300">|</span>
+                <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
+                  Bandingkan:
                   <input
-                    className={inputClass + " mt-1 block"}
+                    className={inputClass}
                     onChange={(event) => setCompareStart(event.target.value)}
                     type="date"
                     value={compareStart}
                   />
                 </label>
-                <label className="text-xs font-semibold text-slate-500">
-                  Bandingkan sampai
+                <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
+                  s/d
                   <input
-                    className={inputClass + " mt-1 block"}
+                    className={inputClass}
                     onChange={(event) => setCompareEnd(event.target.value)}
                     type="date"
                     value={compareEnd}
@@ -539,54 +591,21 @@ export default function ReportsPage() {
           </div>
         </div>
       </section>
-      <nav
-        aria-label="Jenis laporan"
-        className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"
-      >
-        <button
-          className={
-            "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
-            (tab === "income" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50")
-          }
-          onClick={() => setTab("income")}
-          type="button"
-        >
-          <BarChart3 size={16} /> Laba Rugi Komparatif
-        </button>
-        <button
-          className={
-            "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
-            (tab === "balance" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50")
-          }
-          onClick={() => setTab("balance")}
-          type="button"
-        >
-          <BookOpen size={16} /> Neraca
-        </button>
-        <button
-          className={
-            "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
-            (tab === "trial" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50")
-          }
-          onClick={() => setTab("trial")}
-          type="button"
-        >
-          <FileText size={16} /> Neraca Saldo
-        </button>
-      </nav>
+
       {(message || reportError) && (
         <div
-          className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          className="flex items-center justify-between border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800"
           role="status"
         >
           <span>{message || reportError}</span>
           <button aria-label="Tutup pesan laporan" onClick={() => setMessage("")} type="button">
-            <RefreshCw size={16} />
+            <RefreshCw size={12} />
           </button>
         </div>
       )}
+
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm text-muted">
+        <div className="border border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
           Memuat laporan...
         </div>
       ) : tab === "income" ? (

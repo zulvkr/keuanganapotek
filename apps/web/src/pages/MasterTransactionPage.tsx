@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, X, Save, CheckCircle2, BookTemplate } from "lucide-react";
-import type { MetadataFieldDefinition, TransactionType } from "@keuangan-apotek/shared";
+import { Plus, Pencil, Trash2, Search, X, Save, BookTemplate } from "lucide-react";
+import {
+  inferTransactionGroup,
+  TRANSACTION_GROUPS,
+  type MetadataFieldDefinition,
+  type TransactionGroup,
+  type TransactionType,
+} from "@keuangan-apotek/shared";
 import { getAccounts, getTransactionTypes, queryKeys, type Account } from "../lib/queries";
 import {
   createTransactionType,
@@ -10,13 +16,14 @@ import {
   updateTransactionType,
 } from "../lib/mutations";
 import { MetadataSchemaBuilder } from "../components/metadata/MetadataSchemaBuilder";
+import { toast } from "../lib/toast";
 
 export default function MasterTransactionPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState<TransactionGroup | "all">("all");
   const [editingType, setEditingType] = useState<TransactionType | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [message, setMessage] = useState("");
 
   // Form State
   const [formCode, setFormCode] = useState("");
@@ -55,7 +62,7 @@ export default function MasterTransactionPage() {
       }
     },
     onSuccess: async () => {
-      setMessage(
+      toast.success(
         editingType
           ? "Tipe transaksi berhasil diperbarui."
           : "Tipe transaksi baru berhasil dibuat.",
@@ -64,18 +71,18 @@ export default function MasterTransactionPage() {
       await invalidateAccountingQueries(queryClient);
     },
     onError: (err) => {
-      setMessage(err instanceof Error ? err.message : "Gagal menyimpan tipe transaksi");
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan tipe transaksi");
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteTransactionType(id),
     onSuccess: async () => {
-      setMessage("Tipe transaksi dinonaktifkan/dihapus.");
+      toast.success("Tipe transaksi dinonaktifkan/dihapus.");
       await invalidateAccountingQueries(queryClient);
     },
     onError: (err) => {
-      setMessage(err instanceof Error ? err.message : "Gagal menghapus tipe transaksi");
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus tipe transaksi");
     },
   });
 
@@ -89,7 +96,6 @@ export default function MasterTransactionPage() {
     setFormSchema([]);
     setFormIsActive(true);
     setIsCreating(true);
-    setMessage("");
   }
 
   function openEdit(item: TransactionType) {
@@ -102,7 +108,6 @@ export default function MasterTransactionPage() {
     setFormSchema(item.metadataSchema || []);
     setFormIsActive(item.isActive);
     setIsCreating(true);
-    setMessage("");
   }
 
   function closeForm() {
@@ -114,82 +119,115 @@ export default function MasterTransactionPage() {
 
   const filteredTypes = transactionTypes.filter((t) => {
     const q = search.toLowerCase();
-    return (
+    const matchesSearch =
       t.code.toLowerCase().includes(q) ||
       t.name.toLowerCase().includes(q) ||
-      (t.description && t.description.toLowerCase().includes(q))
-    );
+      (t.description && t.description.toLowerCase().includes(q));
+    if (!matchesSearch) return false;
+
+    if (groupFilter !== "all") {
+      const debitAcc = accountById.get(t.debitAccountId);
+      const creditAcc = accountById.get(t.creditAccountId);
+      const g = t.group || inferTransactionGroup(debitAcc, creditAcc);
+      return g === groupFilter;
+    }
+    return true;
   });
 
   return (
-    <div className="space-y-6">
-      {message && (
-        <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-900 shadow-sm">
-          <CheckCircle2 size={16} className="text-brand shrink-0" />
-          <span>{message}</span>
-        </div>
-      )}
-
+    <div className="space-y-1.5 text-xs">
       {/* Header bar */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-lg font-bold tracking-tight text-slate-900">Master Tipe Transaksi</h2>
-          <p className="text-xs text-muted">
-            Kelola template transaksi apotek, pasangan akun Debit & Kredit, serta skema metadata
-            dinamis
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-1.5 rounded border border-slate-200 bg-white p-1 text-xs">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-bold text-slate-900 tracking-tight">Master Tipe Transaksi</h2>
+          <span className="text-[11px] text-muted hidden sm:inline">
+            Template jurnal berpasangan & skema metadata dinamis
+          </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <select
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value as TransactionGroup | "all")}
+            className="h-6 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs outline-none focus:border-brand font-medium text-slate-700"
+            title="Filter berdasarkan grup transaksi"
+          >
+            <option value="all">Semua Grup ({transactionTypes.length})</option>
+            {TRANSACTION_GROUPS.map((grp) => {
+              const count = transactionTypes.filter((t) => {
+                const g =
+                  t.group ||
+                  inferTransactionGroup(
+                    accountById.get(t.debitAccountId),
+                    accountById.get(t.creditAccountId),
+                  );
+                return g === grp.key;
+              }).length;
+              return (
+                <option key={grp.key} value={grp.key}>
+                  {grp.label} ({count})
+                </option>
+              );
+            })}
+          </select>
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 text-slate-400" size={15} />
+            <Search className="absolute left-2 top-1.5 text-slate-400" size={12} />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Cari tipe transaksi..."
-              className="rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-xs outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
+              className="h-6 rounded border border-slate-200 bg-white pl-6 pr-2 py-0.5 text-xs outline-none focus:border-brand"
             />
           </div>
           <button
             type="button"
             onClick={openCreate}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+            className="inline-flex items-center gap-1 rounded bg-brand px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition"
           >
-            <Plus size={15} /> Tambah Tipe Transaksi
+            <Plus size={13} /> Tambah Tipe Transaksi
           </button>
         </div>
       </div>
 
       {/* Table list */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded border border-slate-200 bg-white">
         <div className="max-w-full overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-700">
               <tr>
-                <th className="px-4 py-3.5 w-24">Kode</th>
-                <th className="px-4 py-3.5 min-w-[200px]">Nama Transaksi</th>
-                <th className="px-4 py-3.5 min-w-[200px]">Akun Debit (+)</th>
-                <th className="px-4 py-3.5 min-w-[200px]">Akun Kredit (-)</th>
-                <th className="px-4 py-3.5 min-w-[150px]">Skema Metadata</th>
-                <th className="px-4 py-3.5 w-24 text-center">Status</th>
-                <th className="px-4 py-3.5 w-24 text-center">Aksi</th>
+                <th className="px-2 py-1 w-20 border-r border-slate-200">Kode</th>
+                <th className="px-2 py-1 min-w-[170px] border-r border-slate-200">
+                  Nama Transaksi
+                </th>
+                <th className="px-2 py-1 w-32 border-r border-slate-200">Grup Bisnis</th>
+                <th className="px-2 py-1 min-w-[170px] border-r border-slate-200">
+                  Akun Debit (+)
+                </th>
+                <th className="px-2 py-1 min-w-[170px] border-r border-slate-200">
+                  Akun Kredit (-)
+                </th>
+                <th className="px-2 py-1 min-w-[140px] border-r border-slate-200">
+                  Skema Metadata
+                </th>
+                <th className="px-2 py-1 w-16 text-center border-r border-slate-200">Status</th>
+                <th className="px-2 py-1 w-16 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
               {typesQuery.isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={8} className="px-2 py-6 text-center text-muted">
                     Memuat tipe transaksi...
                   </td>
                 </tr>
               ) : filteredTypes.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={8} className="px-2 py-6 text-center text-muted">
                     Tidak ada tipe transaksi yang cocok.
                   </td>
                 </tr>
               ) : (
-                filteredTypes.map((item) => {
+                filteredTypes.map((item, itemIdx) => {
                   const debitAcc = accountById.get(item.debitAccountId);
                   const creditAcc = accountById.get(item.creditAccountId);
                   const schemaFields = item.metadataSchema || [];
@@ -197,36 +235,61 @@ export default function MasterTransactionPage() {
                   return (
                     <tr
                       key={item.id}
-                      className={`hover:bg-slate-50/70 transition ${!item.isActive ? "opacity-60 bg-slate-50/30" : ""}`}
+                      className={`transition ${!item.isActive ? "opacity-60 bg-slate-50/30" : itemIdx % 2 === 0 ? "bg-white hover:bg-blue-50/40" : "bg-slate-50/60 hover:bg-blue-50/40"}`}
                     >
-                      <td className="px-4 py-3 font-mono font-semibold text-brand">{item.code}</td>
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-slate-900">{item.name}</p>
+                      <td className="px-2 py-1 font-mono font-semibold text-brand tabular-nums border-r border-slate-100">
+                        {item.code}
+                      </td>
+                      <td className="px-2 py-1 border-r border-slate-100">
+                        <span className="font-semibold text-slate-900">{item.name}</span>
                         {item.description && (
-                          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
-                            {item.description}
-                          </p>
+                          <span className="text-[11px] text-slate-500 ml-1.5 truncate">
+                            · {item.description}
+                          </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800 border border-emerald-100">
-                          <span className="font-mono font-bold">{debitAcc?.code || "—"}</span> ·{" "}
-                          {debitAcc?.name || "Akun tidak ditemukan"}
+                      <td className="px-2 py-1 border-r border-slate-100">
+                        {(() => {
+                          const gKey = item.group || inferTransactionGroup(debitAcc, creditAcc);
+                          const gConf = TRANSACTION_GROUPS.find((g) => g.key === gKey);
+                          return gConf ? (
+                            <span
+                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${gConf.badgeClass}`}
+                            >
+                              {gConf.badgeLabel}
+                            </span>
+                          ) : null;
+                        })()}
+                      </td>
+                      <td className="px-2 py-1 border-r border-slate-100">
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 border border-emerald-100">
+                          <span className="font-mono font-bold tabular-nums">
+                            {debitAcc?.code || "—"}
+                          </span>{" "}
+                          ·{" "}
+                          <span className="truncate">
+                            {debitAcc?.name || "Akun tidak ditemukan"}
+                          </span>
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 border border-amber-100">
-                          <span className="font-mono font-bold">{creditAcc?.code || "—"}</span> ·{" "}
-                          {creditAcc?.name || "Akun tidak ditemukan"}
+                      <td className="px-2 py-1 border-r border-slate-100">
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 border border-amber-100">
+                          <span className="font-mono font-bold tabular-nums">
+                            {creditAcc?.code || "—"}
+                          </span>{" "}
+                          ·{" "}
+                          <span className="truncate">
+                            {creditAcc?.name || "Akun tidak ditemukan"}
+                          </span>
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-1 border-r border-slate-100">
                         {schemaFields.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {schemaFields.map((f, idx) => (
                               <span
                                 key={idx}
-                                className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
+                                className="rounded bg-slate-100 px-1 py-0 text-[10px] text-slate-600"
                                 title={`Tipe: ${f.type}${f.required ? " (Wajib)" : ""}`}
                               >
                                 {f.label}
@@ -234,25 +297,27 @@ export default function MasterTransactionPage() {
                             ))}
                           </div>
                         ) : (
-                          <span className="text-slate-400 italic">Tanpa field metadata</span>
+                          <span className="text-slate-400 italic text-[11px]">
+                            Tanpa field metadata
+                          </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-2 py-1 text-center border-r border-slate-100">
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${item.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}
                         >
                           {item.isActive ? "Aktif" : "Nonaktif"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                      <td className="px-2 py-1 text-center">
+                        <div className="flex items-center justify-center gap-0.5">
                           <button
                             type="button"
                             onClick={() => openEdit(item)}
-                            className="rounded p-1.5 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
+                            className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
                             title="Edit tipe transaksi"
                           >
-                            <Pencil size={14} />
+                            <Pencil size={12} />
                           </button>
                           <button
                             type="button"
@@ -261,10 +326,10 @@ export default function MasterTransactionPage() {
                                 deleteMutation.mutate(item.id);
                               }
                             }}
-                            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                            className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
                             title="Hapus tipe transaksi"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={12} />
                           </button>
                         </div>
                       </td>
@@ -370,6 +435,39 @@ export default function MasterTransactionPage() {
                   </select>
                 </div>
               </div>
+
+              {/* Inferred Group Preview */}
+              {formDebitId && formCreditId && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-slate-600">
+                      Grup Transaksi Terdeteksi Otomatis:
+                    </span>
+                    {(() => {
+                      const deb = accountById.get(formDebitId);
+                      const cred = accountById.get(formCreditId);
+                      const detectedGroup = inferTransactionGroup(deb, cred);
+                      const conf = TRANSACTION_GROUPS.find((g) => g.key === detectedGroup);
+                      return conf ? (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${conf.badgeClass}`}
+                        >
+                          {conf.label}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    {(() => {
+                      const deb = accountById.get(formDebitId);
+                      const cred = accountById.get(formCreditId);
+                      const detectedGroup = inferTransactionGroup(deb, cred);
+                      const conf = TRANSACTION_GROUPS.find((g) => g.key === detectedGroup);
+                      return conf?.description || "";
+                    })()}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700">

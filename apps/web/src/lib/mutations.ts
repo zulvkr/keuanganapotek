@@ -6,7 +6,7 @@ import type {
   SaveTransactionInput,
   SaveTransactionTypeInput,
 } from "./queries";
-import type { TransactionRecord, TransactionType } from "@keuangan-apotek/shared";
+import type { AuthUser, TransactionRecord, TransactionType } from "@keuangan-apotek/shared";
 
 export function invalidateAccountingQueries(queryClient: QueryClient) {
   return Promise.all([
@@ -134,4 +134,47 @@ export function lockOpeningBalances(cutoffDate: string) {
       body: JSON.stringify({ cutoffDate }),
     },
   );
+}
+
+export function createUser(input: {
+  username: string;
+  password: string;
+  name: string;
+  role: "admin" | "asisten";
+  allowedCoaCodes?: string[];
+}) {
+  return requestJson<AuthUser>("/api/auth/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateUser(
+  id: string,
+  input: {
+    name?: string;
+    password?: string;
+    role?: "admin" | "asisten";
+    allowedCoaCodes?: string[];
+    isActive?: boolean;
+  },
+) {
+  return requestJson<AuthUser>(`/api/auth/users/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteUser(id: string) {
+  return requestJson<null>(`/api/auth/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function saveUserPermissions(id: string, allowedCoaCodes: string[]) {
+  return requestJson<AuthUser>(`/api/auth/users/${encodeURIComponent(id)}/permissions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allowedCoaCodes }),
+  });
 }

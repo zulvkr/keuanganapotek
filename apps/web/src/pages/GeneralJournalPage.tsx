@@ -17,6 +17,7 @@ import {
 } from "@keuangan-apotek/shared";
 import { createJournal, deleteJournal, updateJournal } from "../lib/mutations";
 import { getAccounts, getJournals, queryKeys, type JournalSummary } from "../lib/queries";
+import { toast } from "../lib/toast";
 
 type Account = { id: string; code: string; name: string; isActive: boolean };
 type DraftLine = {
@@ -120,7 +121,6 @@ function GeneralJournalPage() {
   const [activePreset, setActivePreset] = useState<DatePreset>("ALL");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [message, setMessage] = useState("");
   const draftRowRef = useRef<HTMLTableRowElement | null>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const queryClient = useQueryClient();
@@ -148,24 +148,24 @@ function GeneralJournalPage() {
       input: Parameters<typeof createJournal>[0];
     }) => (id ? updateJournal(id, input) : createJournal(input)),
     onSuccess: async (_, variables) => {
-      setMessage(variables.id ? "Jurnal berhasil diperbarui." : "Jurnal berhasil diposting.");
+      toast.success(variables.id ? "Jurnal berhasil diperbarui." : "Jurnal berhasil diposting.");
       if (variables.id) setInlineEdit(null);
       else resetDraft();
       await queryClient.invalidateQueries({ queryKey: ["journals"] });
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
     },
     onError: (error) =>
-      setMessage(error instanceof Error ? error.message : "Jurnal belum dapat disimpan"),
+      toast.error(error instanceof Error ? error.message : "Jurnal belum dapat disimpan"),
   });
   const removeMutation = useMutation({
     mutationFn: deleteJournal,
     onSuccess: async () => {
-      setMessage("Jurnal dihapus.");
+      toast.success("Jurnal dihapus.");
       await queryClient.invalidateQueries({ queryKey: ["journals"] });
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
     },
     onError: (error) =>
-      setMessage(error instanceof Error ? error.message : "Jurnal belum dapat dihapus"),
+      toast.error(error instanceof Error ? error.message : "Jurnal belum dapat dihapus"),
   });
 
   const totals = useMemo(() => {
@@ -218,7 +218,7 @@ function GeneralJournalPage() {
   function newJournal() {
     setInlineEdit(null);
     resetDraft();
-    setMessage("Draft jurnal baru siap diisi.");
+    toast.info("Draft jurnal baru siap diisi.");
     window.setTimeout(() => {
       draftRowRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       inputRefs.current["0:account"]?.focus();
@@ -382,7 +382,6 @@ function GeneralJournalPage() {
       referenceNo: journal.referenceNo ?? "",
       rows: toDraftRows(journal),
     });
-    setMessage("");
   }
 
   function buildInput(edit: InlineJournalEdit | null) {
@@ -408,7 +407,7 @@ function GeneralJournalPage() {
   function submitJournal() {
     const parsed = buildInput(null);
     if (!parsed.success) {
-      setMessage(parsed.error.issues.map((issue) => issue.message).join("; "));
+      toast.error(parsed.error.issues.map((issue) => issue.message).join("; "));
       return;
     }
     saveMutation.mutate({ id: null, input: parsed.data });
@@ -418,7 +417,7 @@ function GeneralJournalPage() {
     if (!inlineEdit) return;
     const parsed = buildInput(inlineEdit);
     if (!parsed.success) {
-      setMessage(parsed.error.issues.map((issue) => issue.message).join("; "));
+      toast.error(parsed.error.issues.map((issue) => issue.message).join("; "));
       return;
     }
     saveMutation.mutate({ id: inlineEdit.id, input: parsed.data });
@@ -427,53 +426,57 @@ function GeneralJournalPage() {
   function renderTableHeader() {
     return (
       <tr>
-        <th className="w-40 px-3 py-3">Tanggal</th>
-        <th className="w-48 px-3 py-3">Referensi</th>
-        <th className="min-w-[230px] px-3 py-3">Akun</th>
-        <th className="min-w-[190px] px-3 py-3">Keterangan</th>
-        <th className="w-48 px-3 py-3 text-right">Debit (Rp)</th>
-        <th className="w-48 px-3 py-3 text-right">Kredit (Rp)</th>
-        <th className="w-28 px-3 py-3 text-center">Aksi</th>
+        <th className="w-28 px-2 py-1 border-r border-slate-200">Tanggal</th>
+        <th className="w-36 px-2 py-1 border-r border-slate-200">Referensi</th>
+        <th className="min-w-[200px] px-2 py-1 border-r border-slate-200">Akun</th>
+        <th className="min-w-[160px] px-2 py-1 border-r border-slate-200">Keterangan</th>
+        <th className="w-36 px-2 py-1 text-right border-r border-slate-200">Debit (Rp)</th>
+        <th className="w-36 px-2 py-1 text-right border-r border-slate-200">Kredit (Rp)</th>
+        <th className="w-20 px-2 py-1 text-center">Aksi</th>
       </tr>
     );
   }
 
   function renderDraftRows() {
     return rows.map((row, index) => (
-      <tr key={`draft-${index}`} ref={index === 0 ? draftRowRef : undefined}>
+      <tr
+        key={`draft-${index}`}
+        ref={index === 0 ? draftRowRef : undefined}
+        className="bg-blue-50/40"
+      >
         {index === 0 && (
           <>
             <td
-              className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top"
+              className="border-r border-blue-200 bg-blue-50/70 px-2 py-1 align-top"
               rowSpan={rows.length}
             >
               <input
                 aria-label="Tanggal jurnal draft"
-                className="w-full rounded-md border border-transparent bg-white px-2 py-2 text-sm tabular-nums outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+                className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs tabular-nums outline-none focus:border-brand"
                 onChange={(event) => setEntryDate(event.target.value)}
                 type="date"
                 value={entryDate}
               />
             </td>
             <td
-              className="border-r border-blue-100 bg-blue-50/50 px-3 py-2 align-top"
+              className="border-r border-blue-200 bg-blue-50/70 px-2 py-1 align-top"
               rowSpan={rows.length}
             >
               <input
                 aria-label="Referensi jurnal draft"
-                className="w-full rounded-md border border-transparent bg-white px-2 py-2 text-sm outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+                className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs outline-none focus:border-brand"
                 onChange={(event) => setReferenceNo(event.target.value)}
-                placeholder="No. bukti / referensi"
+                placeholder="No. referensi"
                 value={referenceNo}
               />
             </td>
           </>
         )}
-        <td className="px-3 py-2">
+        <td className="px-2 py-1 border-r border-slate-200">
           <div className="flex items-center gap-1">
             <input
               aria-label={`Akun baris ${index + 1}`}
-              className={`min-w-0 flex-1 rounded-md border bg-transparent px-2 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-blue-100 ${row.accountQuery && !row.accountId ? "border-red-300" : "border-transparent hover:border-slate-200"}`}
+              className={`min-w-0 flex-1 h-6 rounded border bg-white px-1.5 py-0.5 text-xs outline-none focus:border-brand ${row.accountQuery && !row.accountId ? "border-red-300" : "border-slate-200"}`}
               list="journal-accounts"
               onChange={(event) => accountChanged(index, event.target.value)}
               onKeyDown={(event) => handleCellKeyDown(event, index, "account")}
@@ -482,23 +485,23 @@ function GeneralJournalPage() {
                 inputRefs.current[`${index}:account`] = element;
               }}
               value={row.accountQuery}
-              placeholder="Ketik kode atau nama akun..."
+              placeholder="Kode / nama akun..."
             />
             <button
               aria-label={`Hapus baris draft ${index + 1}`}
-              className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+              className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
               disabled={rows.length <= 2}
               onClick={() => removeRow(index)}
               type="button"
             >
-              <Trash2 size={15} />
+              <Trash2 size={13} />
             </button>
           </div>
         </td>
-        <td className="px-3 py-2">
+        <td className="px-2 py-1 border-r border-slate-200">
           <input
             aria-label={`Keterangan baris ${index + 1}`}
-            className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+            className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs outline-none focus:border-brand"
             onChange={(event) => updateRow(index, { description: event.target.value })}
             onKeyDown={(event) => handleCellKeyDown(event, index, "description")}
             ref={(element) => {
@@ -508,10 +511,10 @@ function GeneralJournalPage() {
             placeholder="Uraian baris"
           />
         </td>
-        <td className="px-3 py-2">
+        <td className="px-2 py-1 border-r border-slate-200">
           <input
             aria-label={`Debit baris ${index + 1}`}
-            className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-right font-mono tabular-nums outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+            className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-right font-mono text-xs tabular-nums outline-none focus:border-brand"
             onBlur={(event) => updateRow(index, { debit: formatAmount(event.currentTarget.value) })}
             onChange={(event) =>
               updateRow(index, {
@@ -527,10 +530,10 @@ function GeneralJournalPage() {
             placeholder="0,00"
           />
         </td>
-        <td className="px-3 py-2">
+        <td className="px-2 py-1 border-r border-slate-200">
           <input
             aria-label={`Kredit baris ${index + 1}`}
-            className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-right font-mono tabular-nums outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+            className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-right font-mono text-xs tabular-nums outline-none focus:border-brand"
             onBlur={(event) =>
               updateRow(index, { credit: formatAmount(event.currentTarget.value) })
             }
@@ -549,27 +552,30 @@ function GeneralJournalPage() {
           />
         </td>
         {index === 0 ? (
-          <td className="bg-blue-50/50 px-3 py-2 text-center align-top" rowSpan={rows.length}>
-            <div className="flex flex-col items-center gap-1.5">
+          <td
+            className="bg-blue-50/70 px-2 py-1 text-center align-top border-r border-blue-200"
+            rowSpan={rows.length}
+          >
+            <div className="flex flex-col items-center gap-1">
               <button
-                className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
                 disabled={!canPost || saveMutation.isPending}
                 onClick={submitJournal}
                 type="button"
               >
-                <Save size={14} /> Posting
+                <Save size={12} /> Posting
               </button>
               <button
-                className="inline-flex items-center gap-1 rounded-lg border border-dashed border-blue-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand hover:border-brand hover:bg-blue-50"
+                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-brand hover:bg-blue-50"
                 onClick={addRow}
                 type="button"
               >
-                <Plus size={13} /> Tambah baris
+                <Plus size={11} /> Baris
               </button>
             </div>
           </td>
         ) : (
-          <td className="bg-blue-50/30 px-3 py-2" />
+          <td className="bg-blue-50/30 px-2 py-1" />
         )}
       </tr>
     ));
@@ -581,17 +587,26 @@ function GeneralJournalPage() {
     const isEditing = Boolean(edit);
 
     return displayRows.map((row, index) => (
-      <tr key={`${journal.id}-${index}`}>
+      <tr
+        key={`${journal.id}-${index}`}
+        className={
+          isEditing
+            ? "bg-amber-50/60"
+            : index % 2 === 0
+              ? "bg-white hover:bg-blue-50/30"
+              : "bg-slate-50/60 hover:bg-blue-50/30"
+        }
+      >
         {index === 0 && (
           <>
             <td
-              className="border-r border-slate-100 px-3 py-3 align-top"
+              className="border-r border-slate-200 px-2 py-1 align-top tabular-nums text-xs"
               rowSpan={displayRows.length}
             >
               {isEditing ? (
                 <input
                   aria-label={`Tanggal jurnal ${journal.journalNo}`}
-                  className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm tabular-nums outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
+                  className="w-full h-6 rounded border border-slate-200 px-1.5 py-0.5 text-xs tabular-nums outline-none focus:border-brand"
                   onChange={(event) =>
                     setInlineEdit((current) =>
                       current ? { ...current, entryDate: event.target.value } : current,
@@ -605,13 +620,13 @@ function GeneralJournalPage() {
               )}
             </td>
             <td
-              className="border-r border-slate-100 px-3 py-3 align-top"
+              className="border-r border-slate-200 px-2 py-1 align-top text-xs"
               rowSpan={displayRows.length}
             >
               {isEditing ? (
                 <input
                   aria-label={`Referensi jurnal ${journal.journalNo}`}
-                  className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
+                  className="w-full h-6 rounded border border-slate-200 px-1.5 py-0.5 text-xs outline-none focus:border-brand"
                   onChange={(event) =>
                     setInlineEdit((current) =>
                       current ? { ...current, referenceNo: event.target.value } : current,
@@ -621,45 +636,45 @@ function GeneralJournalPage() {
                   value={edit!.referenceNo}
                 />
               ) : (
-                <p>{journal.referenceNo || "—"}</p>
+                <p className="truncate">{journal.referenceNo || "—"}</p>
               )}
             </td>
           </>
         )}
         {isEditing ? (
           <>
-            <td className="px-3 py-2">
+            <td className="px-2 py-1 border-r border-slate-200">
               <div className="flex items-center gap-1">
                 <input
                   aria-label={`Akun ${journal.journalNo} baris ${index + 1}`}
-                  className={`min-w-0 flex-1 rounded-md border bg-transparent px-2 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-blue-100 ${row.accountQuery && !row.accountId ? "border-red-300" : "border-transparent hover:border-slate-200"}`}
+                  className={`min-w-0 flex-1 h-6 rounded border bg-white px-1.5 py-0.5 text-xs outline-none focus:border-brand ${row.accountQuery && !row.accountId ? "border-red-300" : "border-slate-200"}`}
                   list="journal-accounts"
                   onChange={(event) => inlineAccountChanged(index, event.target.value)}
                   value={row.accountQuery}
                 />
                 <button
                   aria-label={`Hapus baris ${journal.journalNo} ${index + 1}`}
-                  className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                   disabled={displayRows.length <= 2}
                   onClick={() => removeInlineRow(index)}
                   type="button"
                 >
-                  <Trash2 size={15} />
+                  <Trash2 size={13} />
                 </button>
               </div>
             </td>
-            <td className="px-3 py-2">
+            <td className="px-2 py-1 border-r border-slate-200">
               <input
                 aria-label={`Keterangan ${journal.journalNo} baris ${index + 1}`}
-                className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+                className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs outline-none focus:border-brand"
                 onChange={(event) => updateInlineRow(index, { description: event.target.value })}
                 value={row.description}
               />
             </td>
-            <td className="px-3 py-2">
+            <td className="px-2 py-1 border-r border-slate-200">
               <input
                 aria-label={`Debit ${journal.journalNo} baris ${index + 1}`}
-                className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-right font-mono tabular-nums outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+                className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-right font-mono text-xs tabular-nums outline-none focus:border-brand"
                 onBlur={(event) =>
                   updateInlineRow(index, { debit: formatAmount(event.currentTarget.value) })
                 }
@@ -672,10 +687,10 @@ function GeneralJournalPage() {
                 value={row.debit}
               />
             </td>
-            <td className="px-3 py-2">
+            <td className="px-2 py-1 border-r border-slate-200">
               <input
                 aria-label={`Kredit ${journal.journalNo} baris ${index + 1}`}
-                className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-right font-mono tabular-nums outline-none hover:border-slate-200 focus:border-brand focus:ring-2 focus:ring-blue-100"
+                className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-right font-mono text-xs tabular-nums outline-none focus:border-brand"
                 onBlur={(event) =>
                   updateInlineRow(index, { credit: formatAmount(event.currentTarget.value) })
                 }
@@ -691,223 +706,145 @@ function GeneralJournalPage() {
           </>
         ) : (
           <>
-            <td className="px-3 py-3 align-top">
-              <p>
-                <span className="font-mono font-semibold">{journal.lines[index]?.accountCode}</span>{" "}
+            <td className="px-2 py-1 align-top border-r border-slate-100 text-xs">
+              <p className="truncate">
+                <span className="font-mono font-semibold tabular-nums">
+                  {journal.lines[index]?.accountCode}
+                </span>{" "}
                 · {journal.lines[index]?.accountName}
               </p>
             </td>
-            <td className="px-3 py-3 align-top text-slate-600">{row.description || "—"}</td>
-            <td className="px-3 py-3 text-right align-top font-mono tabular-nums">
+            <td className="px-2 py-1 align-top text-slate-600 border-r border-slate-100 text-xs truncate">
+              {row.description || "—"}
+            </td>
+            <td className="px-2 py-1 text-right align-top font-mono text-xs tabular-nums border-r border-slate-100">
               {row.debit ? <JournalAmount value={journal.lines[index]!.debit} /> : "—"}
             </td>
-            <td className="px-3 py-3 text-right align-top font-mono tabular-nums">
+            <td className="px-2 py-1 text-right align-top font-mono text-xs tabular-nums border-r border-slate-100">
               {row.credit ? <JournalAmount value={journal.lines[index]!.credit} /> : "—"}
             </td>
           </>
         )}
         {index === 0 ? (
-          <td className="px-3 py-3 text-center align-top" rowSpan={displayRows.length}>
+          <td className="px-2 py-1 text-center align-top" rowSpan={displayRows.length}>
             {isEditing ? (
-              <div className="flex flex-col items-center gap-1">
+              <div className="flex flex-col items-center gap-0.5">
                 <button
                   aria-label={`Simpan ${journal.journalNo}`}
-                  className="inline-flex items-center gap-1 rounded-lg bg-brand px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded bg-brand px-1.5 py-0.5 text-[11px] font-semibold text-white disabled:opacity-50"
                   disabled={saveMutation.isPending}
                   onClick={submitInlineEdit}
                   type="button"
                 >
-                  <Save size={13} /> Simpan
+                  <Save size={11} /> Simpan
                 </button>
                 <button
                   aria-label={`Tambah baris ${journal.journalNo}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2 py-1.5 text-xs text-slate-600"
+                  className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600"
                   onClick={addInlineRow}
                   type="button"
                 >
-                  <Plus size={13} /> Baris
+                  <Plus size={11} /> Baris
                 </button>
                 <button
                   aria-label={`Batal edit ${journal.journalNo}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-600"
+                  className="inline-flex items-center gap-0.5 rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600"
                   onClick={() => setInlineEdit(null)}
                   type="button"
                 >
-                  <X size={13} /> Batal
+                  <X size={11} /> Batal
                 </button>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-1">
+              <div className="flex items-center justify-center gap-0.5">
                 <button
                   aria-label={`Edit ${journal.journalNo}`}
-                  className="rounded p-1.5 text-slate-400 hover:bg-blue-50 hover:text-brand disabled:opacity-30"
+                  className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand disabled:opacity-30"
                   disabled={journal.sourceModule !== "GENERAL" || inlineEdit !== null}
                   onClick={() => void startInlineEdit(journal)}
                   type="button"
                 >
-                  <Pencil size={15} />
+                  <Pencil size={12} />
                 </button>
                 <button
                   aria-label={`Hapus ${journal.journalNo}`}
-                  className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                   disabled={journal.sourceModule !== "GENERAL" || removeMutation.isPending}
                   onClick={() => removeMutation.mutate(journal.id)}
                   type="button"
                 >
-                  <Trash2 size={15} />
+                  <Trash2 size={12} />
                 </button>
               </div>
             )}
           </td>
         ) : (
-          <td className="px-3 py-3" />
+          <td className="px-2 py-1" />
         )}
       </tr>
     ));
   }
 
   return (
-    <div className="space-y-5">
-      {message && (
-        <p
-          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-          role="status"
-        >
-          {message}
-        </p>
-      )}
-      <section
-        className={`sticky bottom-3 z-20 flex flex-col gap-4 rounded-2xl border p-4 shadow-lg md:flex-row md:items-center md:justify-between ${totals.difference.isZero() && !hasInvalidRows ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}
-      >
-        <div className="grid grid-cols-3 gap-5 text-sm">
-          <div>
-            <p className="text-xs text-slate-500">Draft · Total Debit</p>
-            <p className="mt-1 font-mono font-bold tabular-nums">
-              Rp {formatSen(totals.debit.toNumber())}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Total Kredit</p>
-            <p className="mt-1 font-mono font-bold tabular-nums">
-              Rp {formatSen(totals.credit.toNumber())}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Selisih</p>
-            <p
-              className={`mt-1 font-mono font-bold tabular-nums ${totals.difference.isZero() && !hasInvalidRows ? "text-emerald-700" : "text-red-700"}`}
-            >
-              Rp {formatSen(totals.difference.toNumber())}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-semibold ${totals.difference.isZero() && !hasInvalidRows ? "text-emerald-700" : "text-red-700"}`}
-          >
-            {totals.difference.isZero() && !hasInvalidRows ? (
-              <Check size={14} />
-            ) : (
-              <ChevronDown size={14} />
-            )}{" "}
-            {totals.difference.isZero() && !hasInvalidRows ? "Seimbang" : "Belum seimbang"}
-          </span>
-          <button
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 disabled:opacity-40"
-            disabled={!history.length}
-            onClick={() => {
-              const previous = history.at(-1);
-              if (previous) {
-                setHistory((current) => current.slice(0, -1));
-                setFuture((current) => [...current, rows]);
-                setRows(previous);
-              }
-            }}
-            type="button"
-          >
-            <Undo2 size={15} /> Undo
-          </button>
-          <button
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 disabled:opacity-40"
-            disabled={!future.length}
-            onClick={() => {
-              const next = future.at(-1);
-              if (next) {
-                setFuture((current) => current.slice(0, -1));
-                setHistory((current) => [...current, rows]);
-                setRows(next);
-              }
-            }}
-            type="button"
-          >
-            <RotateCcw size={15} /> Redo
-          </button>
-          <button
-            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canPost || saveMutation.isPending}
-            onClick={submitJournal}
-            type="button"
-          >
-            <Save size={16} /> Posting Jurnal
-          </button>
-        </div>
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">Jurnal Umum (Double-Entry)</h2>
-              <p className="text-xs text-slate-500">
-                Pencatatan multibaris debit dan kredit terpisah dengan validasi keseimbangan
-              </p>
+    <div className="space-y-1.5 text-xs">
+      {/* Main Table Section */}
+      <section className="rounded border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 p-1">
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-bold text-slate-900 tracking-tight">
+                Jurnal Umum (Double-Entry)
+              </h2>
+              <span className="text-[11px] text-muted hidden sm:inline">
+                Pencatatan multibaris debit & kredit terpisah
+              </span>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm font-semibold text-brand hover:bg-brand hover:text-white transition"
+                className="inline-flex items-center gap-1 rounded bg-brand px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700 transition"
                 onClick={newJournal}
                 type="button"
               >
-                <Plus size={16} /> Jurnal baru
+                <Plus size={12} /> Jurnal baru
               </button>
               <div
                 aria-label="Filter periode preset"
-                className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50/70 p-1"
+                className="inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5"
                 role="group"
               >
                 <button
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "THIS_MONTH" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${activePreset === "THIS_MONTH" ? "bg-white font-semibold text-brand shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
                   onClick={() => applyPreset("THIS_MONTH")}
                   type="button"
                 >
                   Bulan ini
                 </button>
                 <button
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "PREV_MONTH" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${activePreset === "PREV_MONTH" ? "bg-white font-semibold text-brand shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
                   onClick={() => applyPreset("PREV_MONTH")}
                   type="button"
                 >
                   Bulan lalu
                 </button>
                 <button
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "THIS_YEAR" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${activePreset === "THIS_YEAR" ? "bg-white font-semibold text-brand shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
                   onClick={() => applyPreset("THIS_YEAR")}
                   type="button"
                 >
                   Tahun ini
                 </button>
                 <button
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${activePreset === "ALL" ? "bg-white font-semibold text-brand shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${activePreset === "ALL" ? "bg-white font-semibold text-brand shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
                   onClick={() => applyPreset("ALL")}
                   type="button"
                 >
                   Semua
                 </button>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <input
                   aria-label="Filter jurnal mulai"
-                  className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs tabular-nums outline-none focus:border-brand"
+                  className="rounded border border-slate-200 px-1 py-0.5 text-xs tabular-nums outline-none focus:border-brand"
                   onChange={(event) => {
                     setStartDate(event.target.value);
                     setActivePreset("CUSTOM");
@@ -915,10 +852,10 @@ function GeneralJournalPage() {
                   type="date"
                   value={startDate}
                 />
-                <span className="text-xs text-slate-400">s/d</span>
+                <span className="text-[10px] text-slate-400">s/d</span>
                 <input
                   aria-label="Filter jurnal sampai"
-                  className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs tabular-nums outline-none focus:border-brand"
+                  className="rounded border border-slate-200 px-1 py-0.5 text-xs tabular-nums outline-none focus:border-brand"
                   onChange={(event) => {
                     setEndDate(event.target.value);
                     setActivePreset("CUSTOM");
@@ -931,15 +868,15 @@ function GeneralJournalPage() {
           </div>
         </div>
         <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[1420px] border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <table className="w-full min-w-[1000px] border-collapse text-xs">
+            <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200 text-left text-[11px] font-semibold text-slate-700">
               {renderTableHeader()}
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-100">
               {renderDraftRows()}
               {journalsQuery.isLoading ? (
                 <tr>
-                  <td className="px-3 py-8 text-center text-muted" colSpan={7}>
+                  <td className="px-2 py-6 text-center text-muted" colSpan={7}>
                     Memuat jurnal...
                   </td>
                 </tr>
@@ -954,6 +891,84 @@ function GeneralJournalPage() {
             <option key={account.id} value={`${account.code} · ${account.name}`} />
           ))}
         </datalist>
+      </section>
+
+      {/* Sticky Compact Balance Summary Bar */}
+      <section
+        className={`sticky bottom-1 z-20 flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1 text-xs ${totals.difference.isZero() && !hasInvalidRows ? "border-emerald-200 bg-emerald-50/90" : "border-red-200 bg-red-50/90"}`}
+      >
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500">Draft Debit:</span>
+            <span className="font-mono font-bold tabular-nums">
+              Rp {formatSen(totals.debit.toNumber())}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500">Draft Kredit:</span>
+            <span className="font-mono font-bold tabular-nums">
+              Rp {formatSen(totals.credit.toNumber())}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500">Selisih:</span>
+            <span
+              className={`font-mono font-bold tabular-nums ${totals.difference.isZero() && !hasInvalidRows ? "text-emerald-700" : "text-red-700"}`}
+            >
+              Rp {formatSen(totals.difference.toNumber())}
+            </span>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${totals.difference.isZero() && !hasInvalidRows ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}
+          >
+            {totals.difference.isZero() && !hasInvalidRows ? (
+              <Check size={11} />
+            ) : (
+              <ChevronDown size={11} />
+            )}
+            {totals.difference.isZero() && !hasInvalidRows ? "Seimbang" : "Belum seimbang"}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-40 hover:bg-slate-50"
+            disabled={!history.length}
+            onClick={() => {
+              const previous = history.at(-1);
+              if (previous) {
+                setHistory((current) => current.slice(0, -1));
+                setFuture((current) => [...current, rows]);
+                setRows(previous);
+              }
+            }}
+            type="button"
+          >
+            <Undo2 size={12} /> Undo
+          </button>
+          <button
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-40 hover:bg-slate-50"
+            disabled={!future.length}
+            onClick={() => {
+              const next = future.at(-1);
+              if (next) {
+                setFuture((current) => current.slice(0, -1));
+                setHistory((current) => [...current, rows]);
+                setRows(next);
+              }
+            }}
+            type="button"
+          >
+            <RotateCcw size={12} /> Redo
+          </button>
+          <button
+            className="inline-flex items-center gap-1 rounded bg-brand px-3 py-0.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-blue-700"
+            disabled={!canPost || saveMutation.isPending}
+            onClick={submitJournal}
+            type="button"
+          >
+            <Save size={12} /> Posting Jurnal
+          </button>
+        </div>
       </section>
     </div>
   );

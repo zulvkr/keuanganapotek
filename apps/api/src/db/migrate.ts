@@ -101,6 +101,19 @@ const migrationStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`,
   `CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(transaction_type_id)`,
+  `CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY NOT NULL,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'asisten')),
+    allowed_coa_codes TEXT NOT NULL DEFAULT '[]',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
 ];
 
 export function runMigrations(sqlite: Database.Database): void {

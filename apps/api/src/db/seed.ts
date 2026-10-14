@@ -4,6 +4,7 @@ import { runMigrations } from "./migrate.js";
 import { accounts, transactionTypes } from "./schema/index.js";
 import { createTransaction } from "../services/transaction.service.js";
 import { lockOpeningBalance, saveOpeningBalances } from "../services/opening-balance.service.js";
+import { seedUsers } from "../services/auth.service.js";
 import type { MetadataFieldDefinition } from "@keuangan-apotek/shared";
 
 type SeedAccount = {
@@ -556,13 +557,12 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "4101",
     description: "Penerimaan uang tunai dari kasir apotek atas penjualan obat dan produk",
     metadataSchema: [
-      { key: "no_struk", label: "No. Struk", type: "text", required: false },
       {
         key: "shift",
         label: "Shift",
         type: "select",
         options: ["Pagi", "Siang", "Malam"],
-        required: false,
+        required: true,
       },
       { key: "nama_kasir", label: "Nama Kasir", type: "text", required: false },
     ],
@@ -572,10 +572,15 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     name: "Penjualan Shopee (Dana Pending)",
     debitCode: "1201",
     creditCode: "4101",
-    description: "Pesanan Shopee selesai dikirim, dana masih tertahan di sistem Shopee",
+    description: "Penjualan marketplace Shopee selesai diproses, dana masih tertahan di Shopee",
     metadataSchema: [
-      { key: "no_pesanan", label: "No. Pesanan Shopee", type: "text", required: true },
-      { key: "nama_pembeli", label: "Nama Pembeli", type: "text", required: false },
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
     ],
   },
   {
@@ -583,10 +588,10 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     name: "Pencairan Shopee ke Saldo Penjual",
     debitCode: "1104",
     creditCode: "1201",
-    description: "Dana pesanan Shopee dilepas ke saldo penjual apotek",
+    description: "Dana penjualan Shopee dilepas ke saldo penjual apotek",
     metadataSchema: [
-      { key: "no_pesanan", label: "No. Pesanan", type: "text", required: false },
       { key: "tanggal_pelepasan", label: "Tanggal Pelepasan", type: "date", required: false },
+      { key: "catatan", label: "Catatan", type: "text", required: false },
     ],
   },
   {
@@ -596,8 +601,9 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1104",
     description: "Pemotongan biaya admin / komisi marketplace Shopee",
     metadataSchema: [
-      { key: "no_pesanan", label: "No. Pesanan", type: "text", required: false },
-      { key: "rincian_biaya", label: "Rincian Biaya", type: "text", required: false },
+      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      { key: "satuan", label: "Satuan", type: "text", required: false },
     ],
   },
   {
@@ -606,19 +612,22 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     debitCode: "1103",
     creditCode: "1104",
     description: "Penarikan saldo penjual Shopee ke rekening Bank Jago",
-    metadataSchema: [
-      { key: "no_referensi", label: "No. Referensi Penarikan", type: "text", required: false },
-    ],
+    metadataSchema: [{ key: "catatan", label: "Keterangan", type: "text", required: false }],
   },
   {
     code: "TRX-06",
     name: "Penjualan Blibli (Dana Pending)",
     debitCode: "1203",
     creditCode: "4101",
-    description: "Pesanan Blibli diproses, dana masih tertahan oleh Blibli",
+    description: "Penjualan pesanan Blibli diproses, dana masih tertahan oleh Blibli",
     metadataSchema: [
-      { key: "no_pesanan", label: "No. Pesanan Blibli", type: "text", required: true },
-      { key: "nama_pembeli", label: "Nama Pembeli", type: "text", required: false },
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
     ],
   },
   {
@@ -627,7 +636,10 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     debitCode: "1105",
     creditCode: "1203",
     description: "Pelepasan dana Blibli ke saldo penjual",
-    metadataSchema: [{ key: "no_pesanan", label: "No. Pesanan", type: "text", required: false }],
+    metadataSchema: [
+      { key: "tanggal_pelepasan", label: "Tanggal Pelepasan", type: "date", required: false },
+      { key: "catatan", label: "Keterangan", type: "text", required: false },
+    ],
   },
   {
     code: "TRX-08",
@@ -635,7 +647,11 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     debitCode: "6101",
     creditCode: "1105",
     description: "Pemotongan fee dan admin merchant Blibli",
-    metadataSchema: [{ key: "no_pesanan", label: "No. Pesanan", type: "text", required: false }],
+    metadataSchema: [
+      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      { key: "satuan", label: "Satuan", type: "text", required: false },
+    ],
   },
   {
     code: "TRX-09",
@@ -643,9 +659,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     debitCode: "1103",
     creditCode: "1105",
     description: "Pencairan dana merchant Blibli masuk rekening Bank Jago",
-    metadataSchema: [
-      { key: "no_referensi", label: "No. Referensi", type: "text", required: false },
-    ],
+    metadataSchema: [{ key: "catatan", label: "Keterangan", type: "text", required: false }],
   },
   {
     code: "TRX-10",
@@ -654,7 +668,13 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "4101",
     description: "Omset penjualan obat via GrabMart merchant",
     metadataSchema: [
-      { key: "no_order_grab", label: "No. Order Grab", type: "text", required: false },
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
     ],
   },
   {
@@ -664,7 +684,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1106",
     description: "Transfer settlement otomatis dari Grab ke Bank Jago",
     metadataSchema: [
-      { key: "batch_id", label: "Batch ID Settlement", type: "text", required: false },
+      { key: "catatan", label: "Keterangan Settlement", type: "text", required: false },
     ],
   },
   {
@@ -674,8 +694,13 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "4101",
     description: "Pembayaran pelanggan di kasir menggunakan QRIS DANA Bisnis",
     metadataSchema: [
-      { key: "rrn", label: "RRN / No. Referensi Transaksi", type: "text", required: false },
-      { key: "nama_pelanggan", label: "Nama Pelanggan", type: "text", required: false },
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
     ],
   },
   {
@@ -684,9 +709,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     debitCode: "1103",
     creditCode: "1107",
     description: "Penarikan saldo merchant QRIS DANA ke Bank Jago",
-    metadataSchema: [
-      { key: "id_tarik_dana", label: "ID Penarikan Dana", type: "text", required: false },
-    ],
+    metadataSchema: [{ key: "catatan", label: "Keterangan", type: "text", required: false }],
   },
   {
     code: "TRX-14",
@@ -695,8 +718,14 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "4101",
     description: "Penjualan obat resep tempo / piutang pasien atau klinik langganan",
     metadataSchema: [
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
       { key: "nama_pelanggan", label: "Nama Pelanggan / Klinik", type: "text", required: true },
-      { key: "no_telepon", label: "No. HP / Telepon", type: "text", required: false },
       { key: "jatuh_tempo", label: "Jatuh Tempo", type: "date", required: false },
     ],
   },
@@ -730,7 +759,13 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     description: "Setor uang fisik dari laci kasir ke rekening Bank Jago",
     metadataSchema: [
       { key: "disetor_oleh", label: "Disetor Oleh", type: "text", required: false },
-      { key: "slip_setoran", label: "No. Slip Setoran", type: "text", required: false },
+      {
+        key: "shift",
+        label: "Shift Setoran",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam", "Harian"],
+        required: false,
+      },
     ],
   },
   {
@@ -784,8 +819,22 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1103",
     description: "Transfer gaji apoteker & asisten langsung dari rekening Bank Jago",
     metadataSchema: [
-      { key: "nama_karyawan", label: "Nama Karyawan", type: "text", required: true },
-      { key: "jabatan", label: "Jabatan", type: "text", required: false },
+      {
+        key: "deskripsi",
+        label: "Deskripsi",
+        type: "text",
+        required: true,
+        defaultValue: "Gaji Karyawan",
+      },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      {
+        key: "satuan",
+        label: "Satuan",
+        type: "text",
+        required: false,
+        placeholder: "orang / bulan",
+      },
+      { key: "nama_karyawan", label: "Nama Karyawan", type: "text", required: false },
       { key: "periode_gaji", label: "Periode Gaji", type: "text", required: false },
     ],
   },
@@ -796,7 +845,22 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1108",
     description: "Pembayaran gaji karyawan langsung dipotong dari pos simpanan gaji",
     metadataSchema: [
-      { key: "nama_karyawan", label: "Nama Karyawan", type: "text", required: true },
+      {
+        key: "deskripsi",
+        label: "Deskripsi",
+        type: "text",
+        required: true,
+        defaultValue: "Gaji Karyawan",
+      },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      {
+        key: "satuan",
+        label: "Satuan",
+        type: "text",
+        required: false,
+        placeholder: "orang / bulan",
+      },
+      { key: "nama_karyawan", label: "Nama Karyawan", type: "text", required: false },
       { key: "periode_gaji", label: "Periode Gaji", type: "text", required: false },
     ],
   },
@@ -805,23 +869,28 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     name: "Pembelian Stok Obat Tempo / Hutang Dagang",
     debitCode: "1301",
     creditCode: "2102",
-    description: "Penerimaan faktur distributor farmasi (PBF) dengan termin jatuh tempo",
+    description: "Penerimaan faktur distributor farmasi (PBF) tempo dengan termin jatuh tempo",
     metadataSchema: [
-      { key: "nama_pbf", label: "Nama PBF Distributor", type: "text", required: true },
-      { key: "no_faktur", label: "No. Faktur PBF", type: "text", required: true },
-      { key: "jatuh_tempo", label: "Tanggal Jatuh Tempo", type: "date", required: false },
-      { key: "ada_diskon", label: "Ada Potongan Diskon", type: "boolean", required: false },
+      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: true },
+      { key: "no_faktur", label: "No. Faktur", type: "text", required: true },
+      { key: "tanggal_order", label: "Tanggal Order", type: "date", required: false },
+      { key: "total_order", label: "Total Order", type: "currency", required: false },
+      { key: "tgl_terima_barang", label: "Tanggal Terima Barang", type: "date", required: false },
+      { key: "jatuh_tempo", label: "Waktu Jatuh Tempo", type: "date", required: true },
     ],
   },
   {
     code: "TRX-26",
-    name: "Pembelian Stok Obat Tunai Bank Jago",
+    name: "Pembelian Stok Obat COD / Tunai Bank Jago",
     debitCode: "1301",
     creditCode: "1103",
-    description: "Pembelian obat ke distributor farmasi langsung dibayar tunai via transfer",
+    description: "Pembelian obat COD atau tunai ke distributor/supplier langsung lunas",
     metadataSchema: [
-      { key: "nama_pbf", label: "Nama PBF", type: "text", required: true },
+      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: true },
       { key: "no_faktur", label: "No. Faktur", type: "text", required: false },
+      { key: "tanggal_order", label: "Tanggal Order", type: "date", required: false },
+      { key: "total_order", label: "Total Order", type: "currency", required: false },
+      { key: "tgl_terima_barang", label: "Tanggal Terima Barang", type: "date", required: false },
     ],
   },
   {
@@ -831,9 +900,9 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1103",
     description: "Pembayaran faktur jatuh tempo ke distributor PBF",
     metadataSchema: [
-      { key: "nama_pbf", label: "Nama PBF", type: "text", required: true },
+      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: true },
       { key: "no_faktur", label: "No. Faktur Dibayar", type: "text", required: true },
-      { key: "bukti_bayar", label: "Ref / Bukti Bayar", type: "text", required: false },
+      { key: "keterangan", label: "Keterangan", type: "text", required: false },
     ],
   },
   {
@@ -864,6 +933,13 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "2104",
     description: "Penjualan produk titipan konsinyasi di apotek tunai kasir",
     metadataSchema: [
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
       { key: "nama_vendor", label: "Nama Vendor Konsinyasi", type: "text", required: true },
       { key: "nama_produk", label: "Nama Produk", type: "text", required: false },
       { key: "qty", label: "Jumlah Unit Terjual", type: "number", required: false },
@@ -906,12 +982,21 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1103",
     description: "Pembayaran utilitas outlet apotek bulanan",
     metadataSchema: [
+      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      {
+        key: "satuan",
+        label: "Satuan",
+        type: "text",
+        required: false,
+        placeholder: "bulan / kwh / m3",
+      },
       {
         key: "jenis_utilitas",
         label: "Jenis Tagihan",
         type: "select",
         options: ["Listrik PLN", "Air PDAM", "Internet Indihome"],
-        required: true,
+        required: false,
       },
       { key: "id_pelanggan", label: "ID Pelanggan / No. Meter", type: "text", required: false },
     ],
@@ -923,7 +1008,15 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1102",
     description: "Beli plastik klip obat, etiket, kertas struk, dan ATK kasir apotek",
     metadataSchema: [
-      { key: "item_perlengkapan", label: "Rincian Barang", type: "textarea", required: false },
+      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      {
+        key: "satuan",
+        label: "Satuan",
+        type: "text",
+        required: false,
+        placeholder: "pack / rim / pcs",
+      },
       { key: "nama_toko", label: "Toko Pembelian", type: "text", required: false },
     ],
   },
@@ -934,6 +1027,15 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1103",
     description: "Biaya kampanye media sosial, cetak brosur kesehatan apotek",
     metadataSchema: [
+      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      {
+        key: "satuan",
+        label: "Satuan",
+        type: "text",
+        required: false,
+        placeholder: "hari / paket / lembar",
+      },
       {
         key: "media_promosi",
         label: "Media Promosi",
@@ -961,7 +1063,15 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1401",
     description: "Pengakuan beban amortisasi sewa bangunan setiap akhir bulan",
     metadataSchema: [
-      { key: "bulan_amortisasi", label: "Bulan Buku", type: "text", required: false },
+      {
+        key: "deskripsi",
+        label: "Deskripsi",
+        type: "text",
+        required: true,
+        defaultValue: "Amortisasi Sewa Bangunan",
+      },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      { key: "satuan", label: "Satuan", type: "text", required: false, placeholder: "bulan" },
     ],
   },
   {
@@ -970,7 +1080,11 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     debitCode: "6107",
     creditCode: "1102",
     description: "Biaya operasional kas kecil mendesak (parkir, kebersihan lingkungan, dll.)",
-    metadataSchema: [{ key: "keperluan", label: "Keperluan Biaya", type: "text", required: true }],
+    metadataSchema: [
+      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      { key: "satuan", label: "Satuan", type: "text", required: false, placeholder: "kali / unit" },
+    ],
   },
   {
     code: "TRX-40",
@@ -979,6 +1093,15 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1699",
     description: "Penyusutan peralatan, etalase, rak obat, dan inventaris apotek",
     metadataSchema: [
+      {
+        key: "deskripsi",
+        label: "Deskripsi",
+        type: "text",
+        required: true,
+        defaultValue: "Penyusutan Peralatan & Etalase",
+      },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      { key: "satuan", label: "Satuan", type: "text", required: false, placeholder: "bulan" },
       { key: "kategori_aset", label: "Kelompok Aset", type: "text", required: false },
     ],
   },
@@ -990,11 +1113,26 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     description: "Penyetoran pajak UMKM PPh Final atau PPh pasal 21",
     metadataSchema: [
       {
+        key: "deskripsi",
+        label: "Deskripsi",
+        type: "text",
+        required: true,
+        defaultValue: "Pajak UMKM Apotek",
+      },
+      { key: "jumlah", label: "Jumlah", type: "number", required: false },
+      {
+        key: "satuan",
+        label: "Satuan",
+        type: "text",
+        required: false,
+        placeholder: "masa / bulan",
+      },
+      {
         key: "jenis_pajak",
         label: "Jenis Pajak",
         type: "select",
         options: ["PPh Final UMKM 0.5%", "PPh 21", "PPN"],
-        required: true,
+        required: false,
       },
       { key: "ntpn", label: "NTPN / Kode Billing", type: "text", required: false },
     ],
@@ -1090,7 +1228,14 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       typeCode: "TRX-25", // Pembelian stok tempo
       amount: 25000000,
       memo: "Stok awal obat distributor Kimia Farma",
-      metadata: { nama_pbf: "PT Kimia Farma", no_faktur: "KF-2026-001" },
+      metadata: {
+        nama_supplier: "PT Kimia Farma",
+        no_faktur: "KF-2026-001",
+        tanggal_order: "2026-07-28",
+        total_order: 25000000,
+        tgl_terima_barang: "2026-07-31",
+        jatuh_tempo: "2026-08-31",
+      },
     },
     // 2026-08-20
     {
@@ -1098,21 +1243,21 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       typeCode: "TRX-01", // Penjualan tunai kasir
       amount: 2450000,
       memo: "Penjualan tunai shift pagi",
-      metadata: { no_struk: "STR-0820-01", shift: "Pagi", nama_kasir: "Dewi" },
+      metadata: { shift: "Pagi", nama_kasir: "Dewi" },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-02", // Penjualan Shopee pending
       amount: 1200000,
       memo: "Penjualan Shopee etikal & suplemen",
-      metadata: { no_pesanan: "260820SHOP01", nama_pembeli: "Ahmad" },
+      metadata: { shift: "Pagi" },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-12", // Penjualan QRIS DANA
       amount: 850000,
       memo: "Penerimaan QRIS kasir siang",
-      metadata: { rrn: "RRN-890123", nama_pelanggan: "Budi" },
+      metadata: { shift: "Siang" },
     },
     {
       date: "2026-08-20",
@@ -1120,8 +1265,11 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       amount: 3500000,
       memo: "Faktur pembelian obat bebas PBF Mensa",
       metadata: {
-        nama_pbf: "PT Mensa Binasukses",
+        nama_supplier: "PT Mensa Binasukses",
         no_faktur: "MB-88910",
+        tanggal_order: "2026-08-18",
+        total_order: 3500000,
+        tgl_terima_barang: "2026-08-20",
         jatuh_tempo: "2026-09-20",
       },
     },
@@ -1137,7 +1285,13 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       typeCode: "TRX-34", // Bayar listrik
       amount: 450000,
       memo: "Listrik PLN outlet Agustus",
-      metadata: { jenis_utilitas: "Listrik PLN", id_pelanggan: "531234567890" },
+      metadata: {
+        deskripsi: "Listrik PLN outlet Agustus",
+        jumlah: 1,
+        satuan: "bulan",
+        jenis_utilitas: "Listrik PLN",
+        id_pelanggan: "531234567890",
+      },
     },
     {
       date: "2026-08-20",
@@ -1145,7 +1299,9 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       amount: 125000,
       memo: "Kertas kasir & plastik klip obat",
       metadata: {
-        item_perlengkapan: "3 roll kertas kasir, 2 pack plastik klip",
+        deskripsi: "3 roll kertas kasir, 2 pack plastik klip",
+        jumlah: 5,
+        satuan: "pack",
         nama_toko: "Toko ATK Berkah",
       },
     },
@@ -1154,7 +1310,7 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       typeCode: "TRX-17", // Setor kasir ke bank
       amount: 1500000,
       memo: "Setoran tunai kasir ke Bank Jago",
-      metadata: { disetor_oleh: "Dewi", slip_setoran: "SLIP-0820" },
+      metadata: { disetor_oleh: "Dewi", shift: "Pagi" },
     },
     {
       date: "2026-08-20",
@@ -1243,16 +1399,19 @@ export async function seedOpeningBalances(
   return locked.journalNo;
 }
 
+export { seedUsers };
+
 const invokedFile = process.argv[1]?.replaceAll("\\", "/") ?? "";
 if (invokedFile.endsWith("/db/seed.ts") || invokedFile.endsWith("/db/seed.js")) {
   const client = createSqliteClient();
   runMigrations(client.sqlite);
+  const usersSeeded = seedUsers(client);
   const accountCount = seedAccounts(client);
   const journalNo = await seedOpeningBalances(client);
   const typeCount = seedTransactionTypes(client);
   const txCount = seedSampleTransactions(client);
   console.log(
-    `Seeded ${accountCount} accounts, opening balances per 2026-07-01 (${journalNo}), ${typeCount} transaction types, and ${txCount} transactions.`,
+    `Seeded users (${usersSeeded.admin.username}, ${usersSeeded.asisten.username}), ${accountCount} accounts, opening balances per 2026-07-01 (${journalNo}), ${typeCount} transaction types, and ${txCount} transactions.`,
   );
   client.sqlite.close();
 }

@@ -26,6 +26,7 @@ test("deletes a leaf CoA account without recursively triggering the mutation", a
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Bagan Akun" }).click();
   await expect(page.getByRole("heading", { name: "Bagan Akun" })).toBeVisible();
 
@@ -35,6 +36,37 @@ test("deletes a leaf CoA account without recursively triggering the mutation", a
   await page.getByRole("button", { name: "Hapus 9999" }).click();
   await deleteRequest;
   await expect(page.getByRole("button", { name: "Hapus 9999" })).toHaveCount(0);
+});
+
+test("disables deletion for Laba Ditahan account", async ({ page }) => {
+  const accounts = [
+    {
+      id: "coa-3201",
+      code: "3201",
+      name: "Laba ditahan",
+      parentId: null,
+      classification: "EKUITAS",
+      normalBalance: "KREDIT",
+      level: 3,
+      isGroup: false,
+      isActive: true,
+    },
+  ];
+
+  await page.route("**/api/accounts/tree", (route) => route.fulfill({ json: { data: accounts } }));
+  await page.route("**/api/opening-balances/meta", (route) =>
+    route.fulfill({ json: { data: { cutoffDate: null } } }),
+  );
+  await page.route("**/api/opening-balances?*", (route) => route.fulfill({ json: { data: [] } }));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
+  await page.getByRole("button", { name: "Bagan Akun" }).click();
+  await expect(page.getByRole("heading", { name: "Bagan Akun" })).toBeVisible();
+
+  const deleteButton = page.getByRole("button", { name: "Hapus 3201" });
+  await expect(deleteButton).toBeVisible();
+  await expect(deleteButton).toBeDisabled();
 });
 
 test("updates the opening balance date while keeping a locked balance locked", async ({ page }) => {
@@ -109,6 +141,7 @@ test("updates the opening balance date while keeping a locked balance locked", a
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Bagan Akun" }).click();
   await page.getByRole("tab", { name: "Input Saldo Awal" }).click();
   const dateInput = page.getByLabel("Tanggal saldo awal");
@@ -181,6 +214,7 @@ test("enables only the normal balance side (debit or credit) for opening balance
   );
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Bagan Akun" }).click();
   await page.getByRole("tab", { name: "Input Saldo Awal" }).click();
 

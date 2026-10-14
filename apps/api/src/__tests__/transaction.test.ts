@@ -150,7 +150,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
         transactionTypeId: cashSaleType.id,
         amount: "500000",
         memo: "Penjualan resep sore",
-        metadata: { no_struk: "STR-001" },
+        metadata: { shift: "Pagi" },
       }),
     });
     expect(postRes.status).toBe(201);
@@ -423,5 +423,58 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     const data = ((await res.json()) as { data: { amount: number; metadata: any } }).data;
     expect(data.amount).toBe(0);
     expect(data.metadata).toEqual({});
+  });
+
+  it("returns inferred transaction group for transaction types and transactions", async () => {
+    const { api } = setup();
+
+    const typeRes = await api.request("http://localhost/api/transaction-types");
+    const types = (
+      (await typeRes.json()) as {
+        data: Array<{ id: string; code: string; name: string; group?: string }>;
+      }
+    ).data;
+
+    // Check specific known types:
+    const trx01 = types.find((t) => t.code === "TRX-01"); // Penjualan Tunai Kasir
+    expect(trx01?.group).toBe("omzet");
+
+    const trx04 = types.find((t) => t.code === "TRX-04"); // Biaya Admin Shopee
+    expect(trx04?.group).toBe("biaya_operasional");
+
+    const trx05 = types.find((t) => t.code === "TRX-05"); // Tarik Saldo Shopee ke Bank Jago
+    expect(trx05?.group).toBe("transfer_antar_akun");
+
+    const trx15 = types.find((t) => t.code === "TRX-15"); // Pelunasan Piutang Pelanggan
+    expect(trx15?.group).toBe("pelunasan_piutang");
+
+    const trx25 = types.find((t) => t.code === "TRX-25"); // Pembelian Stok Obat Tempo
+    expect(trx25?.group).toBe("pembelian_persediaan");
+
+    const trx27 = types.find((t) => t.code === "TRX-27"); // Pelunasan Hutang Dagang PBF
+    expect(trx27?.group).toBe("pembayaran_hutang");
+
+    const trx42 = types.find((t) => t.code === "TRX-42"); // Setoran Modal Pemilik
+    expect(trx42?.group).toBe("tidak_terkategori");
+
+    // Create a transaction and check that list transactions returns group
+    await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-08-20",
+        transactionTypeId: trx01!.id,
+        amount: "150.000",
+      }),
+    });
+
+    const txRes = await api.request("http://localhost/api/transactions");
+    const txs = (
+      (await txRes.json()) as {
+        data: Array<{ transactionTypeId: string; group?: string }>;
+      }
+    ).data;
+    expect(txs.length).toBeGreaterThanOrEqual(1);
+    expect(txs[0]?.group).toBe("omzet");
   });
 });

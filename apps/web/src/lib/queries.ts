@@ -1,6 +1,7 @@
 import { type InferRequestType, type InferResponseType } from "hono/client";
 import { api, requestJson, rpc } from "./api";
 import type {
+  AuthUser,
   MetadataFieldDefinition,
   TransactionType,
   TransactionWithBalances,
@@ -25,6 +26,7 @@ export const queryKeys = {
   trialReport: (filters: TrialReportFilters) => ["reports", "trial", filters] as const,
   drillDown: (accountId: string, period: ReportPeriod) =>
     ["reports", "drill-down", accountId, period] as const,
+  users: ["users"] as const,
 };
 
 export type Account = ResponseData<
@@ -124,7 +126,14 @@ export type BalanceReport = {
   sections: Array<{
     key: string;
     label: string;
-    rows: Array<{ accountId: string; code: string; name: string; balance: number }>;
+    rows: Array<{
+      accountId: string;
+      code: string;
+      name: string;
+      classification?: string;
+      normalBalance?: string;
+      balance: number;
+    }>;
     total: number;
   }>;
   currentEarnings: number;
@@ -249,4 +258,8 @@ export function getDrillDown(accountId: string, period: ReportPeriod) {
   return requestJson<DrillDown>(
     `/api/reports/accounts/${encodeURIComponent(accountId)}/journal-drill-down?${new URLSearchParams(period)}`,
   );
+}
+
+export function getUsers(): Promise<AuthUser[]> {
+  return requestJson<AuthUser[]>("/api/auth/users");
 }

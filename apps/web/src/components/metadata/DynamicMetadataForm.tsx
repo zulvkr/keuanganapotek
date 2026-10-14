@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Check, X, AlertCircle } from "lucide-react";
+import { useState, type KeyboardEvent } from "react";
+import { Check } from "lucide-react";
 import type { MetadataFieldDefinition } from "@keuangan-apotek/shared";
 
 type Props = {
@@ -11,14 +11,7 @@ type Props = {
   className?: string;
 };
 
-export function DynamicMetadataForm({
-  schema,
-  initialValues,
-  onSave,
-  onCancel,
-  title = "Isi Data Tambahan",
-  className,
-}: Props) {
+export function DynamicMetadataForm({ schema, initialValues, onSave, onCancel, className }: Props) {
   const [formValues, setFormValues] = useState<Record<string, any>>({ ...initialValues });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -57,17 +50,25 @@ export function DynamicMetadataForm({
     onSave(formValues);
   }
 
+  function handleKeyDown(e: KeyboardEvent<any>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancel?.();
+    }
+  }
+
   if (schema.length === 0) {
     return (
-      <div className="p-4 text-center">
-        <p className="text-xs text-slate-500">
-          Tipe transaksi ini tidak memerlukan data metadata tambahan.
-        </p>
+      <div className="flex items-center justify-between gap-2 py-0.5 text-xs text-slate-500">
+        <span>Tipe transaksi ini tidak memerlukan metadata tambahan.</span>
         {onCancel && (
           <button
             type="button"
             onClick={onCancel}
-            className="mt-3 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+            className="h-6 rounded border border-slate-200 bg-white px-2 text-xs text-slate-600 hover:bg-slate-50"
           >
             Tutup
           </button>
@@ -80,152 +81,159 @@ export function DynamicMetadataForm({
     <div
       className={
         className ||
-        "w-full max-w-lg space-y-4 rounded-xl bg-white p-4 text-ink shadow-xl border border-slate-200"
+        "flex items-center gap-2.5 overflow-x-auto py-1 px-1 bg-blue-50/40 rounded border border-blue-200/80 text-xs text-slate-800"
       }
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onCancel?.();
+        }
+      }}
     >
-      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+      {/* 1-line horizontal input fields */}
+      {schema.map((field) => {
+        const error = errors[field.key];
+        const val = formValues[field.key] ?? "";
+
+        return (
+          <div
+            key={field.key}
+            className="flex items-center gap-1.5 shrink-0"
+            title={error || field.helpText || field.label}
           >
-            <X size={15} />
-          </button>
-        )}
-      </div>
+            {field.type !== "boolean" && (
+              <span className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">
+                {field.label}
+                {field.required && <span className="text-red-500 ml-0.5">*</span>}:
+              </span>
+            )}
 
-      <div className="grid gap-3.5 sm:grid-cols-2 max-h-[60vh] overflow-y-auto px-0.5">
-        {schema.map((field) => {
-          const isHalf = field.width === "half";
-          const error = errors[field.key];
-          const val = formValues[field.key] ?? "";
-
-          return (
-            <div
-              key={field.key}
-              className={`space-y-1 ${isHalf ? "sm:col-span-1" : "sm:col-span-2"}`}
-            >
-              <label className="block text-xs font-medium text-slate-700">
-                {field.label} {field.required && <span className="text-red-500">*</span>}
-              </label>
-
-              {field.type === "textarea" ? (
-                <textarea
-                  rows={2}
-                  value={val}
-                  placeholder={field.placeholder || `Masukkan ${field.label.toLowerCase()}`}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
-                  className={`w-full rounded-lg border px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-100 ${error ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-brand"}`}
-                />
-              ) : field.type === "select" ? (
-                <select
-                  value={val}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
-                  className={`w-full rounded-lg border bg-white px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-100 ${error ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-brand"}`}
-                >
-                  <option value="">-- Pilih {field.label} --</option>
-                  {(field.options || []).map((opt) => (
-                    <option key={opt} value={opt}>
+            {field.type === "select" ? (
+              <select
+                value={val}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                onKeyDown={handleKeyDown}
+                className={`h-6 w-32 rounded border bg-white px-1.5 py-0 text-xs outline-none focus:border-brand ${
+                  error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                }`}
+              >
+                <option value="">-- Pilih --</option>
+                {(field.options || []).map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            ) : field.type === "multi-select" ? (
+              <div className="flex items-center gap-1">
+                {(field.options || []).map((opt) => {
+                  const selectedList = Array.isArray(val)
+                    ? val
+                    : typeof val === "string" && val.length > 0
+                      ? val.split(",").map((s: string) => s.trim())
+                      : [];
+                  const isSelected = selectedList.includes(opt);
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => {
+                        const next = isSelected
+                          ? selectedList.filter((x: string) => x !== opt)
+                          : [...selectedList, opt];
+                        handleChange(field.key, next);
+                      }}
+                      className={`h-6 rounded px-1.5 text-[11px] font-medium border transition ${
+                        isSelected
+                          ? "border-brand bg-brand text-white"
+                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
                       {opt}
-                    </option>
-                  ))}
-                </select>
-              ) : field.type === "multi-select" ? (
-                <div className="space-y-1">
-                  <div className="flex flex-wrap gap-1.5">
-                    {(field.options || []).map((opt) => {
-                      const selectedList = Array.isArray(val)
-                        ? val
-                        : typeof val === "string" && val.length > 0
-                          ? val.split(",").map((s: string) => s.trim())
-                          : [];
-                      const isSelected = selectedList.includes(opt);
-                      return (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => {
-                            const next = isSelected
-                              ? selectedList.filter((x: string) => x !== opt)
-                              : [...selectedList, opt];
-                            handleChange(field.key, next);
-                          }}
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium border transition ${isSelected ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
-                        >
-                          {opt}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : field.type === "boolean" ? (
-                <label className="flex items-center gap-2 pt-1 text-xs text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(val)}
-                    onChange={(e) => handleChange(field.key, e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-blue-100"
-                  />
-                  <span>{field.label}</span>
-                </label>
-              ) : field.type === "number" || field.type === "currency" ? (
+                    </button>
+                  );
+                })}
+              </div>
+            ) : field.type === "boolean" ? (
+              <label className="h-6 flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer select-none">
                 <input
-                  type="number"
-                  step="any"
-                  value={val}
-                  placeholder={field.placeholder || "0"}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
-                  className={`w-full rounded-lg border px-2.5 py-1.5 text-xs font-mono tabular-nums outline-none focus:ring-2 focus:ring-blue-100 ${error ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-brand"}`}
+                  type="checkbox"
+                  checked={Boolean(val)}
+                  onChange={(e) => handleChange(field.key, e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-0"
                 />
-              ) : field.type === "date" ? (
-                <input
-                  type="date"
-                  value={val}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
-                  className={`w-full rounded-lg border px-2.5 py-1.5 text-xs tabular-nums outline-none focus:ring-2 focus:ring-blue-100 ${error ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-brand"}`}
-                />
-              ) : (
+                <span>{field.label}</span>
+              </label>
+            ) : field.type === "number" ? (
+              <input
+                type="number"
+                step="any"
+                value={val}
+                placeholder={field.placeholder || "0"}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                onKeyDown={handleKeyDown}
+                className={`h-6 w-24 text-right rounded border bg-white px-1.5 py-0 text-xs tabular-nums outline-none focus:border-brand ${
+                  error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                }`}
+              />
+            ) : field.type === "currency" ? (
+              <div className="relative flex items-center">
+                <span className="absolute left-1.5 text-[10px] text-slate-400 select-none">Rp</span>
                 <input
                   type="text"
                   value={val}
-                  placeholder={field.placeholder || `Masukkan ${field.label.toLowerCase()}`}
+                  placeholder={field.placeholder || "0"}
                   onChange={(e) => handleChange(field.key, e.target.value)}
-                  className={`w-full rounded-lg border px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-100 ${error ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-brand"}`}
+                  onKeyDown={handleKeyDown}
+                  className={`h-6 w-28 pl-6 pr-1.5 text-right rounded border bg-white py-0 text-xs tabular-nums outline-none focus:border-brand ${
+                    error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                  }`}
                 />
-              )}
+              </div>
+            ) : field.type === "date" ? (
+              <input
+                type="date"
+                value={val}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                onKeyDown={handleKeyDown}
+                className={`h-6 w-32 rounded border bg-white px-1 py-0 text-xs tabular-nums outline-none focus:border-brand ${
+                  error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                }`}
+              />
+            ) : (
+              <input
+                type="text"
+                value={val}
+                placeholder={field.placeholder || `Masukkan ${field.label.toLowerCase()}`}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                onKeyDown={handleKeyDown}
+                className={`h-6 ${field.type === "textarea" ? "w-44" : "w-32"} rounded border bg-white px-1.5 py-0 text-xs outline-none focus:border-brand ${
+                  error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                }`}
+              />
+            )}
+          </div>
+        );
+      })}
 
-              {error && (
-                <p className="flex items-center gap-1 text-[11px] text-red-500">
-                  <AlertCircle size={11} /> {error}
-                </p>
-              )}
-              {field.helpText && !error && (
-                <p className="text-[10px] text-slate-400">{field.helpText}</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+      {/* Action buttons at the end of the horizontal row */}
+      <div className="flex items-center gap-1.5 ml-auto shrink-0 pl-2">
+        <button
+          type="button"
+          onClick={handleSave}
+          className="h-6 inline-flex items-center gap-1 rounded bg-brand px-2.5 py-0 text-xs font-semibold text-white hover:bg-blue-700 transition"
+        >
+          <Check size={12} /> Terapkan Metadata
+        </button>
         {onCancel && (
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+            className="h-6 rounded border border-slate-300 bg-white px-2 py-0 text-xs text-slate-600 hover:bg-slate-50 transition"
           >
             Batal
           </button>
         )}
-        <button
-          type="button"
-          onClick={handleSave}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition"
-        >
-          <Check size={14} /> Terapkan Metadata
-        </button>
       </div>
     </div>
   );

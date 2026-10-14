@@ -49,6 +49,11 @@ describe("Phase 1 database and opening balance flow", () => {
     expect(
       (await api.request("http://localhost/api/accounts/coa-1000", { method: "DELETE" })).status,
     ).toBe(409);
+    const deleteRetained = await api.request("http://localhost/api/accounts/coa-3201", {
+      method: "DELETE",
+    });
+    expect(deleteRetained.status).toBe(409);
+    expect((await deleteRetained.json()).error).toMatch(/laba ditahan/i);
     const opening = await api.request("http://localhost/api/opening-balances/save", {
       method: "POST",
       headers: { "content-type": "application/json" },

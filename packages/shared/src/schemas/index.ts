@@ -214,6 +214,36 @@ export const AccountJournalDrillDownQuerySchema = z.object({
   period: ReportPeriodSchema,
 });
 
+export const LoginInputSchema = z.object({
+  username: z.string().trim().min(1, "Username wajib diisi"),
+  password: z.string().min(1, "Password wajib diisi"),
+});
+
+export const CreateUserInputSchema = z.object({
+  username: z.string().trim().min(3, "Username minimal 3 karakter"),
+  password: z.string().min(4, "Password minimal 4 karakter"),
+  name: z.string().trim().min(1, "Nama wajib diisi"),
+  role: z.enum(["admin", "asisten"]),
+  allowedCoaCodes: z.array(z.string()).default([]),
+});
+
+export const UpdateUserInputSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  password: z.string().min(4).optional(),
+  role: z.enum(["admin", "asisten"]).optional(),
+  allowedCoaCodes: z.array(z.string()).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const UpdatePermissionsInputSchema = z.object({
+  allowedCoaCodes: z.array(z.string()),
+});
+
+export type LoginInput = z.infer<typeof LoginInputSchema>;
+export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
+export type UpdateUserInput = z.infer<typeof UpdateUserInputSchema>;
+export type UpdatePermissionsInput = z.infer<typeof UpdatePermissionsInputSchema>;
+
 export type Account = z.infer<typeof AccountSchema>;
 export type JournalLine = z.infer<typeof JournalLineSchema>;
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;

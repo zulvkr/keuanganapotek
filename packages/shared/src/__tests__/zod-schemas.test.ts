@@ -74,7 +74,15 @@ describe("shared validation schemas", () => {
         code: "TRX-001",
         debitAccountId: "coa-1102",
         creditAccountId: "coa-4101",
-        metadataSchema: [{ key: "no_struk", label: "No Struk", type: "text", required: false }],
+        metadataSchema: [
+          {
+            key: "shift",
+            label: "Shift",
+            type: "select",
+            options: ["Pagi", "Siang", "Malam"],
+            required: true,
+          },
+        ],
       }).success,
     ).toBe(true);
 
@@ -83,7 +91,7 @@ describe("shared validation schemas", () => {
         transactionDate: "2026-08-20",
         transactionTypeId: "type-1",
         amount: "150000",
-        metadata: { no_struk: "STR-001" },
+        metadata: { shift: "Pagi" },
       }).success,
     ).toBe(true);
 

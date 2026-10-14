@@ -1,6 +1,10 @@
 import { useState } from "react";
-import { Plus, Trash2, ArrowUp, ArrowDown, Settings2, Eye } from "lucide-react";
-import type { MetadataFieldDefinition, MetadataFieldType } from "@keuangan-apotek/shared";
+import { Plus, Trash2, ArrowUp, ArrowDown, Settings2, Eye, Sparkles } from "lucide-react";
+import {
+  METADATA_PRESET_TEMPLATES,
+  type MetadataFieldDefinition,
+  type MetadataFieldType,
+} from "@keuangan-apotek/shared";
 
 const FIELD_TYPES: Array<{ value: MetadataFieldType; label: string }> = [
   { value: "text", label: "Teks Singkat (Text)" },
@@ -97,10 +101,29 @@ export function MetadataSchemaBuilder({ schema, onChange }: Props) {
 
       {activeTab === "builder" ? (
         <div className="space-y-3">
+          {/* Preset Templates bar */}
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50/80 p-2 text-xs">
+            <span className="flex items-center gap-1 font-semibold text-slate-500 text-[11px] mr-1">
+              <Sparkles size={12} className="text-amber-500" /> Template Standar:
+            </span>
+            {METADATA_PRESET_TEMPLATES.map((tmpl) => (
+              <button
+                key={tmpl.id}
+                type="button"
+                onClick={() => onChange([...tmpl.schema])}
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:border-brand hover:bg-blue-50/50 hover:text-brand transition shadow-2xs"
+                title={tmpl.description}
+              >
+                {tmpl.name}
+              </button>
+            ))}
+          </div>
+
           {schema.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-200 p-8 text-center text-sm text-muted">
-              Belum ada field metadata tambahan. Klik tombol <strong>+ Tambah Field</strong> untuk
-              membuat skema field khusus transaksi ini.
+              Belum ada field metadata tambahan. Pilih <strong>Template Standar</strong> di atas
+              atau klik tombol <strong>+ Tambah Field</strong> untuk membuat skema khusus transaksi
+              ini.
             </div>
           ) : (
             schema.map((field, index) => (

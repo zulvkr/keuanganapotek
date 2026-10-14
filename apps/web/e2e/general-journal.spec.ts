@@ -4,6 +4,7 @@ test("adds a journal row from the last credit cell and keeps posting disabled wh
   page,
 }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Jurnal Umum" }).click();
   await expect(page.locator("h2", { hasText: "Jurnal Umum" })).toBeVisible();
 
@@ -32,6 +33,7 @@ test("keeps draft metadata inside the journal grid", async ({ page }) => {
   await page.route("**/api/journals*", (route) => route.fulfill({ json: { data: [] } }));
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Jurnal Umum" }).click();
   const journalTable = page.locator("table");
 
@@ -101,6 +103,7 @@ test("edits a GENERAL journal inline in its table group", async ({ page }) => {
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Jurnal Umum" }).click();
   await expect(page.getByRole("button", { name: "Edit JU-202609-0001" })).toBeVisible();
   await page.getByRole("button", { name: "Edit JU-202609-0001" }).click();
@@ -127,6 +130,7 @@ test("applies date presets and handles new journal button click", async ({ page 
   await page.route("**/api/journals*", (route) => route.fulfill({ json: { data: [] } }));
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Jurnal Umum" }).click();
 
   // Test preset buttons

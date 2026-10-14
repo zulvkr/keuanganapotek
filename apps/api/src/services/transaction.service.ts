@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { asc, desc, eq, like } from "drizzle-orm";
 import {
   accountingPeriod,
+  inferTransactionGroup,
   nowIsoInstant,
   parseRupiahToSen,
   rupiahToSen,
@@ -70,23 +71,57 @@ function nextJournalNo(tx: Executor, entryDate: string): string {
 export function listTransactionTypes(
   db: Db,
   options: { includeInactive?: boolean } = {},
+  allowedAccountCodes?: string[] | Set<string>,
 ): TransactionType[] {
+  const allAccounts = db.select().from(accounts).all();
+  const accountById = new Map(allAccounts.map((a) => [a.id, a]));
+  const allowedSet =
+    allowedAccountCodes instanceof Set
+      ? allowedAccountCodes
+      : allowedAccountCodes
+        ? new Set(allowedAccountCodes)
+        : undefined;
+
   const query = db.select().from(transactionTypes);
   const rows = options.includeInactive
     ? query.orderBy(asc(transactionTypes.code)).all()
     : query.where(eq(transactionTypes.isActive, true)).orderBy(asc(transactionTypes.code)).all();
 
-  return rows.map((row) => ({
-    ...row,
-    metadataSchema: JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[],
-  }));
+  return rows
+    .filter((row) => {
+      if (!allowedSet) return true;
+      const debitAccount = accountById.get(row.debitAccountId);
+      const creditAccount = accountById.get(row.creditAccountId);
+      return (
+        debitAccount &&
+        creditAccount &&
+        allowedSet.has(debitAccount.code) &&
+        allowedSet.has(creditAccount.code)
+      );
+    })
+    .map((row) => {
+      const debitAccount = accountById.get(row.debitAccountId);
+      const creditAccount = accountById.get(row.creditAccountId);
+      return {
+        ...row,
+        group: inferTransactionGroup(debitAccount, creditAccount),
+        metadataSchema: JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[],
+      };
+    });
 }
 
 export function getTransactionTypeById(db: Db, id: string): TransactionType | undefined {
   const row = db.select().from(transactionTypes).where(eq(transactionTypes.id, id)).get();
   if (!row) return undefined;
+  const debitAccount = db.select().from(accounts).where(eq(accounts.id, row.debitAccountId)).get();
+  const creditAccount = db
+    .select()
+    .from(accounts)
+    .where(eq(accounts.id, row.creditAccountId))
+    .get();
   return {
     ...row,
+    group: inferTransactionGroup(debitAccount, creditAccount),
     metadataSchema: JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[],
   };
 }
@@ -135,8 +170,20 @@ export function createTransactionType(
       after: newRow,
     });
 
+    const debitAccount = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, newRow.debitAccountId))
+      .get();
+    const creditAccount = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, newRow.creditAccountId))
+      .get();
+
     return {
       ...newRow,
+      group: inferTransactionGroup(debitAccount, creditAccount),
       metadataSchema: input.metadataSchema || [],
     };
   });
@@ -194,9 +241,21 @@ export function updateTransactionType(
       after: updated,
     });
 
+    const debitAccount = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, updated.debitAccountId))
+      .get();
+    const creditAccount = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, updated.creditAccountId))
+      .get();
+
     return {
       id,
       ...updated,
+      group: inferTransactionGroup(debitAccount, creditAccount),
       createdAt: existing.createdAt,
       metadataSchema:
         input.metadataSchema !== undefined
@@ -361,6 +420,7 @@ export function createTransaction(
     memo?: string;
     metadata?: Record<string, any>;
   },
+  allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
   return db.transaction((tx) => {
     assertPeriodUnlocked(tx, input.transactionDate);
@@ -371,6 +431,31 @@ export function createTransaction(
       .where(eq(transactionTypes.id, input.transactionTypeId))
       .get();
     if (!type) throw new Error("Tipe transaksi tidak ditemukan");
+
+    if (allowedAccountCodes) {
+      const allowedSet =
+        allowedAccountCodes instanceof Set ? allowedAccountCodes : new Set(allowedAccountCodes);
+      const debitAccount = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, type.debitAccountId))
+        .get();
+      const creditAccount = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, type.creditAccountId))
+        .get();
+      if (
+        !debitAccount ||
+        !creditAccount ||
+        !allowedSet.has(debitAccount.code) ||
+        !allowedSet.has(creditAccount.code)
+      ) {
+        throw new Error(
+          "Akses ditolak: Anda tidak memiliki izin untuk akun transaksi ini (CoA dibatasi)",
+        );
+      }
+    }
 
     const id = randomUUID();
     const amountSen = amountToSen(input.amount);
@@ -430,10 +515,39 @@ export function updateTransaction(
     memo?: string | null;
     metadata?: Record<string, any>;
   },
+  allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
   return db.transaction((tx) => {
     const existing = tx.select().from(transactions).where(eq(transactions.id, id)).get();
     if (!existing) throw new Error("Transaksi tidak ditemukan");
+
+    const allowedSet =
+      allowedAccountCodes instanceof Set
+        ? allowedAccountCodes
+        : allowedAccountCodes
+          ? new Set(allowedAccountCodes)
+          : undefined;
+
+    if (allowedSet) {
+      const existingDebit = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, existing.debitAccountId))
+        .get();
+      const existingCredit = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, existing.creditAccountId))
+        .get();
+      if (
+        !existingDebit ||
+        !existingCredit ||
+        !allowedSet.has(existingDebit.code) ||
+        !allowedSet.has(existingCredit.code)
+      ) {
+        throw new Error("Akses ditolak: Anda tidak memiliki izin untuk transaksi ini");
+      }
+    }
 
     const targetDate = input.transactionDate ?? existing.transactionDate;
     assertPeriodUnlocked(tx, existing.transactionDate);
@@ -444,6 +558,29 @@ export function updateTransaction(
     const typeId = input.transactionTypeId ?? existing.transactionTypeId;
     const type = tx.select().from(transactionTypes).where(eq(transactionTypes.id, typeId)).get();
     if (!type) throw new Error("Tipe transaksi tidak ditemukan");
+
+    if (allowedSet) {
+      const targetDebit = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, type.debitAccountId))
+        .get();
+      const targetCredit = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, type.creditAccountId))
+        .get();
+      if (
+        !targetDebit ||
+        !targetCredit ||
+        !allowedSet.has(targetDebit.code) ||
+        !allowedSet.has(targetCredit.code)
+      ) {
+        throw new Error(
+          "Akses ditolak: Anda tidak memiliki izin untuk akun transaksi ini (CoA dibatasi)",
+        );
+      }
+    }
 
     const amountSen = input.amount !== undefined ? amountToSen(input.amount) : existing.amount;
     const memo = input.memo !== undefined ? input.memo?.trim() || null : existing.memo;
@@ -497,10 +634,37 @@ export function updateTransaction(
   });
 }
 
-export function deleteTransaction(db: Db, id: string): void {
+export function deleteTransaction(
+  db: Db,
+  id: string,
+  allowedAccountCodes?: string[] | Set<string>,
+): void {
   db.transaction((tx) => {
     const existing = tx.select().from(transactions).where(eq(transactions.id, id)).get();
     if (!existing) throw new Error("Transaksi tidak ditemukan");
+
+    if (allowedAccountCodes) {
+      const allowedSet =
+        allowedAccountCodes instanceof Set ? allowedAccountCodes : new Set(allowedAccountCodes);
+      const existingDebit = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, existing.debitAccountId))
+        .get();
+      const existingCredit = tx
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, existing.creditAccountId))
+        .get();
+      if (
+        !existingDebit ||
+        !existingCredit ||
+        !allowedSet.has(existingDebit.code) ||
+        !allowedSet.has(existingCredit.code)
+      ) {
+        throw new Error("Akses ditolak: Anda tidak memiliki izin untuk transaksi ini");
+      }
+    }
 
     assertPeriodUnlocked(tx, existing.transactionDate);
 
@@ -519,10 +683,22 @@ export function deleteTransaction(db: Db, id: string): void {
   });
 }
 
-export function getInitialCashBankBalances(db: Db): Record<string, number> {
+export function getInitialCashBankBalances(
+  db: Db,
+  allowedAccountCodes?: string[] | Set<string>,
+): Record<string, number> {
+  const allowedSet =
+    allowedAccountCodes instanceof Set
+      ? allowedAccountCodes
+      : allowedAccountCodes
+        ? new Set(allowedAccountCodes)
+        : undefined;
+
   const initialBalances: Record<string, number> = {};
   for (const code of CASH_BANK_CODES) {
-    initialBalances[code] = 0;
+    if (!allowedSet || allowedSet.has(code)) {
+      initialBalances[code] = 0;
+    }
   }
 
   const opBalances = db
@@ -539,7 +715,9 @@ export function getInitialCashBankBalances(db: Db): Record<string, number> {
 
   for (const op of opBalances) {
     if ((CASH_BANK_CODES as readonly string[]).includes(op.code)) {
-      initialBalances[op.code] = (initialBalances[op.code] || 0) + (op.debit - op.credit);
+      if (!allowedSet || allowedSet.has(op.code)) {
+        initialBalances[op.code] = (initialBalances[op.code] || 0) + (op.debit - op.credit);
+      }
     }
   }
 
@@ -547,22 +725,33 @@ export function getInitialCashBankBalances(db: Db): Record<string, number> {
 }
 
 /**
- * Calculates running balance and mutations across the 9 cash & bank accounts.
+ * Calculates running balance and mutations across cash & bank accounts,
+ * filtered by allowedAccountCodes if provided (e.g. for assistant RBAC).
  */
 export function listTransactions(
   db: Db,
   filters: { startDate?: string; endDate?: string } = {},
+  allowedAccountCodes?: string[] | Set<string>,
 ): TransactionWithBalances[] {
+  const allowedSet =
+    allowedAccountCodes instanceof Set
+      ? allowedAccountCodes
+      : allowedAccountCodes
+        ? new Set(allowedAccountCodes)
+        : undefined;
+
   // 1. Fetch cash/bank accounts map { accountId -> code }
   const allAccounts = db.select().from(accounts).all();
   const accountById = new Map(allAccounts.map((account) => [account.id, account]));
-  const cashBankAccounts = allAccounts.filter((account) =>
-    (CASH_BANK_CODES as readonly string[]).includes(account.code),
+  const cashBankAccounts = allAccounts.filter(
+    (account) =>
+      (CASH_BANK_CODES as readonly string[]).includes(account.code) &&
+      (!allowedSet || allowedSet.has(account.code)),
   );
   const cashBankIds = new Set(cashBankAccounts.map((account) => account.id));
 
-  // 2. Fetch base opening balances for the 9 accounts
-  const initialBalances = getInitialCashBankBalances(db);
+  // 2. Fetch base opening balances for the allowed accounts
+  const initialBalances = getInitialCashBankBalances(db, allowedSet);
 
   // 3. Fetch all transactions ordered chronologically
   const allTxRows = db
@@ -585,11 +774,24 @@ export function listTransactions(
     .orderBy(asc(transactions.transactionDate), asc(transactions.createdAt), asc(transactions.id))
     .all();
 
+  // If allowedSet is provided, filter out transactions where debit or credit account is restricted
+  const visibleTxRows = allTxRows.filter((row) => {
+    if (!allowedSet) return true;
+    const debitAccount = accountById.get(row.debitAccountId);
+    const creditAccount = accountById.get(row.creditAccountId);
+    return (
+      debitAccount &&
+      creditAccount &&
+      allowedSet.has(debitAccount.code) &&
+      allowedSet.has(creditAccount.code)
+    );
+  });
+
   // 4. Sequentially accumulate running balance and track mutation per row
   const running = { ...initialBalances };
   const rowsWithBalances: TransactionWithBalances[] = [];
 
-  for (const row of allTxRows) {
+  for (const row of visibleTxRows) {
     const debitAccount = accountById.get(row.debitAccountId);
     const creditAccount = accountById.get(row.creditAccountId);
 
@@ -610,6 +812,7 @@ export function listTransactions(
       transactionDate: row.transactionDate,
       transactionTypeId: row.transactionTypeId,
       transactionTypeName: row.transactionTypeName ?? undefined,
+      group: inferTransactionGroup(debitAccount, creditAccount),
       amount: row.amount,
       debitAccountId: row.debitAccountId,
       creditAccountId: row.creditAccountId,
@@ -640,18 +843,34 @@ export function listTransactions(
 }
 
 /**
- * Returns summary cards data: ending balances for each of the 9 cash & bank accounts,
- * total transaction count and volume.
+ * Returns summary cards data: ending balances for each cash & bank accounts,
+ * total transaction count and volume. Filtered by allowedAccountCodes if provided.
  */
-export function getTransactionsSummary(db: Db): TransactionsSummary {
-  const allRows = listTransactions(db);
+export function getTransactionsSummary(
+  db: Db,
+  allowedAccountCodes?: string[] | Set<string>,
+): TransactionsSummary {
+  const allowedSet =
+    allowedAccountCodes instanceof Set
+      ? allowedAccountCodes
+      : allowedAccountCodes
+        ? new Set(allowedAccountCodes)
+        : undefined;
+
+  const allRows = listTransactions(db, {}, allowedSet);
   const allAccounts = db.select().from(accounts).all();
   const accountByCode = new Map(allAccounts.map((account) => [account.code, account]));
 
   const lastRow = allRows.at(-1);
-  const endingBalances = lastRow ? lastRow.runningBalances : getInitialCashBankBalances(db);
+  const endingBalances = lastRow
+    ? lastRow.runningBalances
+    : getInitialCashBankBalances(db, allowedSet);
 
-  const accountsSummary: CashBankAccountSummary[] = CASH_BANK_CODES.map((code) => {
+  const eligibleCodes = allowedSet
+    ? CASH_BANK_CODES.filter((code) => allowedSet.has(code))
+    : CASH_BANK_CODES;
+
+  const accountsSummary: CashBankAccountSummary[] = eligibleCodes.map((code) => {
     const account = accountByCode.get(code);
     const balance = endingBalances[code] ?? 0;
     return {
