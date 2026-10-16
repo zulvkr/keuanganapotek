@@ -4,6 +4,7 @@ import {
   DEFAULT_ASSISTANT_ALLOWED_COA_CODES,
   nowIsoInstant,
   type AuthUser,
+  type SetupInput,
   type UserRole,
 } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "../db/client.js";
@@ -86,9 +87,47 @@ export function getUserById(db: Db, id: string): AuthUser | undefined {
   return row ? mapUserRowToAuthUser(row) : undefined;
 }
 
+export function getUserCount(db: Db): number {
+  const rows = db.select({ id: users.id }).from(users).all();
+  return rows.length;
+}
+
 export function listUsers(db: Db): AuthUser[] {
   const rows = db.select().from(users).orderBy(asc(users.username)).all();
   return rows.map(mapUserRowToAuthUser);
+}
+
+export function initialSetup(db: Db, input: SetupInput): { user: AuthUser; token: string } {
+  const count = getUserCount(db);
+  if (count > 0) {
+    throw new Error("Sistem sudah diinisialisasi");
+  }
+
+  const admin = createUser(db, {
+    username: input.admin.username,
+    password: input.admin.password,
+    name: input.admin.name,
+    role: "admin",
+    allowedCoaCodes: [],
+  });
+
+  if (input.createAssistant && input.assistant?.username && input.assistant?.password) {
+    createUser(db, {
+      username: input.assistant.username,
+      password: input.assistant.password,
+      name: input.assistant.name || "Asisten Apotek (Kasir)",
+      role: "asisten",
+      allowedCoaCodes: DEFAULT_ASSISTANT_ALLOWED_COA_CODES,
+    });
+  }
+
+  const token = createToken({
+    id: admin.id,
+    username: admin.username,
+    role: admin.role,
+  });
+
+  return { user: admin, token };
 }
 
 export function authenticateUser(

@@ -227,10 +227,28 @@ export const UpdatePermissionsInputSchema = z.object({
   allowedCoaCodes: z.array(z.string()),
 });
 
+export const SetupInputSchema = z.object({
+  pharmacyName: z.string().trim().min(1, "Nama apotek wajib diisi").optional(),
+  admin: z.object({
+    name: z.string().trim().min(1, "Nama lengkap admin wajib diisi"),
+    username: z.string().trim().min(3, "Username minimal 3 karakter"),
+    password: z.string().min(4, "Password minimal 4 karakter"),
+  }),
+  createAssistant: z.boolean().default(false),
+  assistant: z
+    .object({
+      name: z.string().trim().min(1).optional(),
+      username: z.string().trim().min(3).optional(),
+      password: z.string().min(4).optional(),
+    })
+    .optional(),
+});
+
 export type LoginInput = z.infer<typeof LoginInputSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
 export type UpdateUserInput = z.infer<typeof UpdateUserInputSchema>;
 export type UpdatePermissionsInput = z.infer<typeof UpdatePermissionsInputSchema>;
+export type SetupInput = z.infer<typeof SetupInputSchema>;
 
 export type Account = z.infer<typeof AccountSchema>;
 export type JournalLine = z.infer<typeof JournalLineSchema>;

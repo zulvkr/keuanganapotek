@@ -2,6 +2,17 @@ import { expect, test } from "@playwright/test";
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
+test.beforeEach(async ({ page }) => {
+  // Default: system already has users
+  await page.route("**/api/auth/setup-status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      json: { data: { isSetupRequired: false, userCount: 2 } },
+    }),
+  );
+});
+
 test("shows the login screen when unauthenticated and has no quick login buttons", async ({
   page,
 }) => {
@@ -18,6 +29,59 @@ test("shows the login screen when unauthenticated and has no quick login buttons
   await expect(page.getByText("Beralih Pengguna Cepat")).toHaveCount(0);
   await expect(page.getByText("Simulasi Role Cepat")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /admin123/i })).toHaveCount(0);
+});
+
+test("shows Setup Wizard when no users exist (initial setup required)", async ({ page }) => {
+  // Override: initial setup required
+  await page.route("**/api/auth/setup-status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      json: { data: { isSetupRequired: true, userCount: 0 } },
+    }),
+  );
+
+  await page.route("**/api/auth/setup", (route) =>
+    route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      json: {
+        data: {
+          token: "setup-token-admin",
+          user: {
+            id: "user-admin-new",
+            username: "admin",
+            name: "Apt. Budi Santoso",
+            role: "admin",
+            allowedCoaCodes: [],
+          },
+        },
+      },
+    }),
+  );
+
+  await page.route("**/api/accounts/tree", (route) => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/transactions*", (route) => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/transaction-types*", (route) => route.fulfill({ json: { data: [] } }));
+
+  await page.goto("/");
+
+  // Verify Setup Wizard elements
+  await expect(page.getByText("Setup Wizard")).toBeVisible();
+  await expect(
+    page.getByText("Inisialisasi sistem — buat akun administrator pertama Anda"),
+  ).toBeVisible();
+
+  await page.getByLabel(/Nama Lengkap Pemilik/i).fill("Apt. Budi Santoso");
+  await page.getByLabel(/Password Admin/i).fill("adminpassword");
+  await page.getByLabel(/Konfirmasi Password Admin/i).fill("adminpassword");
+
+  // Submit setup
+  await page.getByRole("button", { name: /Selesaikan Setup/i }).click();
+
+  // Should navigate to dashboard
+  await expect(page.getByRole("heading", { name: "Buku Transaksi" })).toBeVisible();
+  await expect(page.getByText("Sistem Aktif")).toBeVisible();
 });
 
 test("shows error message when login fails", async ({ page }) => {

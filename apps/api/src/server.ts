@@ -3,7 +3,7 @@ import { createApiApp } from "./app.js";
 import { createSqliteClient } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
 import { getOpeningBalanceCutoff } from "./services/opening-balance.service.js";
-import { seedAccounts, seedOpeningBalances, seedTransactionTypes } from "./db/seed.js";
+import { seedAccounts, seedOpeningBalances, seedTransactionTypes, seedUsers } from "./db/seed.js";
 
 const client = createSqliteClient();
 runMigrations(client.sqlite);
@@ -11,6 +11,9 @@ seedAccounts(client);
 seedTransactionTypes(client);
 if (!getOpeningBalanceCutoff(client.db)) {
   await seedOpeningBalances(client);
+}
+if (process.env.SEED_DEFAULT_USERS === "true") {
+  seedUsers(client);
 }
 const app = createApiApp(client);
 

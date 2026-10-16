@@ -262,6 +262,11 @@ export type LoginResponse = {
   user: AuthUser;
 };
 
+export type SetupStatusResponse = {
+  isSetupRequired: boolean;
+  userCount: number;
+};
+
 export const SENSITIVE_COA_CODES = [
   "1108", // Saving Gaji
   "6102", // Beban gaji

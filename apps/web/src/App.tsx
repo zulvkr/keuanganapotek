@@ -11,14 +11,16 @@ import {
   ShieldAlert,
   LogOut,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import type { SourceModule } from "@keuangan-apotek/shared";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { SetupStatusResponse, SourceModule } from "@keuangan-apotek/shared";
 import DailyTransactionsPage from "./pages/DailyTransactionsPage";
 import ReportsPage from "./pages/ReportsPage";
 import AdvancedPage, { advancedTabs, type AdvancedTab } from "./pages/AdvancedPage";
 import LoginPage from "./pages/LoginPage";
+import SetupWizardPage from "./pages/SetupWizardPage";
 import { ToastContainer } from "./components/ToastContainer";
 import { useAuth } from "./lib/auth";
+import { requestJson } from "./lib/api";
 import { invalidateAccountingQueries } from "./lib/mutations";
 import { toast } from "./lib/toast";
 
@@ -90,8 +92,39 @@ function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  // If user is not authenticated, show the Login Screen
+  // Query setup status if unauthenticated
+  const { data: setupStatus, isLoading: isCheckingSetup } = useQuery({
+    queryKey: ["auth", "setup-status"],
+    queryFn: () => requestJson<SetupStatusResponse>("/api/auth/setup-status"),
+    enabled: !user || !token,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  // If user is not authenticated, show either Setup Wizard (if 0 users) or Login Screen
   if (!user || !token) {
+    if (isCheckingSetup) {
+      return (
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+        </div>
+      );
+    }
+
+    if (setupStatus?.isSetupRequired) {
+      return (
+        <>
+          <SetupWizardPage
+            onSetupSuccess={() => {
+              queryClient.invalidateQueries({ queryKey: ["auth", "setup-status"] });
+              invalidateAccountingQueries(queryClient);
+            }}
+          />
+          <ToastContainer />
+        </>
+      );
+    }
+
     return (
       <>
         <LoginPage

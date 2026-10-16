@@ -139,6 +139,7 @@ Setiap instance aplikasi (misalnya Apotek Cabang 1 dan Cabang 2) didaftarkan seb
    AUTH_SECRET=rahasia-unik-cabang-1-2026
    ```
 4. Klik **Deploy**. Caddy Docker Proxy akan otomatis mendeteksi domain dan mengalihkan traffic HTTPS ke kontainer web cabang 1.
+5. Buka `https://cabang1.apotek.com` di browser. Karena belum ada pengguna terdaftar, sistem akan otomatis menampilkan **Setup Wizard** untuk membuat akun Administrator (dan Asisten Kasir awal).
 
 #### Stack 2 (Contoh: `apotek-cabang2`)
 

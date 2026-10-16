@@ -24,6 +24,7 @@ import {
   CreateUserInputSchema,
   UpdateUserInputSchema,
   UpdatePermissionsInputSchema,
+  SetupInputSchema,
   DEFAULT_ASSISTANT_ALLOWED_COA_CODES,
   type AuthUser,
   type SourceModule,
@@ -74,6 +75,8 @@ import {
   deleteUser,
   getUserById,
   getUserByUsername,
+  getUserCount,
+  initialSetup,
   listUsers,
   updateUser,
   updateUserPermissions,
@@ -148,14 +151,16 @@ const ReportQuerySchema = z.object({
 
 function errorResponse(context: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Permintaan tidak valid";
-  const status = message.includes("Akses ditolak")
+  const lower = message.toLowerCase();
+  const status = lower.includes("akses ditolak")
     ? (403 as const)
-    : message.includes("tidak ditemukan")
+    : lower.includes("tidak ditemukan")
       ? (404 as const)
-      : message.includes("sudah dikunci") ||
-          message.includes("hanya boleh memiliki satu") ||
-          message.includes("sistem") ||
-          message.includes("grup")
+      : lower.includes("sudah dikunci") ||
+          lower.includes("sudah diinisialisasi") ||
+          lower.includes("hanya boleh memiliki satu") ||
+          lower.includes("sistem") ||
+          lower.includes("grup")
         ? (409 as const)
         : (400 as const);
   return context.json({ error: message }, status);
@@ -307,6 +312,26 @@ export function createApiApp(client: SqliteClient) {
     .route("/api/reports", reportRoutes)
 
     // Auth endpoints
+    .get("/api/auth/setup-status", (context) => {
+      const count = getUserCount(client.db);
+      return context.json({
+        data: {
+          isSetupRequired: count === 0,
+          userCount: count,
+        },
+      });
+    })
+
+    .post("/api/auth/setup", validateJson(SetupInputSchema), async (context) => {
+      try {
+        const body = context.req.valid("json");
+        const result = initialSetup(client.db, body);
+        return context.json({ data: result }, 201);
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+
     .post("/api/auth/login", validateJson(LoginInputSchema), async (context) => {
       try {
         const body = context.req.valid("json");

@@ -48,6 +48,82 @@ describe("Authentication & RBAC with CoA-level Access Control", () => {
     expect(allUsers.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("handles initial setup wizard when no users exist", async () => {
+    const client = createSqliteClient(":memory:");
+    clients.push(client);
+    runMigrations(client.sqlite);
+    seedAccounts(client);
+    const api = createApiApp(client);
+
+    // 1. Setup status when 0 users exist
+    const statusBefore = await api.request("http://localhost/api/auth/setup-status");
+    expect(statusBefore.status).toBe(200);
+    const statusBeforeJson = await statusBefore.json();
+    expect(statusBeforeJson.data.isSetupRequired).toBe(true);
+    expect(statusBeforeJson.data.userCount).toBe(0);
+
+    // 2. Perform initial setup
+    const setupRes = await api.request("http://localhost/api/auth/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pharmacyName: "Apotek Sehat Baru",
+        admin: {
+          name: "Apt. Jane Doe",
+          username: "janedoe",
+          password: "securepassword",
+        },
+        createAssistant: true,
+        assistant: {
+          name: "Kasir Sarah",
+          username: "sarah",
+          password: "assistantpassword",
+        },
+      }),
+    });
+    expect(setupRes.status).toBe(201);
+    const setupJson = await setupRes.json();
+    expect(setupJson.data.token).toBeDefined();
+    expect(setupJson.data.user.username).toBe("janedoe");
+    expect(setupJson.data.user.role).toBe("admin");
+
+    // 3. Setup status now shows setup is completed
+    const statusAfter = await api.request("http://localhost/api/auth/setup-status");
+    expect(statusAfter.status).toBe(200);
+    const statusAfterJson = await statusAfter.json();
+    expect(statusAfterJson.data.isSetupRequired).toBe(false);
+    expect(statusAfterJson.data.userCount).toBe(2);
+
+    // 4. Repeated call to setup endpoint is blocked
+    const repeatSetup = await api.request("http://localhost/api/auth/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        admin: {
+          name: "Attacker",
+          username: "attacker",
+          password: "password123",
+        },
+      }),
+    });
+    expect(repeatSetup.status).toBe(409);
+
+    // 5. Login with new credentials succeeds
+    const loginRes = await api.request("http://localhost/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "janedoe", password: "securepassword" }),
+    });
+    expect(loginRes.status).toBe(200);
+
+    const asistenLogin = await api.request("http://localhost/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "sarah", password: "assistantpassword" }),
+    });
+    expect(asistenLogin.status).toBe(200);
+  });
+
   it("handles authentication login endpoint", async () => {
     const { api } = await setup();
 
