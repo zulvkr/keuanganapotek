@@ -21,27 +21,18 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-const DEFAULT_ADMIN: AuthUser = {
-  id: "user-admin",
-  username: "admin",
-  name: "Apoteker Admin (Owner)",
-  role: "admin",
-  allowedCoaCodes: [],
-};
-
 interface AuthState {
   token: string | null;
-  user: AuthUser;
+  user: AuthUser | null;
   isLoading: boolean;
   login: (username: string, pass: string) => Promise<AuthUser>;
-  quickSwitchUser: (targetRole: "admin" | "asisten") => Promise<AuthUser>;
   logout: () => void;
   setUser: (user: AuthUser) => void;
 }
 
-export const useAuth = create<AuthState>((set, get) => ({
+export const useAuth = create<AuthState>((set) => ({
   token: getStoredToken(),
-  user: getStoredUser() ?? DEFAULT_ADMIN,
+  user: getStoredUser(),
   isLoading: false,
 
   login: async (username: string, pass: string) => {
@@ -62,18 +53,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     }
   },
 
-  quickSwitchUser: async (targetRole: "admin" | "asisten") => {
-    const creds =
-      targetRole === "admin"
-        ? { username: "admin", password: "admin123" }
-        : { username: "asisten", password: "asisten123" };
-    return get().login(creds.username, creds.password);
-  },
-
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
-    set({ token: null, user: DEFAULT_ADMIN });
+    set({ token: null, user: null });
   },
 
   setUser: (user: AuthUser) => {

@@ -2,6 +2,7 @@ import { type InferRequestType, type InferResponseType } from "hono/client";
 import { api, requestJson, rpc } from "./api";
 import type {
   AuthUser,
+  CashFlowReport,
   MetadataFieldDefinition,
   TransactionType,
   TransactionWithBalances,
@@ -24,6 +25,7 @@ export const queryKeys = {
   incomeReport: (filters: IncomeReportFilters) => ["reports", "income", filters] as const,
   balanceReport: (asOfDate: string) => ["reports", "balance", asOfDate] as const,
   trialReport: (filters: TrialReportFilters) => ["reports", "trial", filters] as const,
+  cashFlowReport: (filters: ReportPeriod) => ["reports", "cash-flow", filters] as const,
   drillDown: (accountId: string, period: ReportPeriod) =>
     ["reports", "drill-down", accountId, period] as const,
   users: ["users"] as const,
@@ -82,10 +84,11 @@ export type ReportPeriod = { startDate: string; endDate: string };
 export type IncomeReportFilters = {
   periodStart: string;
   periodEnd: string;
-  compareStartDate: string;
-  compareEndDate: string;
+  compareStartDate?: string;
+  compareEndDate?: string;
 };
 
+export type { CashFlowReport };
 export type TrialReportFilters = ReportPeriod;
 
 type ReportTotal = {
@@ -241,7 +244,13 @@ export function getTransactionsSummary() {
 }
 
 export function getIncomeReport(filters: IncomeReportFilters) {
-  return requestJson<IncomeReport>(`/api/reports/income-statement?${new URLSearchParams(filters)}`);
+  const params: Record<string, string> = {
+    periodStart: filters.periodStart,
+    periodEnd: filters.periodEnd,
+  };
+  if (filters.compareStartDate) params.compareStartDate = filters.compareStartDate;
+  if (filters.compareEndDate) params.compareEndDate = filters.compareEndDate;
+  return requestJson<IncomeReport>(`/api/reports/income-statement?${new URLSearchParams(params)}`);
 }
 
 export function getBalanceReport(asOfDate: string) {
@@ -252,6 +261,10 @@ export function getBalanceReport(asOfDate: string) {
 
 export function getTrialReport(filters: TrialReportFilters) {
   return requestJson<TrialReport>(`/api/reports/trial-balance?${new URLSearchParams(filters)}`);
+}
+
+export function getCashFlowReport(filters: ReportPeriod) {
+  return requestJson<CashFlowReport>(`/api/reports/cash-flow?${new URLSearchParams(filters)}`);
 }
 
 export function getDrillDown(accountId: string, period: ReportPeriod) {

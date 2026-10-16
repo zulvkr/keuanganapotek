@@ -150,4 +150,73 @@ describe("Phase 2 double-entry ledger", () => {
     expect(response.status).toBe(409);
     expect(client.db.select().from(journals).all()).toHaveLength(0);
   });
+
+  it("generates cash flow statement and non-comparative income statement accurately", async () => {
+    const { api } = setup();
+
+    // 1. Post a sales transaction (debit Kas 1101, credit Pendapatan 4101)
+    await api.request("http://localhost/api/journals/general", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        entryDate: "2026-01-10",
+        referenceNo: "SALE-001",
+        memo: "Penjualan obat",
+        lines: [
+          { accountId: "coa-1101", debit: "1.000.000", credit: "0" },
+          { accountId: "coa-4101", debit: "0", credit: "1.000.000" },
+        ],
+      }),
+    });
+
+    // 2. Post an operating expense transaction (debit Beban Operasional 6101, credit Kas 1101)
+    await api.request("http://localhost/api/journals/general", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        entryDate: "2026-01-15",
+        referenceNo: "EXP-001",
+        memo: "Beban listrik",
+        lines: [
+          { accountId: "coa-6101", debit: "200.000", credit: "0" },
+          { accountId: "coa-1101", debit: "0", credit: "200.000" },
+        ],
+      }),
+    });
+
+    // Test non-comparative income statement
+    const incomeRes = await api.request(
+      "http://localhost/api/reports/income-statement?startDate=2026-01-01&endDate=2026-01-31",
+    );
+    expect(incomeRes.status).toBe(200);
+    const incomeData = (await incomeRes.json()) as any;
+    expect(incomeData.data.revenue.amount).toBe(100_000_000);
+    expect(incomeData.data.operatingExpenses.amount).toBe(20_000_000);
+    expect(incomeData.data.netProfit.amount).toBe(80_000_000);
+    expect(incomeData.data.comparePeriod).toBeNull();
+
+    // Test cash flow statement
+    const cashFlowRes = await api.request(
+      "http://localhost/api/reports/cash-flow?startDate=2026-01-01&endDate=2026-01-31",
+    );
+    expect(cashFlowRes.status).toBe(200);
+    const cashFlowData = (await cashFlowRes.json()) as any;
+    expect(cashFlowData.data.operating.totalInflow).toBe(100_000_000);
+    expect(cashFlowData.data.operating.totalOutflow).toBe(20_000_000);
+    expect(cashFlowData.data.operating.netAmount).toBe(80_000_000);
+    expect(cashFlowData.data.netCashFlow).toBe(80_000_000);
+    expect(cashFlowData.data.beginningCash).toBe(0);
+    expect(cashFlowData.data.endingCash).toBe(80_000_000);
+    expect(cashFlowData.data.cashAccounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "1101",
+          inflow: 100_000_000,
+          outflow: 20_000_000,
+          netMovement: 80_000_000,
+          endingBalance: 80_000_000,
+        }),
+      ]),
+    );
+  });
 });

@@ -301,3 +301,42 @@ export const DEFAULT_ASSISTANT_ALLOWED_COA_CODES: string[] = [
   "6201", // Penyusutan Aset Tetap
   "6301", // Beban Pajak
 ];
+
+export type CashFlowItem = {
+  accountId?: string;
+  code?: string;
+  name: string;
+  amount: number;
+};
+
+export type CashFlowCategory = {
+  key: string;
+  label: string;
+  inflows: CashFlowItem[];
+  outflows: CashFlowItem[];
+  totalInflow: number;
+  totalOutflow: number;
+  netAmount: number;
+};
+
+export type CashAccountFlowSummary = {
+  accountId: string;
+  code: string;
+  name: string;
+  beginningBalance: number;
+  inflow: number;
+  outflow: number;
+  netMovement: number;
+  endingBalance: number;
+};
+
+export type CashFlowReport = {
+  period: { startDate: string; endDate: string };
+  operating: CashFlowCategory;
+  investing: CashFlowCategory;
+  financing: CashFlowCategory;
+  netCashFlow: number;
+  beginningCash: number;
+  endingCash: number;
+  cashAccounts: CashAccountFlowSummary[];
+};

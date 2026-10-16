@@ -32,7 +32,7 @@ import { toast } from "../lib/toast";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
-  const { user: currentUser, quickSwitchUser } = useAuth();
+  const { user: currentUser } = useAuth();
 
   const [pharmacyName, setPharmacyName] = useState("Apotek Sehat Sejahtera");
   const [apotekerName, setApotekerName] = useState("apt. Ivan Zulfikar, S.Farm.");
@@ -124,15 +124,6 @@ export default function SettingsPage() {
     );
   }
 
-  function handleQuickSwitch(targetRole: "admin" | "asisten") {
-    quickSwitchUser(targetRole)
-      .then(() => {
-        invalidateAccountingQueries(queryClient);
-        toast.success(`Beralih ke akun ${targetRole === "admin" ? "Admin" : "Asisten"}`);
-      })
-      .catch((err) => toast.error(err.message));
-  }
-
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-2.5 py-1.5">
@@ -169,42 +160,22 @@ export default function SettingsPage() {
         </div>
 
         <div className="p-2.5 space-y-2.5">
-          {/* Active Simulation switcher */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-blue-100 bg-blue-50/60 px-2.5 py-1.5 text-xs">
+          {/* Active User Info */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs">
             <div className="flex items-center gap-2">
               <KeyRound size={14} className="text-brand" />
               <div>
                 <span className="font-semibold text-slate-800">Pengguna Aktif: </span>
-                <span className="font-bold text-brand">{currentUser.name}</span>
+                <span className="font-bold text-brand">{currentUser?.name ?? "-"}</span>
                 <span className="ml-1.5 rounded px-1.5 py-0.2 text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-700">
-                  {currentUser.role}
+                  {currentUser?.role ?? "-"}
                 </span>
+                {currentUser?.username && (
+                  <span className="ml-1 text-[11px] text-slate-500 font-mono">
+                    (@{currentUser.username})
+                  </span>
+                )}
               </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-500">Simulasi Role Cepat:</span>
-              <button
-                type="button"
-                onClick={() => handleQuickSwitch("admin")}
-                className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
-                  currentUser.role === "admin"
-                    ? "bg-brand text-white shadow-xs"
-                    : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                Admin (Full Access)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickSwitch("asisten")}
-                className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
-                  currentUser.role === "asisten"
-                    ? "bg-amber-600 text-white shadow-xs"
-                    : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                Asisten (Restricted CoA)
-              </button>
             </div>
           </div>
 
@@ -224,7 +195,7 @@ export default function SettingsPage() {
                 {usersList.map((u) => {
                   const isAdmin = u.role === "admin";
                   const allowedCount = (u.allowedCoaCodes || []).length;
-                  const isCurrent = currentUser.username === u.username;
+                  const isCurrent = currentUser?.username === u.username;
 
                   return (
                     <tr

@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowRightLeft,
   BarChart3,
   BookOpen,
   CheckCircle2,
   Columns,
-  FileText,
   Printer,
   RefreshCw,
   Rows,
@@ -15,13 +15,15 @@ import { senToRupiah, todayIsoDate } from "@keuangan-apotek/shared";
 import DrillDownDrawer from "../components/drilldown/DrillDownDrawer";
 import {
   getBalanceReport,
+  getCashFlowReport,
   getDrillDown,
   getIncomeReport,
-  getTrialReport,
   queryKeys,
+  type CashFlowReport,
 } from "../lib/queries";
 
-type Tab = "income" | "balance" | "trial";
+type Tab = "income" | "income-comparative" | "balance" | "cash-flow";
+type DatePreset = "THIS_MONTH" | "PREV_MONTH" | "THIS_YEAR" | "CUSTOM";
 type Period = { startDate: string; endDate: string };
 type IncomeRow = {
   accountId: string;
@@ -69,23 +71,6 @@ type BalanceReport = {
   difference: number;
   isBalanced: boolean;
 };
-type TrialRow = {
-  accountId: string;
-  code: string;
-  name: string;
-  classification: string;
-  debitBalance: number;
-  creditBalance: number;
-  endingBalance: number;
-};
-type TrialReport = {
-  period: Period;
-  rows: TrialRow[];
-  totalDebit: number;
-  totalCredit: number;
-  difference: number;
-  isBalanced: boolean;
-};
 type DrillDown = {
   account: { code: string; name: string };
   entries: Array<{
@@ -105,19 +90,6 @@ type DrillDown = {
 
 const inputClass =
   "rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-mono tabular-nums outline-none focus:border-brand focus:ring-1 focus:ring-brand";
-
-function previousMonthPeriod(date: string): Period {
-  const parts = date.split("-").map(Number);
-  const previous = new Date(Date.UTC(parts[0]!, parts[1]! - 2, 1));
-  const year = previous.getUTCFullYear();
-  const month = previous.getUTCMonth() + 1;
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const monthText = String(month).padStart(2, "0");
-  return {
-    startDate: year + "-" + monthText + "-01",
-    endDate: year + "-" + monthText + "-" + String(lastDay).padStart(2, "0"),
-  };
-}
 
 function formatMoney(value: number): string {
   const decimal = senToRupiah(value);
@@ -158,6 +130,77 @@ function ReportAmount({
     </button>
   ) : (
     <span className={`font-mono tabular-nums text-xs ${className ?? ""}`}>{content}</span>
+  );
+}
+
+function getMonthDates(offsetMonths = 0): Period {
+  const today = todayIsoDate();
+  const [y, m] = today.split("-").map(Number);
+  const target = new Date(Date.UTC(y!, m! - 1 + offsetMonths, 1));
+  const year = target.getUTCFullYear();
+  const month = target.getUTCMonth() + 1;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const mm = String(month).padStart(2, "0");
+  return {
+    startDate: `${year}-${mm}-01`,
+    endDate: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+function SinglePeriodSectionTable({
+  section,
+  openDrillDown,
+}: {
+  section: IncomeSection;
+  openDrillDown: (row: IncomeRow) => void;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-slate-100 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
+          <tr>
+            <th className="px-2 py-1">Akun</th>
+            <th className="px-2 py-1 text-right">Jumlah</th>
+          </tr>
+        </thead>
+        <tbody>
+          {section.rows.map((row, index) => (
+            <tr
+              className={
+                (index % 2 ? "bg-slate-50/60" : "bg-white") +
+                " hover:bg-blue-50/40 border-b border-slate-100"
+              }
+              key={row.accountId}
+            >
+              <td className="px-2 py-1">
+                <span className="font-mono font-semibold tabular-nums text-slate-700">
+                  {row.code}
+                </span>
+                <span className="ml-1.5 text-slate-800">{row.name}</span>
+              </td>
+              <td className="px-2 py-1 text-right">
+                <ReportAmount onClick={() => openDrillDown(row)} value={row.amount} />
+              </td>
+            </tr>
+          ))}
+          {section.rows.length === 0 && (
+            <tr>
+              <td colSpan={2} className="px-2 py-2 text-center text-slate-400 italic">
+                Tidak ada akun pada kategori ini
+              </td>
+            </tr>
+          )}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-slate-200 bg-slate-100 font-semibold text-slate-800">
+            <td className="px-2 py-1">Total {section.label}</td>
+            <td className="px-2 py-1 text-right">
+              <ReportAmount value={section.total.amount} />
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   );
 }
 
@@ -237,18 +280,60 @@ function ComparativeTable({
 
 export default function ReportsPage() {
   const today = todayIsoDate();
-  const monthStart = today.slice(0, 7) + "-01";
+  const initialMonth = getMonthDates(0);
+  const initialPrevMonth = getMonthDates(-1);
   const [tab, setTab] = useState<Tab>("income");
+  const [activePreset, setActivePreset] = useState<DatePreset>("THIS_MONTH");
   const [neracaFormat, setNeracaFormat] = useState<"skontro" | "stafel">("skontro");
-  const [periodStart, setPeriodStart] = useState(monthStart);
-  const [periodEnd, setPeriodEnd] = useState(today);
-  const [compareStart, setCompareStart] = useState(() => previousMonthPeriod(monthStart).startDate);
-  const [compareEnd, setCompareEnd] = useState(() => previousMonthPeriod(monthStart).endDate);
+  const [periodStart, setPeriodStart] = useState(initialMonth.startDate);
+  const [periodEnd, setPeriodEnd] = useState(initialMonth.endDate);
+  const [compareStart, setCompareStart] = useState(initialPrevMonth.startDate);
+  const [compareEnd, setCompareEnd] = useState(initialPrevMonth.endDate);
   const [message, setMessage] = useState("");
   const [drillTarget, setDrillTarget] = useState<{ accountId: string; period: Period } | null>(
     null,
   );
-  const incomeQuery = useQuery({
+
+  function applyPreset(preset: "THIS_MONTH" | "PREV_MONTH" | "THIS_YEAR") {
+    if (preset === "THIS_MONTH") {
+      const current = getMonthDates(0);
+      const prev = getMonthDates(-1);
+      setPeriodStart(current.startDate);
+      setPeriodEnd(tab === "balance" ? today : current.endDate);
+      setCompareStart(prev.startDate);
+      setCompareEnd(prev.endDate);
+      setActivePreset("THIS_MONTH");
+    } else if (preset === "PREV_MONTH") {
+      const prev = getMonthDates(-1);
+      const prevPrev = getMonthDates(-2);
+      setPeriodStart(prev.startDate);
+      setPeriodEnd(prev.endDate);
+      setCompareStart(prevPrev.startDate);
+      setCompareEnd(prevPrev.endDate);
+      setActivePreset("PREV_MONTH");
+    } else if (preset === "THIS_YEAR") {
+      const year = today.slice(0, 4);
+      setPeriodStart(`${year}-01-01`);
+      setPeriodEnd(tab === "balance" ? today : `${year}-12-31`);
+      setCompareStart(`${Number(year) - 1}-01-01`);
+      setCompareEnd(`${Number(year) - 1}-12-31`);
+      setActivePreset("THIS_YEAR");
+    }
+  }
+
+  const incomeStandardQuery = useQuery({
+    queryKey: queryKeys.incomeReport({
+      periodStart,
+      periodEnd,
+    }),
+    queryFn: () =>
+      getIncomeReport({
+        periodStart,
+        periodEnd,
+      }),
+    enabled: tab === "income",
+  });
+  const incomeComparativeQuery = useQuery({
     queryKey: queryKeys.incomeReport({
       periodStart,
       periodEnd,
@@ -262,23 +347,31 @@ export default function ReportsPage() {
         compareStartDate: compareStart,
         compareEndDate: compareEnd,
       }),
-    enabled: tab === "income",
+    enabled: tab === "income-comparative",
   });
   const balanceQuery = useQuery({
     queryKey: queryKeys.balanceReport(periodEnd),
     queryFn: () => getBalanceReport(periodEnd),
     enabled: tab === "balance",
   });
-  const trialQuery = useQuery({
-    queryKey: queryKeys.trialReport({ startDate: periodStart, endDate: periodEnd }),
-    queryFn: () => getTrialReport({ startDate: periodStart, endDate: periodEnd }),
-    enabled: tab === "trial",
+  const cashFlowQuery = useQuery({
+    queryKey: queryKeys.cashFlowReport({ startDate: periodStart, endDate: periodEnd }),
+    queryFn: () => getCashFlowReport({ startDate: periodStart, endDate: periodEnd }),
+    enabled: tab === "cash-flow",
   });
   const reportQuery =
-    tab === "income" ? incomeQuery : tab === "balance" ? balanceQuery : trialQuery;
-  const income = incomeQuery.data as IncomeReport | undefined;
+    tab === "income"
+      ? incomeStandardQuery
+      : tab === "income-comparative"
+        ? incomeComparativeQuery
+        : tab === "balance"
+          ? balanceQuery
+          : cashFlowQuery;
+  const income = (tab === "income" ? incomeStandardQuery.data : incomeComparativeQuery.data) as
+    | IncomeReport
+    | undefined;
   const balance = balanceQuery.data as BalanceReport | undefined;
-  const trial = trialQuery.data as TrialReport | undefined;
+  const cashFlow = cashFlowQuery.data as CashFlowReport | undefined;
   const loading = reportQuery.isLoading;
   const reportError = reportQuery.error instanceof Error ? reportQuery.error.message : "";
   const drillQuery = useQuery({
@@ -301,7 +394,122 @@ export default function ReportsPage() {
     setDrillTarget({ accountId, period });
   }
 
-  function incomeView() {
+  function incomeStandardView() {
+    if (!income) return null;
+    return (
+      <div className="space-y-2">
+        {/* Status Toolbar */}
+        <div className="flex items-center justify-between border border-slate-200 bg-white px-2 py-1 text-xs">
+          <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
+            <BarChart3 size={13} className="text-brand" />
+            <span>
+              Laba Rugi Standar (Periode {periodStart} s/d {periodEnd})
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition"
+            title="Cetak Laporan Laba Rugi"
+          >
+            <Printer size={12} />
+            <span>Cetak</span>
+          </button>
+        </div>
+
+        {/* Executive Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-1.5 text-xs">
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">Pendapatan</div>
+            <div className="font-mono text-xs font-bold text-slate-900 mt-0.5">
+              Rp {formatMoney(income.revenue.amount)}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">HPP Obat</div>
+            <div className="font-mono text-xs font-bold text-slate-900 mt-0.5">
+              Rp {formatMoney(income.cogs.amount)}
+            </div>
+          </div>
+          <div className="rounded border border-blue-200 bg-blue-50/50 p-2">
+            <div className="text-[10px] font-semibold uppercase text-blue-700">Laba Kotor</div>
+            <div className="font-mono text-xs font-bold text-blue-900 mt-0.5">
+              Rp {formatMoney(income.grossProfit.amount)}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">
+              Beban Operasional
+            </div>
+            <div className="font-mono text-xs font-bold text-slate-900 mt-0.5">
+              Rp {formatMoney(income.operatingExpenses.amount)}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">
+              Beban Non-Operasional
+            </div>
+            <div className="font-mono text-xs font-bold text-slate-900 mt-0.5">
+              Rp {formatMoney(income.nonOperatingExpenses.amount)}
+            </div>
+          </div>
+          <div
+            className={`rounded border p-2 ${
+              income.netProfit.amount >= 0
+                ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                : "border-red-300 bg-red-50 text-red-900"
+            }`}
+          >
+            <div className="text-[10px] font-semibold uppercase">Laba Bersih</div>
+            <div className="font-mono text-xs font-bold mt-0.5">
+              Rp {formatMoney(income.netProfit.amount)}
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Sections */}
+        <div className="space-y-1.5 border border-slate-300 bg-white shadow-xs p-3">
+          <div className="text-center py-2 border-b-2 border-slate-900 mb-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
+              Laporan Laba Rugi
+            </h2>
+            <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+              Periode {periodStart} s/d {periodEnd}
+            </div>
+          </div>
+
+          {income.sections.map((section) => (
+            <section className="border border-slate-200 bg-white" key={section.key}>
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-2 py-1">
+                <h3 className="text-xs font-bold text-slate-800">{section.label}</h3>
+                <span className="text-[11px] text-slate-500">
+                  Klik nominal untuk rincian jurnal
+                </span>
+              </div>
+              <SinglePeriodSectionTable
+                openDrillDown={(row) => void openDrillDown(row.accountId)}
+                section={section}
+              />
+            </section>
+          ))}
+
+          {/* Bottom Line Summary */}
+          <div className="border-t-2 border-b-2 border-slate-900 bg-slate-100 px-3 py-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-slate-900 mt-3">
+            <span>Laba / (Rugi) Bersih Periode Berjalan</span>
+            <span
+              className={`font-mono text-sm font-bold tabular-nums ${
+                income.netProfit.amount >= 0 ? "text-emerald-700" : "text-red-700"
+              }`}
+            >
+              {formatCurrency(income.netProfit.amount)}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function incomeComparativeView() {
     if (!income) return null;
     return (
       <div className="space-y-1.5">
@@ -948,85 +1156,479 @@ export default function ReportsPage() {
     );
   }
 
-  function trialView() {
-    if (!trial) return null;
+  function cashFlowView() {
+    if (!cashFlow) return null;
+
     return (
-      <section className="border border-slate-200 bg-white">
-        <div
-          className={
-            "flex items-center justify-between border-b px-2 py-1 text-xs " +
-            (trial.isBalanced
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800")
-          }
-        >
-          <div>
-            <h3 className="font-bold">Neraca Saldo</h3>
+      <div className="space-y-2">
+        {/* Status Toolbar */}
+        <div className="flex items-center justify-between border border-slate-200 bg-white px-2 py-1 text-xs">
+          <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
+            <ArrowRightLeft size={13} className="text-brand" />
+            <span>
+              Laporan Arus Kas (Periode {periodStart} s/d {periodEnd})
+            </span>
           </div>
-          <span className="font-mono font-bold tabular-nums">
-            Debit: Rp {formatMoney(trial.totalDebit)} · Kredit: Rp {formatMoney(trial.totalCredit)}
-            {trial.isBalanced
-              ? " (Seimbang)"
-              : " (Selisih Rp " + formatMoney(trial.difference) + ")"}
-          </span>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition"
+            title="Cetak Laporan Arus Kas"
+          >
+            <Printer size={12} />
+            <span>Cetak</span>
+          </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-xs">
-            <thead className="sticky top-0 bg-slate-100 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="px-2 py-1">Kode / Akun</th>
-                <th className="px-2 py-1">Klasifikasi</th>
-                <th className="px-2 py-1 text-right">Saldo Debit</th>
-                <th className="px-2 py-1 text-right">Saldo Kredit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trial.rows.map((row, index) => (
-                <tr
-                  className={
-                    (index % 2 ? "bg-slate-50/60" : "bg-white") +
-                    " hover:bg-blue-50/40 border-b border-slate-100"
-                  }
-                  key={row.accountId}
-                >
-                  <td className="px-2 py-1">
-                    <span className="font-mono font-semibold tabular-nums text-slate-700">
-                      {row.code}
-                    </span>
-                    <span className="ml-1.5 text-slate-800">{row.name}</span>
-                  </td>
-                  <td className="px-2 py-1 text-[11px] text-slate-500">{row.classification}</td>
-                  <td className="px-2 py-1 text-right">
-                    <ReportAmount
-                      onClick={() => void openDrillDown(row.accountId)}
-                      value={row.debitBalance}
-                    />
-                  </td>
-                  <td className="px-2 py-1 text-right">
-                    <ReportAmount
-                      onClick={() => void openDrillDown(row.accountId)}
-                      value={row.creditBalance}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-slate-200 bg-slate-100 font-bold text-slate-800">
-                <td className="px-2 py-1" colSpan={2}>
-                  Total
-                </td>
-                <td className="px-2 py-1 text-right">
-                  <ReportAmount value={trial.totalDebit} />
-                </td>
-                <td className="px-2 py-1 text-right">
-                  <ReportAmount value={trial.totalCredit} />
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+
+        {/* Executive Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-1.5 text-xs">
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">Saldo Awal Kas</div>
+            <div className="font-mono text-xs font-bold text-slate-900 mt-0.5">
+              Rp {formatMoney(cashFlow.beginningCash)}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">
+              Arus Kas Operasi
+            </div>
+            <div
+              className={`font-mono text-xs font-bold mt-0.5 ${
+                cashFlow.operating.netAmount >= 0 ? "text-emerald-700" : "text-red-700"
+              }`}
+            >
+              Rp {formatMoney(cashFlow.operating.netAmount)}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">
+              Arus Kas Investasi
+            </div>
+            <div
+              className={`font-mono text-xs font-bold mt-0.5 ${
+                cashFlow.investing.netAmount >= 0 ? "text-emerald-700" : "text-red-700"
+              }`}
+            >
+              Rp {formatMoney(cashFlow.investing.netAmount)}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-2">
+            <div className="text-[10px] font-semibold uppercase text-slate-500">
+              Arus Kas Pendanaan
+            </div>
+            <div
+              className={`font-mono text-xs font-bold mt-0.5 ${
+                cashFlow.financing.netAmount >= 0 ? "text-emerald-700" : "text-red-700"
+              }`}
+            >
+              Rp {formatMoney(cashFlow.financing.netAmount)}
+            </div>
+          </div>
+          <div className="rounded border border-blue-200 bg-blue-50/50 p-2">
+            <div className="text-[10px] font-semibold uppercase text-blue-700">
+              Perubahan Bersih
+            </div>
+            <div
+              className={`font-mono text-xs font-bold mt-0.5 ${
+                cashFlow.netCashFlow >= 0 ? "text-blue-900" : "text-red-700"
+              }`}
+            >
+              {cashFlow.netCashFlow >= 0 ? "+" : ""}Rp {formatMoney(cashFlow.netCashFlow)}
+            </div>
+          </div>
+          <div className="rounded border border-emerald-300 bg-emerald-50 text-emerald-900 p-2">
+            <div className="text-[10px] font-semibold uppercase">Saldo Akhir Kas</div>
+            <div className="font-mono text-xs font-bold mt-0.5">
+              Rp {formatMoney(cashFlow.endingCash)}
+            </div>
+          </div>
         </div>
-      </section>
+
+        {/* Cash Flow Statement Sheet */}
+        <div className="border border-slate-300 bg-white shadow-xs p-3 space-y-4">
+          <div className="text-center py-2 border-b-2 border-slate-900">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
+              Laporan Arus Kas
+            </h2>
+            <div className="text-xs font-semibold text-slate-700 mt-0.5">Metode Langsung</div>
+            <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+              Periode {periodStart} s/d {periodEnd}
+            </div>
+          </div>
+
+          {/* 1. OPERATING ACTIVITIES */}
+          <div className="space-y-1.5 text-xs">
+            <div className="border-b-2 border-slate-800 pb-1 font-bold text-xs uppercase tracking-wider text-slate-900">
+              Arus Kas dari Aktivitas Operasi
+            </div>
+
+            {/* Inflows */}
+            <div className="pl-2 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-700">
+                Penerimaan Kas Operasi:
+              </div>
+              <table className="w-full text-xs">
+                <tbody>
+                  {cashFlow.operating.inflows.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-blue-50/30">
+                      <td className="py-0.5 pl-3 text-slate-800">
+                        {item.code && (
+                          <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                            {item.code}
+                          </span>
+                        )}
+                        <span>{item.name}</span>
+                      </td>
+                      <td className="py-0.5 text-right whitespace-nowrap">
+                        {item.accountId ? (
+                          <ReportAmount
+                            onClick={() => void openDrillDown(item.accountId!)}
+                            value={item.amount}
+                          />
+                        ) : (
+                          <span className="font-mono tabular-nums text-xs">
+                            {formatCurrency(item.amount)}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {cashFlow.operating.inflows.length === 0 && (
+                    <tr>
+                      <td colSpan={2} className="py-0.5 pl-3 text-slate-400 italic text-[11px]">
+                        Tidak ada penerimaan operasi pada periode ini
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                    <td className="py-0.5 pl-3">Total Penerimaan Operasi</td>
+                    <td className="py-0.5 text-right font-mono tabular-nums">
+                      {formatCurrency(cashFlow.operating.totalInflow)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Outflows */}
+            <div className="pl-2 space-y-1 pt-1">
+              <div className="text-[11px] font-semibold text-slate-700">
+                Pengeluaran Kas Operasi:
+              </div>
+              <table className="w-full text-xs">
+                <tbody>
+                  {cashFlow.operating.outflows.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-blue-50/30">
+                      <td className="py-0.5 pl-3 text-slate-800">
+                        {item.code && (
+                          <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                            {item.code}
+                          </span>
+                        )}
+                        <span>{item.name}</span>
+                      </td>
+                      <td className="py-0.5 text-right whitespace-nowrap">
+                        {item.accountId ? (
+                          <ReportAmount
+                            onClick={() => void openDrillDown(item.accountId!)}
+                            value={item.amount}
+                          />
+                        ) : (
+                          <span className="font-mono tabular-nums text-xs text-red-700">
+                            ({formatCurrency(item.amount)})
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {cashFlow.operating.outflows.length === 0 && (
+                    <tr>
+                      <td colSpan={2} className="py-0.5 pl-3 text-slate-400 italic text-[11px]">
+                        Tidak ada pengeluaran operasi pada periode ini
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                    <td className="py-0.5 pl-3">Total Pengeluaran Operasi</td>
+                    <td className="py-0.5 text-right font-mono tabular-nums text-red-700">
+                      ({formatCurrency(cashFlow.operating.totalOutflow)})
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Net Operating */}
+            <div className="border-t border-b border-slate-300 bg-slate-50 px-2 py-1 flex justify-between font-bold text-xs text-slate-900">
+              <span>Arus Kas Bersih dari Aktivitas Operasi</span>
+              <span
+                className={`font-mono tabular-nums ${
+                  cashFlow.operating.netAmount >= 0 ? "text-emerald-700" : "text-red-700"
+                }`}
+              >
+                {formatCurrency(cashFlow.operating.netAmount)}
+              </span>
+            </div>
+          </div>
+
+          {/* 2. INVESTING ACTIVITIES */}
+          <div className="space-y-1.5 text-xs">
+            <div className="border-b-2 border-slate-800 pb-1 font-bold text-xs uppercase tracking-wider text-slate-900">
+              Arus Kas dari Aktivitas Investasi
+            </div>
+            <table className="w-full text-xs">
+              <tbody>
+                {cashFlow.investing.inflows.map((item, idx) => (
+                  <tr key={`in-${idx}`} className="hover:bg-blue-50/30">
+                    <td className="py-0.5 pl-3 text-slate-800">
+                      {item.code && (
+                        <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                          {item.code}
+                        </span>
+                      )}
+                      <span>{item.name}</span>
+                    </td>
+                    <td className="py-0.5 text-right whitespace-nowrap">
+                      {item.accountId ? (
+                        <ReportAmount
+                          onClick={() => void openDrillDown(item.accountId!)}
+                          value={item.amount}
+                        />
+                      ) : (
+                        <span className="font-mono tabular-nums text-xs">
+                          {formatCurrency(item.amount)}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {cashFlow.investing.outflows.map((item, idx) => (
+                  <tr key={`out-${idx}`} className="hover:bg-blue-50/30">
+                    <td className="py-0.5 pl-3 text-slate-800">
+                      {item.code && (
+                        <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                          {item.code}
+                        </span>
+                      )}
+                      <span>{item.name}</span>
+                    </td>
+                    <td className="py-0.5 text-right whitespace-nowrap font-mono tabular-nums text-red-700">
+                      ({formatCurrency(item.amount)})
+                    </td>
+                  </tr>
+                ))}
+                {cashFlow.investing.inflows.length === 0 &&
+                  cashFlow.investing.outflows.length === 0 && (
+                    <tr>
+                      <td colSpan={2} className="py-1 pl-3 text-slate-400 italic text-[11px]">
+                        Tidak ada aktivitas investasi pada periode ini
+                      </td>
+                    </tr>
+                  )}
+              </tbody>
+            </table>
+            <div className="border-t border-b border-slate-300 bg-slate-50 px-2 py-1 flex justify-between font-bold text-xs text-slate-900">
+              <span>Arus Kas Bersih dari Aktivitas Investasi</span>
+              <span
+                className={`font-mono tabular-nums ${
+                  cashFlow.investing.netAmount >= 0 ? "text-emerald-700" : "text-red-700"
+                }`}
+              >
+                {formatCurrency(cashFlow.investing.netAmount)}
+              </span>
+            </div>
+          </div>
+
+          {/* 3. FINANCING ACTIVITIES */}
+          <div className="space-y-1.5 text-xs">
+            <div className="border-b-2 border-slate-800 pb-1 font-bold text-xs uppercase tracking-wider text-slate-900">
+              Arus Kas dari Aktivitas Pendanaan
+            </div>
+            <table className="w-full text-xs">
+              <tbody>
+                {cashFlow.financing.inflows.map((item, idx) => (
+                  <tr key={`in-${idx}`} className="hover:bg-blue-50/30">
+                    <td className="py-0.5 pl-3 text-slate-800">
+                      {item.code && (
+                        <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                          {item.code}
+                        </span>
+                      )}
+                      <span>{item.name}</span>
+                    </td>
+                    <td className="py-0.5 text-right whitespace-nowrap">
+                      {item.accountId ? (
+                        <ReportAmount
+                          onClick={() => void openDrillDown(item.accountId!)}
+                          value={item.amount}
+                        />
+                      ) : (
+                        <span className="font-mono tabular-nums text-xs">
+                          {formatCurrency(item.amount)}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {cashFlow.financing.outflows.map((item, idx) => (
+                  <tr key={`out-${idx}`} className="hover:bg-blue-50/30">
+                    <td className="py-0.5 pl-3 text-slate-800">
+                      {item.code && (
+                        <span className="font-mono text-[10px] text-slate-400 mr-1.5">
+                          {item.code}
+                        </span>
+                      )}
+                      <span>{item.name}</span>
+                    </td>
+                    <td className="py-0.5 text-right whitespace-nowrap font-mono tabular-nums text-red-700">
+                      ({formatCurrency(item.amount)})
+                    </td>
+                  </tr>
+                ))}
+                {cashFlow.financing.inflows.length === 0 &&
+                  cashFlow.financing.outflows.length === 0 && (
+                    <tr>
+                      <td colSpan={2} className="py-1 pl-3 text-slate-400 italic text-[11px]">
+                        Tidak ada aktivitas pendanaan pada periode ini
+                      </td>
+                    </tr>
+                  )}
+              </tbody>
+            </table>
+            <div className="border-t border-b border-slate-300 bg-slate-50 px-2 py-1 flex justify-between font-bold text-xs text-slate-900">
+              <span>Arus Kas Bersih dari Aktivitas Pendanaan</span>
+              <span
+                className={`font-mono tabular-nums ${
+                  cashFlow.financing.netAmount >= 0 ? "text-emerald-700" : "text-red-700"
+                }`}
+              >
+                {formatCurrency(cashFlow.financing.netAmount)}
+              </span>
+            </div>
+          </div>
+
+          {/* 4. NET CHANGE & RECONCILIATION */}
+          <div className="border-t-2 border-b-2 border-slate-900 bg-slate-100 p-2.5 space-y-1.5 text-xs font-semibold text-slate-900">
+            <div className="flex justify-between">
+              <span>Kenaikan / (Penurunan) Bersih Kas & Setara Kas</span>
+              <span
+                className={`font-mono text-xs tabular-nums ${
+                  cashFlow.netCashFlow >= 0
+                    ? "text-emerald-800 font-bold"
+                    : "text-red-800 font-bold"
+                }`}
+              >
+                {formatCurrency(cashFlow.netCashFlow)}
+              </span>
+            </div>
+            <div className="flex justify-between text-slate-600 font-normal">
+              <span>Saldo Kas & Setara Kas Awal Periode</span>
+              <span className="font-mono tabular-nums text-slate-800 font-semibold">
+                {formatCurrency(cashFlow.beginningCash)}
+              </span>
+            </div>
+            <div className="flex justify-between border-t border-slate-300 pt-1 text-sm font-bold text-slate-900">
+              <span>Saldo Kas & Setara Kas Akhir Periode</span>
+              <span className="font-mono tabular-nums text-brand">
+                {formatCurrency(cashFlow.endingCash)}
+              </span>
+            </div>
+          </div>
+
+          {/* 5. RINCIAN PER AKUN KAS & BANK */}
+          <div className="space-y-1.5 pt-2">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+              <h4 className="font-bold text-xs text-slate-800">Rincian Per Akun Kas & Bank</h4>
+              <span className="text-[11px] text-slate-500">
+                Klik kode akun untuk rincian mutasi
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-[11px] font-semibold text-slate-600 border-b border-slate-200">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Kode / Akun Kas & Bank</th>
+                    <th className="px-2 py-1 text-right">Saldo Awal</th>
+                    <th className="px-2 py-1 text-right">Masuk (+)</th>
+                    <th className="px-2 py-1 text-right">Keluar (-)</th>
+                    <th className="px-2 py-1 text-right">Mutasi Bersih</th>
+                    <th className="px-2 py-1 text-right">Saldo Akhir</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono tabular-nums">
+                  {cashFlow.cashAccounts.map((acc, index) => (
+                    <tr key={acc.accountId} className={index % 2 ? "bg-slate-50/50" : "bg-white"}>
+                      <td className="px-2 py-1 text-left font-sans">
+                        <button
+                          type="button"
+                          onClick={() => void openDrillDown(acc.accountId)}
+                          className="font-mono font-semibold text-brand hover:underline mr-1.5"
+                        >
+                          {acc.code}
+                        </button>
+                        <span className="text-slate-800">{acc.name}</span>
+                      </td>
+                      <td className="px-2 py-1 text-right text-slate-600">
+                        {formatCurrency(acc.beginningBalance)}
+                      </td>
+                      <td className="px-2 py-1 text-right text-emerald-700">
+                        +{formatAbsoluteMoney(acc.inflow)}
+                      </td>
+                      <td className="px-2 py-1 text-right text-red-700">
+                        -{formatAbsoluteMoney(acc.outflow)}
+                      </td>
+                      <td
+                        className={`px-2 py-1 text-right font-semibold ${
+                          acc.netMovement >= 0 ? "text-emerald-700" : "text-red-700"
+                        }`}
+                      >
+                        {acc.netMovement >= 0 ? "+" : ""}
+                        {formatCurrency(acc.netMovement)}
+                      </td>
+                      <td className="px-2 py-1 text-right font-bold text-slate-900">
+                        {formatCurrency(acc.endingBalance)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-mono font-bold tabular-nums text-slate-900">
+                  <tr>
+                    <td className="px-2 py-1 text-left font-sans">Total Seluruh Kas & Bank</td>
+                    <td className="px-2 py-1 text-right">
+                      {formatCurrency(cashFlow.beginningCash)}
+                    </td>
+                    <td className="px-2 py-1 text-right text-emerald-700">
+                      +
+                      {formatAbsoluteMoney(cashFlow.cashAccounts.reduce((s, a) => s + a.inflow, 0))}
+                    </td>
+                    <td className="px-2 py-1 text-right text-red-700">
+                      -
+                      {formatAbsoluteMoney(
+                        cashFlow.cashAccounts.reduce((s, a) => s + a.outflow, 0),
+                      )}
+                    </td>
+                    <td
+                      className={`px-2 py-1 text-right ${
+                        cashFlow.netCashFlow >= 0 ? "text-emerald-700" : "text-red-700"
+                      }`}
+                    >
+                      {cashFlow.netCashFlow >= 0 ? "+" : ""}
+                      {formatCurrency(cashFlow.netCashFlow)}
+                    </td>
+                    <td className="px-2 py-1 text-right text-brand">
+                      {formatCurrency(cashFlow.endingCash)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -1046,7 +1648,19 @@ export default function ReportsPage() {
                 onClick={() => setTab("income")}
                 type="button"
               >
-                <BarChart3 size={12} /> Laba Rugi Komparatif
+                <BarChart3 size={12} /> Laba Rugi
+              </button>
+              <button
+                className={
+                  "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded " +
+                  (tab === "income-comparative"
+                    ? "bg-brand text-white"
+                    : "text-slate-600 hover:bg-slate-100")
+                }
+                onClick={() => setTab("income-comparative")}
+                type="button"
+              >
+                <Columns size={12} /> Laba Rugi Komparatif
               </button>
               <button
                 className={
@@ -1061,44 +1675,96 @@ export default function ReportsPage() {
               <button
                 className={
                   "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded " +
-                  (tab === "trial" ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100")
+                  (tab === "cash-flow"
+                    ? "bg-brand text-white"
+                    : "text-slate-600 hover:bg-slate-100")
                 }
-                onClick={() => setTab("trial")}
+                onClick={() => setTab("cash-flow")}
                 type="button"
               >
-                <FileText size={12} /> Neraca Saldo
+                <ArrowRightLeft size={12} /> Arus Kas
               </button>
             </nav>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Quick Presets */}
+            <div
+              aria-label="Preset Periode"
+              className="inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5"
+              role="group"
+            >
+              <button
+                type="button"
+                onClick={() => applyPreset("THIS_MONTH")}
+                className={`rounded px-2 py-0.5 text-xs font-medium transition ${
+                  activePreset === "THIS_MONTH"
+                    ? "bg-white font-semibold text-brand shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Bulan ini
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset("PREV_MONTH")}
+                className={`rounded px-2 py-0.5 text-xs font-medium transition ${
+                  activePreset === "PREV_MONTH"
+                    ? "bg-white font-semibold text-brand shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Bulan lalu
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset("THIS_YEAR")}
+                className={`rounded px-2 py-0.5 text-xs font-medium transition ${
+                  activePreset === "THIS_YEAR"
+                    ? "bg-white font-semibold text-brand shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Tahun ini
+              </button>
+            </div>
+
             {tab !== "balance" && (
               <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
                 Mulai
                 <input
                   className={inputClass}
-                  onChange={(event) => setPeriodStart(event.target.value)}
+                  onChange={(event) => {
+                    setPeriodStart(event.target.value);
+                    setActivePreset("CUSTOM");
+                  }}
                   type="date"
                   value={periodStart}
                 />
               </label>
             )}
             <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
-              {tab === "balance" ? "Per Tanggal" : "Sampai"}
+              {tab === "balance" ? "Per Tanggal" : "s/d"}
               <input
                 className={inputClass}
-                onChange={(event) => setPeriodEnd(event.target.value)}
+                onChange={(event) => {
+                  setPeriodEnd(event.target.value);
+                  setActivePreset("CUSTOM");
+                }}
                 type="date"
                 value={periodEnd}
               />
             </label>
-            {tab === "income" && (
+            {tab === "income-comparative" && (
               <>
                 <span className="text-slate-300">|</span>
                 <label className="flex items-center gap-1 font-semibold text-slate-600 text-[11px]">
                   Bandingkan:
                   <input
                     className={inputClass}
-                    onChange={(event) => setCompareStart(event.target.value)}
+                    onChange={(event) => {
+                      setCompareStart(event.target.value);
+                      setActivePreset("CUSTOM");
+                    }}
                     type="date"
                     value={compareStart}
                   />
@@ -1107,7 +1773,10 @@ export default function ReportsPage() {
                   s/d
                   <input
                     className={inputClass}
-                    onChange={(event) => setCompareEnd(event.target.value)}
+                    onChange={(event) => {
+                      setCompareEnd(event.target.value);
+                      setActivePreset("CUSTOM");
+                    }}
                     type="date"
                     value={compareEnd}
                   />
@@ -1135,11 +1804,13 @@ export default function ReportsPage() {
           Memuat laporan...
         </div>
       ) : tab === "income" ? (
-        incomeView()
+        incomeStandardView()
+      ) : tab === "income-comparative" ? (
+        incomeComparativeView()
       ) : tab === "balance" ? (
         balanceView()
       ) : (
-        trialView()
+        cashFlowView()
       )}
       <DrillDownDrawer
         data={drillDown ?? null}

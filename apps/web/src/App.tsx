@@ -7,17 +7,16 @@ import {
   SlidersHorizontal,
   Table,
   Shield,
-  ArrowRightLeft,
   Lock,
   ShieldAlert,
-  X,
-  KeyRound,
+  LogOut,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SourceModule } from "@keuangan-apotek/shared";
 import DailyTransactionsPage from "./pages/DailyTransactionsPage";
 import ReportsPage from "./pages/ReportsPage";
 import AdvancedPage, { advancedTabs, type AdvancedTab } from "./pages/AdvancedPage";
+import LoginPage from "./pages/LoginPage";
 import { ToastContainer } from "./components/ToastContainer";
 import { useAuth } from "./lib/auth";
 import { invalidateAccountingQueries } from "./lib/mutations";
@@ -76,15 +75,11 @@ function navigateTo(pathname: string) {
 
 function App() {
   const queryClient = useQueryClient();
-  const { user, quickSwitchUser, login } = useAuth();
+  const { user, token, logout } = useAuth();
 
   const [route, setRoute] = useState(() => resolveRoute(window.location.pathname));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginLoading, setLoginLoading] = useState(false);
 
   useEffect(() => {
     const handlePopState = () => setRoute(resolveRoute(window.location.pathname));
@@ -95,37 +90,28 @@ function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  // If user is not authenticated, show the Login Screen
+  if (!user || !token) {
+    return (
+      <>
+        <LoginPage
+          onLoginSuccess={() => {
+            invalidateAccountingQueries(queryClient);
+          }}
+        />
+        <ToastContainer />
+      </>
+    );
+  }
+
   const { module: activeModule, advancedTab: activeAdvancedTab } = route;
   const isAsisten = user.role === "asisten";
 
-  function handleSwitchRole(targetRole: "admin" | "asisten") {
-    quickSwitchUser(targetRole)
-      .then(() => {
-        invalidateAccountingQueries(queryClient);
-        setShowUserDropdown(false);
-        toast.success(`Berhasil beralih ke role ${targetRole === "admin" ? "Admin" : "Asisten"}`);
-        if (targetRole === "asisten" && activeModule !== "Buku Transaksi") {
-          navigateTo(modulePaths["Buku Transaksi"]!);
-        }
-      })
-      .catch((err) => toast.error(err.message));
-  }
-
-  async function handleCustomLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoginLoading(true);
-    try {
-      await login(loginUsername, loginPassword);
-      invalidateAccountingQueries(queryClient);
-      setShowLoginModal(false);
-      setLoginUsername("");
-      setLoginPassword("");
-      toast.success("Login berhasil");
-    } catch (err: any) {
-      toast.error(err.message || "Login gagal");
-    } finally {
-      setLoginLoading(false);
-    }
+  function handleLogout() {
+    setShowUserDropdown(false);
+    logout();
+    invalidateAccountingQueries(queryClient);
+    toast.info("Anda telah keluar dari sistem");
   }
 
   return (
@@ -148,6 +134,7 @@ function App() {
             </div>
           )}
         </div>
+
         <nav className="space-y-0.5 p-1" aria-label="Navigasi utama">
           {!sidebarCollapsed && (
             <p className="px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -246,7 +233,7 @@ function App() {
 
             {/* User Dropdown */}
             {showUserDropdown && (
-              <div className="absolute right-0 top-8 z-50 w-64 rounded-lg border border-slate-200 bg-white shadow-xl p-2.5 space-y-2 text-xs">
+              <div className="absolute right-0 top-8 z-50 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2.5 space-y-2 text-xs">
                 <div className="border-b border-slate-100 pb-2">
                   <p className="font-bold text-slate-800">{user.name}</p>
                   <p className="text-[11px] text-slate-500 font-mono">@{user.username}</p>
@@ -265,39 +252,14 @@ function App() {
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Beralih Pengguna Cepat
-                  </p>
-                  {isAsisten ? (
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchRole("admin")}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs font-semibold text-slate-700 hover:bg-purple-50 hover:text-purple-900 transition"
-                    >
-                      <ArrowRightLeft size={13} className="text-purple-600" />
-                      <span>Masuk sebagai Admin Apoteker</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchRole("asisten")}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-900 transition"
-                    >
-                      <ArrowRightLeft size={13} className="text-amber-600" />
-                      <span>Masuk sebagai Asisten Kasir</span>
-                    </button>
-                  )}
+                <div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowUserDropdown(false);
-                      setShowLoginModal(true);
-                    }}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs font-medium text-slate-600 hover:bg-slate-100 transition"
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 transition"
                   >
-                    <KeyRound size={13} />
-                    <span>Login dengan Akun Lain...</span>
+                    <LogOut size={13} className="text-rose-500" />
+                    <span>Keluar dari Akun</span>
                   </button>
                 </div>
               </div>
@@ -326,13 +288,6 @@ function App() {
                 >
                   Buka Buku Transaksi
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleSwitchRole("admin")}
-                  className="rounded border border-purple-300 bg-white px-3.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-50 transition"
-                >
-                  Beralih ke Admin
-                </button>
               </div>
             </div>
           ) : activeModule === "Laporan Keuangan" ? (
@@ -352,100 +307,6 @@ function App() {
           )}
         </div>
       </main>
-
-      {/* LOGIN MODAL */}
-      {showLoginModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-sm rounded-lg bg-white shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-3 py-2">
-              <div className="flex items-center gap-1.5">
-                <KeyRound size={15} className="text-brand" />
-                <h3 className="text-xs font-bold text-slate-800">Login Sistem Keuangan</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowLoginModal(false)}
-                className="text-slate-400 hover:text-slate-700"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="p-3 bg-blue-50/50 border-b border-slate-100 text-[11px] text-slate-600 space-y-1">
-              <p className="font-semibold text-slate-700">Akun Bawaan Sistem:</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginUsername("admin");
-                    setLoginPassword("admin123");
-                  }}
-                  className="rounded bg-white border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-purple-700 hover:bg-purple-50"
-                >
-                  Admin (admin / admin123)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginUsername("asisten");
-                    setLoginPassword("asisten123");
-                  }}
-                  className="rounded bg-white border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-50"
-                >
-                  Asisten (asisten / asisten123)
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleCustomLogin} className="p-3 space-y-2.5 text-xs">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Username
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder="admin atau asisten"
-                  className="w-full rounded border border-slate-300 px-2 py-1 text-xs outline-none focus:border-brand focus:ring-1 focus:ring-brand"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Password"
-                  className="w-full rounded border border-slate-300 px-2 py-1 text-xs outline-none focus:border-brand focus:ring-1 focus:ring-brand"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowLoginModal(false)}
-                  className="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={loginLoading}
-                  className="rounded bg-brand px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
-                >
-                  {loginLoading ? "Memproses..." : "Masuk"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       <ToastContainer />
     </div>

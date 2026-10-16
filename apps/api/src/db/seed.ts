@@ -4,7 +4,7 @@ import { runMigrations } from "./migrate.js";
 import { accounts, transactionTypes } from "./schema/index.js";
 import { createTransaction } from "../services/transaction.service.js";
 import { lockOpeningBalance, saveOpeningBalances } from "../services/opening-balance.service.js";
-import { seedUsers } from "../services/auth.service.js";
+import { seedUsers } from "./seeds/users.seed.js";
 import type { MetadataFieldDefinition } from "@keuangan-apotek/shared";
 
 type SeedAccount = {

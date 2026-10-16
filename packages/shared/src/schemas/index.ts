@@ -195,6 +195,7 @@ export const BalanceSheetQuerySchema = z.object({
 });
 
 export const TrialBalanceQuerySchema = ReportPeriodSchema;
+export const CashFlowStatementQuerySchema = ReportPeriodSchema;
 
 export const AccountJournalDrillDownQuerySchema = z.object({
   accountId: z.string().min(1),
@@ -244,4 +245,5 @@ export type ReportPeriod = z.infer<typeof ReportPeriodSchema>;
 export type IncomeStatementQuery = z.infer<typeof IncomeStatementQuerySchema>;
 export type BalanceSheetQuery = z.infer<typeof BalanceSheetQuerySchema>;
 export type TrialBalanceQuery = z.infer<typeof TrialBalanceQuerySchema>;
+export type CashFlowStatementQuery = z.infer<typeof CashFlowStatementQuerySchema>;
 export type AccountJournalDrillDownQuery = z.infer<typeof AccountJournalDrillDownQuerySchema>;

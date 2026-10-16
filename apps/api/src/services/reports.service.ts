@@ -1,6 +1,14 @@
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte } from "drizzle-orm";
 import Decimal from "decimal.js";
-import type { ReportPeriod } from "@keuangan-apotek/shared";
+import {
+  isCashBankAccount,
+  isInventoryAccount,
+  isPayableAccount,
+  isReceivableAccount,
+  isRevenueAccount,
+  type CashFlowReport,
+  type ReportPeriod,
+} from "@keuangan-apotek/shared";
 import type { SqliteClient } from "../db/client.js";
 import { accounts, journalLines, journals } from "../db/schema/index.js";
 
@@ -457,5 +465,294 @@ export function getAccountJournalDrillDown(
     totalDebit: totalDebit.toNumber(),
     totalCredit: totalCredit.toNumber(),
     netMovement: totalDebit.minus(totalCredit).toNumber(),
+  };
+}
+
+export function getCashFlowStatement(db: Db, period: ReportPeriod): CashFlowReport {
+  const accountsList = db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.isActive, true), eq(accounts.isGroup, false)))
+    .orderBy(asc(accounts.code))
+    .all();
+
+  const cashAccounts = accountsList.filter((a) => isCashBankAccount(a));
+  const cashAccountIds = new Set(cashAccounts.map((a) => a.id));
+  const accountById = new Map(accountsList.map((a) => [a.id, a]));
+
+  // 1. Prior balances (all transactions strictly before period.startDate)
+  const priorRows = db
+    .select({
+      accountId: journalLines.accountId,
+      debit: journalLines.debit,
+      credit: journalLines.credit,
+    })
+    .from(journalLines)
+    .innerJoin(journals, eq(journals.id, journalLines.journalId))
+    .where(lt(journals.entryDate, period.startDate))
+    .all();
+
+  const priorTotals = new Map<string, AccountTotals>();
+  for (const row of priorRows) {
+    if (cashAccountIds.has(row.accountId)) {
+      addTotals(totalsForAccount(priorTotals, row.accountId), row.debit, row.credit);
+    }
+  }
+
+  // 2. Period totals for cash accounts
+  const periodTotals = collectTotals(db, period);
+
+  const cashAccountSummaries = cashAccounts.map((acc) => {
+    const prior = priorTotals.get(acc.id) ?? emptyTotals();
+    const beginningBalance = prior.debit.minus(prior.credit);
+    const during = periodTotals.get(acc.id) ?? emptyTotals();
+    const inflow = during.debit;
+    const outflow = during.credit;
+    const netMovement = inflow.minus(outflow);
+    const endingBalance = beginningBalance.plus(netMovement);
+
+    return {
+      accountId: acc.id,
+      code: acc.code,
+      name: acc.name,
+      beginningBalance: beginningBalance.toNumber(),
+      inflow: inflow.toNumber(),
+      outflow: outflow.toNumber(),
+      netMovement: netMovement.toNumber(),
+      endingBalance: endingBalance.toNumber(),
+    };
+  });
+
+  const totalBeginningCash = cashAccountSummaries.reduce(
+    (sum, a) => sum.plus(a.beginningBalance),
+    new Decimal(0),
+  );
+  const totalEndingCash = cashAccountSummaries.reduce(
+    (sum, a) => sum.plus(a.endingBalance),
+    new Decimal(0),
+  );
+  const totalNetCashFlow = totalEndingCash.minus(totalBeginningCash);
+
+  // 3. Classify cash movements by activity
+  const journalLinesInPeriod = db
+    .select({
+      journalId: journals.id,
+      journalNo: journals.journalNo,
+      entryDate: journals.entryDate,
+      memo: journals.memo,
+      accountId: journalLines.accountId,
+      debit: journalLines.debit,
+      credit: journalLines.credit,
+    })
+    .from(journalLines)
+    .innerJoin(journals, eq(journals.id, journalLines.journalId))
+    .where(rangeConditions(period))
+    .all();
+
+  const linesByJournal = new Map<string, typeof journalLinesInPeriod>();
+  for (const line of journalLinesInPeriod) {
+    const list = linesByJournal.get(line.journalId);
+    if (list) list.push(line);
+    else linesByJournal.set(line.journalId, [line]);
+  }
+
+  type FlowBucket = {
+    accountId?: string;
+    code?: string;
+    name: string;
+    amount: Decimal;
+  };
+
+  const operatingInflows = new Map<string, FlowBucket>();
+  const operatingOutflows = new Map<string, FlowBucket>();
+  const investingInflows = new Map<string, FlowBucket>();
+  const investingOutflows = new Map<string, FlowBucket>();
+  const financingInflows = new Map<string, FlowBucket>();
+  const financingOutflows = new Map<string, FlowBucket>();
+
+  function addBucket(
+    map: Map<string, FlowBucket>,
+    key: string,
+    name: string,
+    amount: Decimal,
+    acc?: typeof accounts.$inferSelect,
+  ) {
+    const existing = map.get(key);
+    if (existing) {
+      existing.amount = existing.amount.plus(amount);
+    } else {
+      map.set(key, {
+        accountId: acc?.id,
+        code: acc?.code,
+        name,
+        amount,
+      });
+    }
+  }
+
+  for (const lines of linesByJournal.values()) {
+    const cashLines = lines.filter((l) => cashAccountIds.has(l.accountId));
+    if (cashLines.length === 0) continue;
+
+    let cashDebit = new Decimal(0);
+    let cashCredit = new Decimal(0);
+    for (const cl of cashLines) {
+      cashDebit = cashDebit.plus(cl.debit);
+      cashCredit = cashCredit.plus(cl.credit);
+    }
+
+    const deltaCash = cashDebit.minus(cashCredit);
+    if (deltaCash.isZero()) continue;
+
+    const nonCashLines = lines.filter((l) => !cashAccountIds.has(l.accountId));
+
+    if (deltaCash.greaterThan(0)) {
+      let sumNetCredits = new Decimal(0);
+      for (const ncl of nonCashLines) {
+        const netCred = new Decimal(ncl.credit).minus(ncl.debit);
+        if (netCred.greaterThan(0)) {
+          sumNetCredits = sumNetCredits.plus(netCred);
+        }
+      }
+
+      if (sumNetCredits.greaterThan(0)) {
+        for (const ncl of nonCashLines) {
+          const netCred = new Decimal(ncl.credit).minus(ncl.debit);
+          if (netCred.greaterThan(0)) {
+            const allocated = netCred.dividedBy(sumNetCredits).times(deltaCash);
+            const acc = accountById.get(ncl.accountId);
+            const key = acc?.id ?? "other";
+            const name = acc?.name ?? "Penerimaan Lainnya";
+
+            if (isRevenueAccount(acc)) {
+              addBucket(operatingInflows, key, name, allocated, acc);
+            } else if (isReceivableAccount(acc)) {
+              addBucket(operatingInflows, key, name, allocated, acc);
+            } else if (acc?.classification === "ASET_TIDAK_LANCAR") {
+              addBucket(investingInflows, key, name, allocated, acc);
+            } else if (acc?.classification === "EKUITAS") {
+              addBucket(financingInflows, key, name, allocated, acc);
+            } else if (acc?.classification === "KEWAJIBAN_JANGKA_PANJANG") {
+              addBucket(financingInflows, key, name, allocated, acc);
+            } else {
+              addBucket(operatingInflows, key, name, allocated, acc);
+            }
+          }
+        }
+      } else {
+        addBucket(operatingInflows, "other-inflow", "Penerimaan Operasional Lainnya", deltaCash);
+      }
+    } else {
+      const absDelta = deltaCash.abs();
+      let sumNetDebits = new Decimal(0);
+      for (const ncl of nonCashLines) {
+        const netDeb = new Decimal(ncl.debit).minus(ncl.credit);
+        if (netDeb.greaterThan(0)) {
+          sumNetDebits = sumNetDebits.plus(netDeb);
+        }
+      }
+
+      if (sumNetDebits.greaterThan(0)) {
+        for (const ncl of nonCashLines) {
+          const netDeb = new Decimal(ncl.debit).minus(ncl.credit);
+          if (netDeb.greaterThan(0)) {
+            const allocated = netDeb.dividedBy(sumNetDebits).times(absDelta);
+            const acc = accountById.get(ncl.accountId);
+            const key = acc?.id ?? "other";
+            const name = acc?.name ?? "Pengeluaran Lainnya";
+
+            if (
+              acc?.classification === "BEBAN_POKOK" ||
+              isInventoryAccount(acc) ||
+              isPayableAccount(acc)
+            ) {
+              addBucket(operatingOutflows, key, name, allocated, acc);
+            } else if (acc?.classification === "BEBAN_OPERASIONAL") {
+              addBucket(operatingOutflows, key, name, allocated, acc);
+            } else if (acc?.classification === "BEBAN_NON_OPERASIONAL") {
+              addBucket(operatingOutflows, key, name, allocated, acc);
+            } else if (acc?.classification === "ASET_TIDAK_LANCAR") {
+              addBucket(investingOutflows, key, name, allocated, acc);
+            } else if (acc?.classification === "EKUITAS") {
+              addBucket(financingOutflows, key, name, allocated, acc);
+            } else if (acc?.classification === "KEWAJIBAN_JANGKA_PANJANG") {
+              addBucket(financingOutflows, key, name, allocated, acc);
+            } else {
+              addBucket(operatingOutflows, key, name, allocated, acc);
+            }
+          }
+        }
+      } else {
+        addBucket(operatingOutflows, "other-outflow", "Pengeluaran Operasional Lainnya", absDelta);
+      }
+    }
+  }
+
+  function formatCategory(
+    key: string,
+    label: string,
+    inflowsMap: Map<string, FlowBucket>,
+    outflowsMap: Map<string, FlowBucket>,
+  ) {
+    const inflows = [...inflowsMap.values()]
+      .filter((b) => !b.amount.isZero())
+      .map((b) => ({
+        accountId: b.accountId,
+        code: b.code,
+        name: b.name,
+        amount: b.amount.toNumber(),
+      }));
+    const outflows = [...outflowsMap.values()]
+      .filter((b) => !b.amount.isZero())
+      .map((b) => ({
+        accountId: b.accountId,
+        code: b.code,
+        name: b.name,
+        amount: b.amount.toNumber(),
+      }));
+
+    const totalInflow = inflows.reduce((s, i) => s.plus(i.amount), new Decimal(0));
+    const totalOutflow = outflows.reduce((s, o) => s.plus(o.amount), new Decimal(0));
+    const netAmount = totalInflow.minus(totalOutflow);
+
+    return {
+      key,
+      label,
+      inflows,
+      outflows,
+      totalInflow: totalInflow.toNumber(),
+      totalOutflow: totalOutflow.toNumber(),
+      netAmount: netAmount.toNumber(),
+    };
+  }
+
+  const operating = formatCategory(
+    "OPERATING",
+    "Aktivitas Operasi",
+    operatingInflows,
+    operatingOutflows,
+  );
+  const investing = formatCategory(
+    "INVESTING",
+    "Aktivitas Investasi",
+    investingInflows,
+    investingOutflows,
+  );
+  const financing = formatCategory(
+    "FINANCING",
+    "Aktivitas Pendanaan",
+    financingInflows,
+    financingOutflows,
+  );
+
+  return {
+    period,
+    operating,
+    investing,
+    financing,
+    netCashFlow: totalNetCashFlow.toNumber(),
+    beginningCash: totalBeginningCash.toNumber(),
+    endingCash: totalEndingCash.toNumber(),
+    cashAccounts: cashAccountSummaries,
   };
 }

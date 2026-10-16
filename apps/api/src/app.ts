@@ -63,6 +63,7 @@ import {
 import {
   getAccountJournalDrillDown,
   getBalanceSheet,
+  getCashFlowStatement,
   getIncomeStatement,
   getTrialBalance,
 } from "./services/reports.service.js";
@@ -291,6 +292,11 @@ export function createApiApp(client: SqliteClient) {
       });
       if (!parsed.success) return context.json({ error: parsed.error.flatten() }, 400);
       return context.json({ data: getTrialBalance(client.db, parsed.data) });
+    })
+    .get("/cash-flow", validateQuery(ReportQuerySchema), (context) => {
+      const period = readPeriod(context, ["startDate", "periodStart"], ["endDate", "periodEnd"]);
+      if (!period.success) return context.json({ error: period.error.flatten() }, 400);
+      return context.json({ data: getCashFlowStatement(client.db, period.data) });
     })
     .get("/accounts/:id/journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler)
     .get("/account-journal-drill-down", validateQuery(ReportQuerySchema), drillDownHandler);

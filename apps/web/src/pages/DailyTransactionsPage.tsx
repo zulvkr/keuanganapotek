@@ -664,7 +664,7 @@ export default function DailyTransactionsPage() {
   return (
     <div className="space-y-1.5 text-xs">
       {/* Assistant RBAC Mode Banner */}
-      {user.role === "asisten" && (
+      {user?.role === "asisten" && (
         <div className="flex items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-900">
           <div className="flex items-center gap-1.5">
             <Shield size={13} className="text-amber-600 shrink-0" />

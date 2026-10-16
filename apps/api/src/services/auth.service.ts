@@ -235,35 +235,3 @@ export function updateUserPermissions(db: Db, id: string, allowedCoaCodes: strin
     updatedAt: now,
   });
 }
-
-export function seedUsers(client: SqliteClient): { admin: AuthUser; asisten: AuthUser } {
-  const adminExisting = getUserByUsername(client.db, "admin");
-  let adminUser: AuthUser;
-  if (!adminExisting) {
-    adminUser = createUser(client.db, {
-      username: "admin",
-      password: "admin123",
-      name: "Apoteker Admin (Owner)",
-      role: "admin",
-      allowedCoaCodes: [],
-    });
-  } else {
-    adminUser = mapUserRowToAuthUser(adminExisting);
-  }
-
-  const asistenExisting = getUserByUsername(client.db, "asisten");
-  let asistenUser: AuthUser;
-  if (!asistenExisting) {
-    asistenUser = createUser(client.db, {
-      username: "asisten",
-      password: "asisten123",
-      name: "Asisten Apotek (Kasir)",
-      role: "asisten",
-      allowedCoaCodes: DEFAULT_ASSISTANT_ALLOWED_COA_CODES,
-    });
-  } else {
-    asistenUser = mapUserRowToAuthUser(asistenExisting);
-  }
-
-  return { admin: adminUser, asisten: asistenUser };
-}
