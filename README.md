@@ -120,6 +120,56 @@ Variabel lingkungan yang didukung:
 
 ---
 
+## 🐳 Deployment Menggunakan Docker Compose & Caddy Docker Proxy
+
+Aplikasi ini siap dideploy dalam mode multi-instance pada 1 VPS menggunakan **caddy-docker-proxy** dan dikelola melalui **Dockhand** (atau Portainer / Docker Compose biasa).
+
+### 🚀 Menjalankan Multi-Instance via Dockhand
+
+Setiap instance aplikasi (misalnya Apotek Cabang 1 dan Cabang 2) didaftarkan sebagai **Stack terpisah** di Dockhand.
+
+#### Stack 1 (Contoh: `apotek-cabang1`)
+
+1. Di Dockhand, buat stack baru bernama `apotek-cabang1`.
+2. Gunakan `docker-compose.yml` dari repositori ini.
+3. Di tab **Environment Variables**, isi:
+   ```env
+   APP_URL=cabang1.apotek.com
+   CADDY_NETWORK=caddy
+   AUTH_SECRET=rahasia-unik-cabang-1-2026
+   ```
+4. Klik **Deploy**. Caddy Docker Proxy akan otomatis mendeteksi domain dan mengalihkan traffic HTTPS ke kontainer web cabang 1.
+
+#### Stack 2 (Contoh: `apotek-cabang2`)
+
+1. Buat stack baru kedua bernama `apotek-cabang2`.
+2. Gunakan `docker-compose.yml` yang sama.
+3. Di tab **Environment Variables**, isi:
+   ```env
+   APP_URL=cabang2.apotek.com
+   CADDY_NETWORK=caddy
+   AUTH_SECRET=rahasia-unik-cabang-2-2026
+   ```
+4. Klik **Deploy**.
+
+### 🔒 Isolasi Antar-Instance
+
+- **Volume Data Terpisah:** Docker Compose otomatis menamai volume data berdasarkan nama stack (`<project>_apotek_data`), sehingga database SQLite masing-masing instance terisolasi 100%.
+- **Tanpa Konflik Port Host:** Kontainer tidak mengikat port 80/3000 host, melainkan berkomunikasi lewat jaringan internal Caddy (`caddy`).
+- **SSL / HTTPS Otomatis:** Dikelola sepenuhnya oleh Caddy melalui label `caddy: ${APP_URL}`.
+
+### 💻 Pengujian Lokal Tanpa Caddy Docker Proxy
+
+Jika ingin menjalankan secara lokal di komputer pengembang:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+Aplikasi akan tersedia langsung di `http://localhost`.
+
+---
+
 ## 🧪 Validasi & Pengujian
 
 Sebelum mengajukan perubahan kode, pastikan seluruh pemeriksaan kualitas lulus:

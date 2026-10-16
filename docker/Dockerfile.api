@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1
+
+# Stage 1: Base with pnpm
+FROM node:22-bookworm-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN npm install -g pnpm@10.13.1
+
+# Stage 2: Builder with build tools for native modules (better-sqlite3)
+FROM base AS builder
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace config and package definitions
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+
+# Install dependencies with frozen lockfile
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+# Copy source code
+COPY packages/shared/ ./packages/shared/
+COPY apps/api/ ./apps/api/
+
+# Build shared and api packages
+RUN pnpm --filter @keuangan-apotek/shared run build && \
+    pnpm --filter @keuangan-apotek/api run build
+
+# Deploy isolated production bundle for api
+RUN pnpm --filter @keuangan-apotek/api deploy --prod --legacy /app/deployed
+
+# Stage 3: Minimal production runtime
+FROM node:22-bookworm-slim AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV API_PORT=3000
+ENV DATABASE_PATH=/app/data/keuangan-apotek.sqlite
+
+# Create directory for SQLite storage and set permissions for node user
+RUN mkdir -p /app/data && chown -R node:node /app
+
+# Copy deployed bundle
+COPY --from=builder --chown=node:node /app/deployed /app
+
+USER node
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "fetch('http://localhost:' + (process.env.API_PORT || 3000) + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+CMD ["node", "dist/server.js"]

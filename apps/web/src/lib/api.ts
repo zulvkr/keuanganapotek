@@ -1,7 +1,7 @@
 import { hc, parseResponse, type ClientResponse, type InferRequestType } from "hono/client";
 import type { AppType } from "@keuangan-apotek/api";
 
-const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+const apiBase = import.meta.env.VITE_API_URL ?? "";
 
 /** The generated Hono RPC client. Route names, params, bodies, and responses are inferred from the API. */
 export const api = hc<AppType>(apiBase, {

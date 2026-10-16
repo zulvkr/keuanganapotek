@@ -1,0 +1,42 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      API_PORT: 3000
+      DATABASE_PATH: /app/data/keuangan-apotek.sqlite
+      AUTH_SECRET: ${AUTH_SECRET:-}
+    volumes:
+      - apotek_data:/app/data
+    networks:
+      - internal
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+      - caddy
+    labels:
+      caddy: ${APP_URL}
+      caddy.reverse_proxy: "{{upstreams 80}}"
+
+volumes:
+  apotek_data:
+
+networks:
+  internal:
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK:-caddy}

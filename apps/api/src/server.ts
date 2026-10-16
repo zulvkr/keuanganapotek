@@ -15,7 +15,8 @@ if (!getOpeningBalanceCutoff(client.db)) {
 const app = createApiApp(client);
 
 const port = Number(process.env.API_PORT ?? 3000);
+const hostname = process.env.HOST ?? "0.0.0.0";
 
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`API listening on http://localhost:${info.port}`);
+serve({ fetch: app.fetch, port, hostname }, (info) => {
+  console.log(`API listening on http://${info.address}:${info.port}`);
 });

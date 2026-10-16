@@ -1,0 +1,16 @@
+# Local override: Use this when running on a local machine without caddy-docker-proxy:
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+services:
+  api:
+    ports:
+      - "${API_PORT:-3000}:3000"
+
+  web:
+    networks:
+      - internal
+    ports:
+      - "${WEB_PORT:-80}:80"
+
+networks:
+  caddy:
+    external: false
