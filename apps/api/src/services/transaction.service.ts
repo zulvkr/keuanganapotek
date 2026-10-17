@@ -417,10 +417,25 @@ export function createTransaction(
     amount: string | number;
     memo?: string;
     metadata?: Record<string, any>;
+    idempotencyKey?: string;
   },
   allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
   return db.transaction((tx) => {
+    if (input.idempotencyKey) {
+      const existing = tx
+        .select()
+        .from(transactions)
+        .where(eq(transactions.idempotencyKey, input.idempotencyKey.trim()))
+        .get();
+      if (existing) {
+        return {
+          ...existing,
+          metadata: JSON.parse(existing.metadata || "{}"),
+        };
+      }
+    }
+
     const type = tx
       .select()
       .from(transactionTypes)
@@ -473,6 +488,7 @@ export function createTransaction(
 
     const row = {
       id,
+      idempotencyKey: input.idempotencyKey?.trim() || null,
       transactionDate: input.transactionDate,
       transactionTypeId: input.transactionTypeId,
       amount: amountSen,

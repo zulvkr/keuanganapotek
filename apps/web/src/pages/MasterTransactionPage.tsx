@@ -190,156 +190,155 @@ export default function MasterTransactionPage() {
       </div>
 
       {/* Table list */}
-      <div className="rounded border border-slate-200 bg-white">
-        <div className="max-w-full overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-700">
+      <div className="rounded border border-slate-200 bg-white overflow-hidden">
+        <table className="w-full table-fixed text-left border-collapse text-xs">
+          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-700">
+            <tr>
+              <th className="px-2 py-1 w-16 border-r border-slate-200">Kode</th>
+              <th className="px-2 py-1 w-[22%] border-r border-slate-200">Nama Transaksi</th>
+              <th className="px-2 py-1 w-28 border-r border-slate-200">Grup Bisnis</th>
+              <th className="px-2 py-1 w-[21%] border-r border-slate-200">Akun Debit (+)</th>
+              <th className="px-2 py-1 w-[21%] border-r border-slate-200">Akun Kredit (-)</th>
+              <th className="px-2 py-1 border-r border-slate-200">Skema Metadata</th>
+              <th className="px-2 py-1 w-16 text-center border-r border-slate-200">Status</th>
+              <th className="px-2 py-1 w-14 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 text-xs">
+            {typesQuery.isLoading ? (
               <tr>
-                <th className="px-2 py-1 w-20 border-r border-slate-200">Kode</th>
-                <th className="px-2 py-1 min-w-[170px] border-r border-slate-200">
-                  Nama Transaksi
-                </th>
-                <th className="px-2 py-1 w-32 border-r border-slate-200">Grup Bisnis</th>
-                <th className="px-2 py-1 min-w-[170px] border-r border-slate-200">
-                  Akun Debit (+)
-                </th>
-                <th className="px-2 py-1 min-w-[170px] border-r border-slate-200">
-                  Akun Kredit (-)
-                </th>
-                <th className="px-2 py-1 min-w-[140px] border-r border-slate-200">
-                  Skema Metadata
-                </th>
-                <th className="px-2 py-1 w-16 text-center border-r border-slate-200">Status</th>
-                <th className="px-2 py-1 w-16 text-center">Aksi</th>
+                <td colSpan={8} className="px-2 py-6 text-center text-muted">
+                  Memuat tipe transaksi...
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {typesQuery.isLoading ? (
-                <tr>
-                  <td colSpan={8} className="px-2 py-6 text-center text-muted">
-                    Memuat tipe transaksi...
-                  </td>
-                </tr>
-              ) : filteredTypes.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-2 py-6 text-center text-muted">
-                    Tidak ada tipe transaksi yang cocok.
-                  </td>
-                </tr>
-              ) : (
-                filteredTypes.map((item, itemIdx) => {
-                  const debitAcc = accountById.get(item.debitAccountId);
-                  const creditAcc = accountById.get(item.creditAccountId);
-                  const schemaFields = item.metadataSchema || [];
+            ) : filteredTypes.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-2 py-6 text-center text-muted">
+                  Tidak ada tipe transaksi yang cocok.
+                </td>
+              </tr>
+            ) : (
+              filteredTypes.map((item, itemIdx) => {
+                const debitAcc = accountById.get(item.debitAccountId);
+                const creditAcc = accountById.get(item.creditAccountId);
+                const schemaFields = item.metadataSchema || [];
 
-                  return (
-                    <tr
-                      key={item.id}
-                      className={`transition ${!item.isActive ? "opacity-60 bg-slate-50/30" : itemIdx % 2 === 0 ? "bg-white hover:bg-blue-50/40" : "bg-slate-50/60 hover:bg-blue-50/40"}`}
-                    >
-                      <td className="px-2 py-1 font-mono font-semibold text-brand tabular-nums border-r border-slate-100">
-                        {item.code}
-                      </td>
-                      <td className="px-2 py-1 border-r border-slate-100">
-                        <span className="font-semibold text-slate-900">{item.name}</span>
-                        {item.description && (
-                          <span className="text-[11px] text-slate-500 ml-1.5 truncate">
-                            · {item.description}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1 border-r border-slate-100">
-                        {(() => {
-                          const gKey = item.group || inferTransactionGroup(debitAcc, creditAcc);
-                          const gConf = TRANSACTION_GROUPS.find((g) => g.key === gKey);
-                          return gConf ? (
-                            <span
-                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${gConf.badgeClass}`}
-                            >
-                              {gConf.badgeLabel}
-                            </span>
-                          ) : null;
-                        })()}
-                      </td>
-                      <td className="px-2 py-1 border-r border-slate-100">
-                        <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 border border-emerald-100">
-                          <span className="font-mono font-bold tabular-nums">
-                            {debitAcc?.code || "—"}
-                          </span>{" "}
-                          ·{" "}
-                          <span className="truncate">
-                            {debitAcc?.name || "Akun tidak ditemukan"}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 border-r border-slate-100">
-                        <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 border border-amber-100">
-                          <span className="font-mono font-bold tabular-nums">
-                            {creditAcc?.code || "—"}
-                          </span>{" "}
-                          ·{" "}
-                          <span className="truncate">
-                            {creditAcc?.name || "Akun tidak ditemukan"}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 border-r border-slate-100">
-                        {schemaFields.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {schemaFields.map((f, idx) => (
-                              <span
-                                key={idx}
-                                className="rounded bg-slate-100 px-1 py-0 text-[10px] text-slate-600"
-                                title={`Tipe: ${f.type}${f.required ? " (Wajib)" : ""}`}
-                              >
-                                {f.label}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-slate-400 italic text-[11px]">
-                            Tanpa field metadata
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1 text-center border-r border-slate-100">
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${item.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}
+                return (
+                  <tr
+                    key={item.id}
+                    className={`transition ${!item.isActive ? "opacity-60 bg-slate-50/30" : itemIdx % 2 === 0 ? "bg-white hover:bg-blue-50/40" : "bg-slate-50/60 hover:bg-blue-50/40"}`}
+                  >
+                    <td className="px-2 py-1 font-mono font-semibold text-brand tabular-nums border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
+                      {item.code}
+                    </td>
+                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
+                      <div className="font-semibold text-slate-900 truncate" title={item.name}>
+                        {item.name}
+                      </div>
+                      {item.description && (
+                        <div
+                          className="text-[11px] text-slate-500 truncate"
+                          title={item.description}
                         >
-                          {item.isActive ? "Aktif" : "Nonaktif"}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 text-center">
-                        <div className="flex items-center justify-center gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => openEdit(item)}
-                            className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
-                            title="Edit tipe transaksi"
-                          >
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (confirm(`Hapus/nonaktifkan tipe transaksi ${item.name}?`)) {
-                                deleteMutation.mutate(item.id);
-                              }
-                            }}
-                            className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
-                            title="Hapus tipe transaksi"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {item.description}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 border-r border-slate-100 whitespace-nowrap overflow-hidden">
+                      {(() => {
+                        const gKey = item.group || inferTransactionGroup(debitAcc, creditAcc);
+                        const gConf = TRANSACTION_GROUPS.find((g) => g.key === gKey);
+                        return gConf ? (
+                          <span
+                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${gConf.badgeClass}`}
+                          >
+                            {gConf.badgeLabel}
+                          </span>
+                        ) : null;
+                      })()}
+                    </td>
+                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
+                      <div
+                        className="inline-flex max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 border border-emerald-100"
+                        title={debitAcc ? `${debitAcc.code} · ${debitAcc.name}` : undefined}
+                      >
+                        <span className="font-mono font-bold tabular-nums shrink-0">
+                          {debitAcc?.code || "—"}
+                        </span>
+                        <span className="text-emerald-400 shrink-0">·</span>
+                        <span className="truncate">{debitAcc?.name || "Akun tidak ditemukan"}</span>
+                      </div>
+                    </td>
+                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
+                      <div
+                        className="inline-flex max-w-full items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 border border-amber-100"
+                        title={creditAcc ? `${creditAcc.code} · ${creditAcc.name}` : undefined}
+                      >
+                        <span className="font-mono font-bold tabular-nums shrink-0">
+                          {creditAcc?.code || "—"}
+                        </span>
+                        <span className="text-amber-400 shrink-0">·</span>
+                        <span className="truncate">
+                          {creditAcc?.name || "Akun tidak ditemukan"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
+                      {schemaFields.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {schemaFields.map((f, idx) => (
+                            <span
+                              key={idx}
+                              className="rounded bg-slate-100 px-1 py-0 text-[10px] text-slate-600 truncate max-w-full"
+                              title={`Tipe: ${f.type}${f.required ? " (Wajib)" : ""}`}
+                            >
+                              {f.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 italic text-[11px]">
+                          Tanpa field metadata
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 text-center border-r border-slate-100 whitespace-nowrap">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${item.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}
+                      >
+                        {item.isActive ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(item)}
+                          className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
+                          title="Edit tipe transaksi"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Hapus/nonaktifkan tipe transaksi ${item.name}?`)) {
+                              deleteMutation.mutate(item.id);
+                            }
+                          }}
+                          className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                          title="Hapus tipe transaksi"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Editor Modal / Drawer */}

@@ -132,6 +132,7 @@ export const transactions = sqliteTable(
   "transactions",
   {
     id: text("id").primaryKey().notNull(),
+    idempotencyKey: text("idempotency_key"),
     transactionDate: text("transaction_date").notNull(),
     transactionTypeId: text("transaction_type_id")
       .notNull()
@@ -152,6 +153,7 @@ export const transactions = sqliteTable(
   (table) => ({
     dateIndex: index("idx_transactions_date").on(table.transactionDate),
     typeIndex: index("idx_transactions_type").on(table.transactionTypeId),
+    idempotencyKeyIndex: uniqueIndex("idx_transactions_idempotency_key").on(table.idempotencyKey),
   }),
 );
 

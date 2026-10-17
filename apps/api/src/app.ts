@@ -1007,7 +1007,12 @@ export function createApiApp(client: SqliteClient) {
         const user = getAuthUser(context);
         const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
         const body = context.req.valid("json");
-        return context.json({ data: createTransaction(client.db, body, allowedCodes) }, 201);
+        const idempotencyKey =
+          body.idempotencyKey || context.req.header("x-idempotency-key") || undefined;
+        return context.json(
+          { data: createTransaction(client.db, { ...body, idempotencyKey }, allowedCodes) },
+          201,
+        );
       } catch (error) {
         return errorResponse(context, error);
       }

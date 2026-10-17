@@ -443,4 +443,58 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(txs.length).toBeGreaterThanOrEqual(1);
     expect(txs[0]?.group).toBe("omzet");
   });
+
+  it("handles idempotent transaction creation with X-Idempotency-Key", async () => {
+    const { api, client } = setup();
+
+    const typeRes = await api.request("http://localhost/api/transaction-types");
+    const types = (
+      (await typeRes.json()) as {
+        data: Array<{ id: string; code: string }>;
+      }
+    ).data;
+    const trx01 = types.find((t) => t.code === "TRX-01")!;
+
+    // 1. First request with X-Idempotency-Key
+    const res1 = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-idempotency-key": "pos:shift:shift-100:cash",
+      },
+      body: JSON.stringify({
+        transactionDate: "2026-10-17",
+        transactionTypeId: trx01.id,
+        amount: "250.000",
+        memo: "Penjualan Shift 1",
+      }),
+    });
+    expect(res1.status).toBe(201);
+    const data1 = ((await res1.json()) as { data: any }).data;
+    expect(data1.idempotencyKey).toBe("pos:shift:shift-100:cash");
+
+    const journalCount1 = client.db.select().from(journals).all().length;
+
+    // 2. Second request with same idempotency key
+    const res2 = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-idempotency-key": "pos:shift:shift-100:cash",
+      },
+      body: JSON.stringify({
+        transactionDate: "2026-10-17",
+        transactionTypeId: trx01.id,
+        amount: "250.000",
+        memo: "Penjualan Shift 1",
+      }),
+    });
+    expect(res2.status).toBe(201);
+    const data2 = ((await res2.json()) as { data: any }).data;
+    expect(data2.id).toBe(data1.id);
+
+    // Verify journal entries were not duplicated
+    const journalCount2 = client.db.select().from(journals).all().length;
+    expect(journalCount2).toBe(journalCount1);
+  });
 });

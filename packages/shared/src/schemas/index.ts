@@ -165,6 +165,7 @@ export const TransactionTypeSchema = z.object({
 
 export const TransactionEntrySchema = z.object({
   id: z.string().optional(),
+  idempotencyKey: z.string().trim().max(128).optional(),
   transactionDate: IsoDateSchema,
   transactionTypeId: z.string().min(1),
   amount: NonNegativeMoneySchema.default("0"),
