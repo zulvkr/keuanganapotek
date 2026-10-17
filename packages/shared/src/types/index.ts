@@ -345,3 +345,22 @@ export type CashFlowReport = {
   endingCash: number;
   cashAccounts: CashAccountFlowSummary[];
 };
+
+export type ApiKeyItem = {
+  id: string;
+  userId: string;
+  userName?: string;
+  userRole?: UserRole;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  isActive: boolean;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreatedApiKeyResult = ApiKeyItem & {
+  key: string;
+};

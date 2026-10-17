@@ -1,6 +1,7 @@
 import { type InferRequestType, type InferResponseType } from "hono/client";
 import { api, requestJson, rpc } from "./api";
 import type {
+  ApiKeyItem,
   AuthUser,
   CashFlowReport,
   MetadataFieldDefinition,
@@ -29,6 +30,7 @@ export const queryKeys = {
   drillDown: (accountId: string, period: ReportPeriod) =>
     ["reports", "drill-down", accountId, period] as const,
   users: ["users"] as const,
+  apiKeys: ["api-keys"] as const,
 };
 
 export type Account = ResponseData<
@@ -275,4 +277,8 @@ export function getDrillDown(accountId: string, period: ReportPeriod) {
 
 export function getUsers(): Promise<AuthUser[]> {
   return requestJson<AuthUser[]>("/api/auth/users");
+}
+
+export function getApiKeys(): Promise<ApiKeyItem[]> {
+  return requestJson<ApiKeyItem[]>("/api/api-keys");
 }

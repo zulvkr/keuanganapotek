@@ -29,6 +29,7 @@ import {
 } from "../lib/mutations";
 import { useAuth } from "../lib/auth";
 import { toast } from "../lib/toast";
+import ApiKeyManager from "../components/api-keys/ApiKeyManager";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -279,6 +280,9 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {/* API Key & AI Integration Section */}
+      <ApiKeyManager />
 
       {/* Profile Form */}
       <section className="border border-slate-200 bg-white">

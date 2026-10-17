@@ -178,3 +178,22 @@ export function saveUserPermissions(id: string, allowedCoaCodes: string[]) {
     body: JSON.stringify({ allowedCoaCodes }),
   });
 }
+
+export function createApiKey(input: { name: string; expiresAt?: string | null }) {
+  return requestJson<{
+    id: string;
+    key: string;
+    name: string;
+    keyPrefix: string;
+    isActive: boolean;
+    createdAt: string;
+  }>("/api/api-keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function revokeApiKey(id: string) {
+  return requestJson<null>(`/api/api-keys/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

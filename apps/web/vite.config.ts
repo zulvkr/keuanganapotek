@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const apiTarget = process.env.VITE_API_URL || "http://127.0.0.1:3000";
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -9,11 +11,27 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_URL || "http://127.0.0.1:3000",
+        target: apiTarget,
         changeOrigin: true,
       },
       "/health": {
-        target: process.env.VITE_API_URL || "http://127.0.0.1:3000",
+        target: apiTarget,
+        changeOrigin: true,
+      },
+      "/docs": {
+        target: apiTarget,
+        changeOrigin: true,
+      },
+      "/openapi.json": {
+        target: apiTarget,
+        changeOrigin: true,
+      },
+      "/llms.txt": {
+        target: apiTarget,
+        changeOrigin: true,
+      },
+      "/llms-full.txt": {
+        target: apiTarget,
         changeOrigin: true,
       },
     },

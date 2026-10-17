@@ -244,11 +244,17 @@ export const SetupInputSchema = z.object({
     .optional(),
 });
 
+export const CreateApiKeyInputSchema = z.object({
+  name: z.string().trim().min(1, "Nama API Key wajib diisi"),
+  expiresAt: IsoDateSchema.optional().nullable(),
+});
+
 export type LoginInput = z.infer<typeof LoginInputSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
 export type UpdateUserInput = z.infer<typeof UpdateUserInputSchema>;
 export type UpdatePermissionsInput = z.infer<typeof UpdatePermissionsInputSchema>;
 export type SetupInput = z.infer<typeof SetupInputSchema>;
+export type CreateApiKeyInput = z.infer<typeof CreateApiKeyInputSchema>;
 
 export type Account = z.infer<typeof AccountSchema>;
 export type JournalLine = z.infer<typeof JournalLineSchema>;

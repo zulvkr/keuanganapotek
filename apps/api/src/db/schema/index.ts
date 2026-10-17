@@ -174,6 +174,29 @@ export const users = sqliteTable(
   }),
 );
 
+export const apiKeys = sqliteTable(
+  "api_keys",
+  {
+    id: text("id").primaryKey().notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    keyHash: text("key_hash").notNull().unique(),
+    keyPrefix: text("key_prefix").notNull(),
+    scopes: text("scopes").notNull().default("[]"),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    lastUsedAt: text("last_used_at"),
+    expiresAt: text("expires_at"),
+    createdAt: text("created_at").notNull().default("(datetime('now'))"),
+    updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
+  },
+  (table) => ({
+    keyHashIndex: uniqueIndex("idx_api_keys_key_hash").on(table.keyHash),
+    userIdIndex: index("idx_api_keys_user_id").on(table.userId),
+  }),
+);
+
 export type AccountRow = typeof accounts.$inferSelect;
 export type OpeningBalanceRow = typeof openingBalances.$inferSelect;
 export type JournalRow = typeof journals.$inferSelect;
@@ -182,3 +205,4 @@ export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type TransactionTypeRow = typeof transactionTypes.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
+export type ApiKeyRow = typeof apiKeys.$inferSelect;

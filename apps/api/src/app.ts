@@ -25,6 +25,7 @@ import {
   UpdateUserInputSchema,
   UpdatePermissionsInputSchema,
   SetupInputSchema,
+  CreateApiKeyInputSchema,
   DEFAULT_ASSISTANT_ALLOWED_COA_CODES,
   type AuthUser,
   type SourceModule,
@@ -82,6 +83,14 @@ import {
   updateUserPermissions,
   verifyToken,
 } from "./services/auth.service.js";
+import {
+  generateApiKey,
+  listApiKeys,
+  revokeApiKey,
+  verifyApiKey,
+} from "./services/api-key.service.js";
+import { getOpenApiSpec, getSwaggerHtml } from "./docs/openapi.js";
+import { getLlmsTxt, getLlmsFullTxt } from "./docs/llms.js";
 
 function healthHandler(context: Context) {
   const response: HealthResponse = {
@@ -152,17 +161,19 @@ const ReportQuerySchema = z.object({
 function errorResponse(context: Context, error: unknown) {
   const message = error instanceof Error ? error.message : "Permintaan tidak valid";
   const lower = message.toLowerCase();
-  const status = lower.includes("akses ditolak")
-    ? (403 as const)
-    : lower.includes("tidak ditemukan")
-      ? (404 as const)
-      : lower.includes("sudah dikunci") ||
-          lower.includes("sudah diinisialisasi") ||
-          lower.includes("hanya boleh memiliki satu") ||
-          lower.includes("sistem") ||
-          lower.includes("grup")
-        ? (409 as const)
-        : (400 as const);
+  const status = lower.includes("api key tidak valid")
+    ? (401 as const)
+    : lower.includes("akses ditolak")
+      ? (403 as const)
+      : lower.includes("tidak ditemukan")
+        ? (404 as const)
+        : lower.includes("sudah dikunci") ||
+            lower.includes("sudah diinisialisasi") ||
+            lower.includes("hanya boleh memiliki satu") ||
+            lower.includes("sistem") ||
+            lower.includes("grup")
+          ? (409 as const)
+          : (400 as const);
   return context.json({ error: message }, status);
 }
 
@@ -171,9 +182,21 @@ const sourceModules: SourceModule[] = ["GENERAL", "OPENING_BALANCE", "TRANSACTIO
 /** Creates the API with a caller-owned database connection. */
 export function createApiApp(client: SqliteClient) {
   function getAuthUser(context: Context): AuthUser {
+    const apiKeyHeader = context.req.header("x-api-key");
+    if (apiKeyHeader) {
+      const apiKeyUser = verifyApiKey(client.db, apiKeyHeader.trim());
+      if (apiKeyUser && apiKeyUser.isActive) return apiKeyUser;
+      throw new Error("API Key tidak valid atau telah dicabut");
+    }
+
     const authHeader = context.req.header("authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7).trim();
+      if (token.startsWith("ka_")) {
+        const apiKeyUser = verifyApiKey(client.db, token);
+        if (apiKeyUser && apiKeyUser.isActive) return apiKeyUser;
+        throw new Error("API Key tidak valid atau telah dicabut");
+      }
       const verified = verifyToken(token);
       if (verified) {
         const user = getUserById(client.db, verified.id);
@@ -308,7 +331,32 @@ export function createApiApp(client: SqliteClient) {
 
   const routes = new Hono()
     .use("/api/*", cors({ origin: (origin) => origin || "*" }))
+    .use("/api/*", async (context, next) => {
+      const path = context.req.path;
+      if (
+        path.startsWith("/api/auth/login") ||
+        path.startsWith("/api/auth/setup") ||
+        path === "/api/openapi.json" ||
+        path === "/api/docs" ||
+        path.startsWith("/api/docs/")
+      ) {
+        return next();
+      }
+      try {
+        getAuthUser(context);
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+      await next();
+    })
     .get("/health", healthHandler)
+    .get("/openapi.json", (context) => context.json(getOpenApiSpec()))
+    .get("/api/openapi.json", (context) => context.json(getOpenApiSpec()))
+    .get("/docs", (context) => context.html(getSwaggerHtml("/api/openapi.json")))
+    .get("/api/docs", (context) => context.html(getSwaggerHtml("/api/openapi.json")))
+    .get("/llms.txt", (context) => context.text(getLlmsTxt()))
+    .get("/api/docs/llms.txt", (context) => context.text(getLlmsTxt()))
+    .get("/llms-full.txt", (context) => context.text(getLlmsFullTxt()))
     .route("/api/reports", reportRoutes)
 
     // Auth endpoints
@@ -343,7 +391,11 @@ export function createApiApp(client: SqliteClient) {
     })
 
     .get("/api/auth/me", (context) => {
-      return context.json({ data: { user: getAuthUser(context) } });
+      const user = getAuthUser(context);
+      if (!user) {
+        return context.json({ error: "Belum terautentikasi" }, 401);
+      }
+      return context.json({ data: { user } });
     })
 
     .get("/api/auth/users", (context) => {
@@ -426,6 +478,47 @@ export function createApiApp(client: SqliteClient) {
         }
       },
     )
+
+    // API Keys endpoints
+    .get("/api/api-keys", (context) => {
+      const user = getAuthUser(context);
+      if (!user) {
+        return context.json({ error: "Belum terautentikasi" }, 401);
+      }
+      const filterUserId = user.role === "admin" ? undefined : user.id;
+      return context.json({ data: listApiKeys(client.db, filterUserId) });
+    })
+
+    .post("/api/api-keys", validateJson(CreateApiKeyInputSchema), async (context) => {
+      const user = getAuthUser(context);
+      if (!user) {
+        return context.json({ error: "Belum terautentikasi" }, 401);
+      }
+      try {
+        const body = context.req.valid("json");
+        const created = generateApiKey(client.db, {
+          userId: user.id,
+          name: body.name,
+          expiresAt: body.expiresAt,
+        });
+        return context.json({ data: created }, 201);
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+
+    .delete("/api/api-keys/:id", (context) => {
+      const user = getAuthUser(context);
+      if (!user) {
+        return context.json({ error: "Belum terautentikasi" }, 401);
+      }
+      try {
+        revokeApiKey(client.db, context.req.param("id")!, user.id, user.role === "admin");
+        return context.body(null, 204);
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
 
     .get("/api/accounts/tree", async (context) => {
       const user = getAuthUser(context);
