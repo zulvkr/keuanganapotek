@@ -362,6 +362,7 @@ export function createApiApp(client: SqliteClient) {
     .get("/docs", (context) => context.html(getSwaggerHtml("/api/openapi.json")))
     .get("/api/docs", (context) => context.html(getSwaggerHtml("/api/openapi.json")))
     .get("/llms.txt", (context) => context.text(getLlmsTxt()))
+    .get("/.well-known/llms.txt", (context) => context.text(getLlmsTxt()))
     .get("/api/docs/llms.txt", (context) => context.text(getLlmsTxt()))
     .get("/llms-full.txt", (context) => context.text(getLlmsFullTxt()))
     .route("/api/reports", reportRoutes)

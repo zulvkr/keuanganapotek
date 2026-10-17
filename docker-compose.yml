@@ -19,8 +19,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.web
-      args:
-        VITE_API_URL: ${VITE_API_URL:-}
     restart: unless-stopped
     depends_on:
       api:

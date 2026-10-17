@@ -239,11 +239,15 @@ describe("API Key Management, Authentication & Documentation", () => {
     expect(text).toContain("Double-Entry");
     expect(text).toContain("X-API-Key");
 
-    // 2. /api/docs/llms.txt
+    // 2. /.well-known/llms.txt
+    const wellKnownRes = await app.request("/.well-known/llms.txt");
+    expect(wellKnownRes.status).toBe(200);
+
+    // 3. /api/docs/llms.txt
     const apiLlmsRes = await app.request("/api/docs/llms.txt");
     expect(apiLlmsRes.status).toBe(200);
 
-    // 3. /llms-full.txt
+    // 4. /llms-full.txt
     const llmsFullRes = await app.request("/llms-full.txt");
     expect(llmsFullRes.status).toBe(200);
     const fullText = await llmsFullRes.text();

@@ -4,6 +4,12 @@
   "categories": {
     "correctness": "error"
   },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/coverage/**",
+    "**/playwright-report/**",
+    "**/test-results/**"
+  ],
   "rules": {},
   "env": {
     "builtin": true,

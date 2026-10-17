@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r run build",
+    "build:web": "pnpm --filter @keuangan-apotek/shared run build && pnpm --filter @keuangan-apotek/web run build",
     "dev": "node scripts/dev.mjs",
     "db:generate": "pnpm --filter @keuangan-apotek/api db:generate",
     "db:migrate": "pnpm --filter @keuangan-apotek/api db:migrate",
