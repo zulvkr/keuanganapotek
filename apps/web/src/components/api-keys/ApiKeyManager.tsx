@@ -217,7 +217,7 @@ export default function ApiKeyManager() {
         <div className="rounded border border-slate-200 bg-slate-50/70 p-2 text-xs">
           <span className="font-semibold text-slate-700">Contoh Penggunaan Header HTTP:</span>
           <pre className="mt-1 rounded bg-slate-900 p-2 text-[11px] text-emerald-400 font-mono overflow-x-auto">
-            {`curl -X GET "http://localhost:3000/api/transactions/summary" \\
+            {`curl -X GET "${typeof window !== "undefined" ? window.location.origin : "http://localhost:5173"}/api/transactions/summary" \\
   -H "X-API-Key: ka_live_xxxxxxxxxxxxxxxxxxxxxxxx"`}
           </pre>
         </div>

@@ -37,8 +37,9 @@ export const toast = {
   success: (message: string, duration = 3500) => {
     return useToastStore.getState().addToast({ type: "success", message, duration });
   },
-  error: (message: string, duration = 4500) => {
-    return useToastStore.getState().addToast({ type: "error", message, duration });
+  error: (message: string, duration?: number) => {
+    const autoDuration = duration ?? (message.length > 80 ? 9000 : 4500);
+    return useToastStore.getState().addToast({ type: "error", message, duration: autoDuration });
   },
   info: (message: string, duration = 3500) => {
     return useToastStore.getState().addToast({ type: "info", message, duration });

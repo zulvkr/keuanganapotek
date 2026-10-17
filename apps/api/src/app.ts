@@ -5,7 +5,7 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 import { cors } from "hono/cors";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import {
   AccountSchema,
   JournalEntrySchema,
@@ -32,7 +32,13 @@ import {
   type HealthResponse,
 } from "@keuangan-apotek/shared";
 import type { SqliteClient } from "./db/client.js";
-import { accounts } from "./db/schema/index.js";
+import {
+  accounts,
+  journalLines,
+  journals,
+  transactions,
+  transactionTypes,
+} from "./db/schema/index.js";
 import {
   autoBalanceOpeningBalances,
   calculateOpeningBalanceTotals,
@@ -171,7 +177,8 @@ function errorResponse(context: Context, error: unknown) {
             lower.includes("sudah diinisialisasi") ||
             lower.includes("hanya boleh memiliki satu") ||
             lower.includes("sistem") ||
-            lower.includes("grup")
+            lower.includes("grup") ||
+            lower.includes("tidak dapat dihapus")
           ? (409 as const)
           : (400 as const);
   return context.json({ error: message }, status);
@@ -605,6 +612,84 @@ export function createApiApp(client: SqliteClient) {
         if (account.code === "3201" || account.name.trim().toLowerCase() === "laba ditahan") {
           throw new Error("Akun Laba Ditahan sistem tidak boleh dihapus");
         }
+
+        // Check child accounts (sub-akun)
+        const childAccounts = client.db
+          .select({ code: accounts.code, name: accounts.name })
+          .from(accounts)
+          .where(eq(accounts.parentId, account.id))
+          .all();
+        if (childAccounts.length > 0) {
+          const list = childAccounts.map((c) => `${c.code} (${c.name})`).join(", ");
+          throw new Error(
+            `Akun [${account.code}] tidak dapat dihapus karena masih menjadi induk dari sub-akun: ${list}. Hapus atau pindahkan sub-akun tersebut terlebih dahulu.`,
+          );
+        }
+
+        // Check Master Transaction Types
+        const relatedTypes = client.db
+          .select({ code: transactionTypes.code, name: transactionTypes.name })
+          .from(transactionTypes)
+          .where(
+            or(
+              eq(transactionTypes.debitAccountId, account.id),
+              eq(transactionTypes.creditAccountId, account.id),
+            ),
+          )
+          .all();
+        if (relatedTypes.length > 0) {
+          const list = relatedTypes.map((t) => `${t.code} (${t.name})`).join(", ");
+          throw new Error(
+            `Akun [${account.code}] ${account.name} tidak dapat dihapus karena masih digunakan di Master Tipe Transaksi: ${list}. Silakan buka menu Master Transaksi untuk menghapus atau mengganti akun pada tipe transaksi tersebut terlebih dahulu.`,
+          );
+        }
+
+        // Check Daily Transactions
+        const relatedTransactions = client.db
+          .select({ count: sql<number>`count(*)` })
+          .from(transactions)
+          .where(
+            or(
+              eq(transactions.debitAccountId, account.id),
+              eq(transactions.creditAccountId, account.id),
+            ),
+          )
+          .get();
+        if (relatedTransactions && relatedTransactions.count > 0) {
+          throw new Error(
+            `Akun [${account.code}] tidak dapat dihapus karena memiliki riwayat ${relatedTransactions.count} data di Transaksi Harian. Hapus transaksi terkait terlebih dahulu jika ingin menghapus akun ini.`,
+          );
+        }
+
+        // Check Journal Lines (Jurnal Umum / Saldo Awal)
+        const relatedJournals = client.db
+          .select({
+            journalNo: journals.journalNo,
+            sourceModule: journals.sourceModule,
+          })
+          .from(journalLines)
+          .innerJoin(journals, eq(journals.id, journalLines.journalId))
+          .where(eq(journalLines.accountId, account.id))
+          .groupBy(journals.id)
+          .all();
+        if (relatedJournals.length > 0) {
+          const hasOpening = relatedJournals.some((j) => j.sourceModule === "OPENING_BALANCE");
+          const nos = relatedJournals
+            .slice(0, 3)
+            .map((j) => j.journalNo)
+            .join(", ");
+          const more =
+            relatedJournals.length > 3 ? ` dan ${relatedJournals.length - 3} lainnya` : "";
+          if (hasOpening) {
+            throw new Error(
+              `Akun [${account.code}] tidak dapat dihapus karena masih tercatat pada Jurnal Saldo Awal (${nos}${more}). Silakan nol-kan saldo awal akun ini di menu Saldo Awal terlebih dahulu.`,
+            );
+          }
+          throw new Error(
+            `Akun [${account.code}] tidak dapat dihapus karena masih tercatat pada ${relatedJournals.length} Jurnal Umum (${nos}${more}). Silakan hapus atau ubah jurnal tersebut di menu Jurnal Umum terlebih dahulu.`,
+          );
+        }
+
         const result = client.db
           .delete(accounts)
           .where(eq(accounts.id, context.req.param("id")))
@@ -612,6 +697,14 @@ export function createApiApp(client: SqliteClient) {
         if (result.changes === 0) return context.json({ error: "Akun tidak ditemukan" }, 404);
         return context.body(null, 204);
       } catch (error) {
+        if (error instanceof Error && error.message.toLowerCase().includes("foreign key")) {
+          return errorResponse(
+            context,
+            new Error(
+              "Akun tidak dapat dihapus karena masih terikat dengan data lain di sistem (Master Transaksi, Jurnal, atau Sub-akun).",
+            ),
+          );
+        }
         return errorResponse(context, error);
       }
     })

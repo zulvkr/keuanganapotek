@@ -51,17 +51,19 @@ function ToastNotification({
   return (
     <div
       role={config.role}
-      className={`pointer-events-auto flex items-center gap-2 rounded-md border ${config.border} ${config.bg} px-2.5 py-1.5 text-xs shadow-md transition-all min-w-[240px] max-w-sm`}
+      className={`pointer-events-auto flex items-start gap-2 rounded-md border ${config.border} ${config.bg} px-3 py-2 text-xs shadow-md transition-all min-w-[260px] max-w-md md:max-w-lg`}
     >
-      {config.icon}
-      <span className={`font-medium ${config.text} text-[11px] leading-snug flex-1`}>
+      <div className="mt-0.5 shrink-0">{config.icon}</div>
+      <span
+        className={`font-medium ${config.text} text-[11px] leading-relaxed flex-1 whitespace-pre-line`}
+      >
         {item.message}
       </span>
       <button
         type="button"
         onClick={() => onDismiss(item.id)}
         aria-label="Tutup notifikasi"
-        className="ml-1 -mr-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+        className="ml-1 -mr-0.5 mt-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition shrink-0"
       >
         <X size={12} />
       </button>

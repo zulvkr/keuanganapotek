@@ -762,6 +762,11 @@ function GeneralJournalPage() {
                   className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand disabled:opacity-30"
                   disabled={journal.sourceModule !== "GENERAL" || inlineEdit !== null}
                   onClick={() => void startInlineEdit(journal)}
+                  title={
+                    journal.sourceModule !== "GENERAL"
+                      ? "Jurnal sistem tidak dapat diedit langsung dari menu Jurnal Umum"
+                      : "Edit jurnal"
+                  }
                   type="button"
                 >
                   <Pencil size={12} />
@@ -771,6 +776,13 @@ function GeneralJournalPage() {
                   className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                   disabled={journal.sourceModule !== "GENERAL" || removeMutation.isPending}
                   onClick={() => removeMutation.mutate(journal.id)}
+                  title={
+                    journal.sourceModule === "OPENING_BALANCE"
+                      ? "Jurnal Saldo Awal dikelola otomatis dari menu Saldo Awal di CoA"
+                      : journal.sourceModule === "TRANSACTION"
+                        ? "Jurnal Transaksi dikelola dari menu Transaksi Harian"
+                        : "Hapus jurnal"
+                  }
                   type="button"
                 >
                   <Trash2 size={12} />

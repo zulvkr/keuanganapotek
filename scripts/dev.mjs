@@ -61,8 +61,11 @@ const childEnv = {
   ...process.env,
   API_PORT: String(apiPort),
   WEB_PORT: String(webPort),
-  VITE_API_URL: process.env.VITE_API_URL || `http://127.0.0.1:${apiPort}`,
+  API_TARGET_URL: process.env.API_TARGET_URL || `http://127.0.0.1:${apiPort}`,
 };
+if (!process.env.VITE_API_URL) {
+  delete childEnv.VITE_API_URL;
+}
 const children = [
   spawn("pnpm", ["--filter", "@keuangan-apotek/api", "run", "dev"], {
     env: childEnv,
