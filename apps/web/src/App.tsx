@@ -10,6 +10,8 @@ import {
   Lock,
   ShieldAlert,
   LogOut,
+  Menu,
+  X,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SetupStatusResponse, SourceModule } from "@keuangan-apotek/shared";
@@ -81,6 +83,7 @@ function App() {
 
   const [route, setRoute] = useState(() => resolveRoute(window.location.pathname));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
   useEffect(() => {
@@ -213,12 +216,133 @@ function App() {
         </nav>
       </aside>
 
+      {/* Mobile Sidebar Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs transition-opacity lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Mobile Sidebar Drawer */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-200 ease-in-out lg:hidden ${
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        aria-label="Navigasi mobile"
+      >
+        <div className="flex h-9 items-center justify-between border-b border-slate-200 bg-slate-50 px-3">
+          <div className="flex items-center gap-2">
+            <div className="grid h-5 w-5 place-items-center rounded bg-brand text-[10px] font-bold text-white shrink-0">
+              KA
+            </div>
+            <div>
+              <p className="text-xs font-bold leading-none text-slate-800">Keuangan Apotek</p>
+              <p className="text-[10px] text-muted leading-tight">Terminal Keuangan</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition"
+            aria-label="Tutup menu navigasi"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* User Identity in Drawer */}
+        <div className="border-b border-slate-100 bg-slate-50/70 p-2.5">
+          <div className="flex items-center gap-2">
+            <div className="grid h-7 w-7 place-items-center rounded-full bg-slate-200 text-slate-700">
+              <Shield size={14} className={isAsisten ? "text-amber-600" : "text-purple-600"} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-slate-800 truncate text-xs">{user.name}</p>
+              <p className="text-[10px] text-slate-500 font-mono">@{user.username}</p>
+            </div>
+          </div>
+          <div className="mt-1.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                isAsisten
+                  ? "bg-amber-100 text-amber-800 border border-amber-200"
+                  : "bg-purple-100 text-purple-800 border border-purple-200"
+              }`}
+            >
+              {isAsisten ? "Role: Asisten (Non-Gaji)" : "Role: Admin (Lengkap)"}
+            </span>
+          </div>
+        </div>
+
+        {/* Navigation links */}
+        <nav className="flex-1 space-y-1 p-2 overflow-y-auto" aria-label="Menu navigasi mobile">
+          <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Menu Utama
+          </p>
+          {modules.map(({ label, icon: Icon, minRole }) => {
+            const isRestricted = isAsisten && minRole === "admin";
+            const isActive = activeModule === label;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  navigateTo(modulePaths[label]!);
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-xs transition ${
+                  isActive
+                    ? "bg-brand text-white font-semibold shadow-xs"
+                    : isRestricted
+                      ? "text-slate-400 hover:bg-slate-50"
+                      : "text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <Icon size={15} strokeWidth={isActive ? 2.2 : 1.8} className="shrink-0" />
+                <span className="truncate flex-1 text-left">{label}</span>
+                {isRestricted && <Lock size={12} className="text-slate-400 shrink-0" />}
+                {isActive && <ChevronRight size={14} className="shrink-0 opacity-80" />}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Footer Logout */}
+        <div className="border-t border-slate-200 p-2">
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              handleLogout();
+            }}
+            className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition"
+          >
+            <LogOut size={14} className="text-rose-500" />
+            <span>Keluar dari Akun</span>
+          </button>
+        </div>
+      </aside>
+
       <main
         className={`transition-[padding] duration-150 ${sidebarCollapsed ? "lg:pl-11" : "lg:pl-44"}`}
         data-source-module={foundationSourceModule}
       >
         <header className="sticky top-0 z-20 flex h-8 items-center justify-between border-b border-slate-200 bg-white/95 px-2.5 backdrop-blur-xs">
           <div className="flex items-center gap-2 min-w-0">
+            {/* Mobile Hamburger Menu Button */}
+            <button
+              aria-label="Buka menu navigasi"
+              className="inline-flex rounded p-1 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+              onClick={() => setMobileMenuOpen(true)}
+              title="Buka menu navigasi"
+              type="button"
+            >
+              <Menu size={15} />
+            </button>
+
+            {/* Desktop Sidebar Toggle Button */}
             <button
               aria-label={sidebarCollapsed ? "Perluas navigasi" : "Ciutkan navigasi"}
               className="hidden rounded p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 lg:inline-flex"
@@ -228,8 +352,8 @@ function App() {
             >
               {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
             </button>
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-[11px] text-muted">Apotek /</span>
+            <div className="flex items-center gap-1.5 text-xs min-w-0">
+              <span className="text-[11px] text-muted hidden sm:inline">Apotek /</span>
               <h1 className="text-xs font-bold text-slate-900 truncate">
                 {activeModule === "Advanced" ? "Advanced" : activeModule}
               </h1>
@@ -243,10 +367,10 @@ function App() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 relative">
+          <div className="flex items-center gap-2 relative shrink-0">
             <span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 tabular-nums">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Sistem Aktif
+              <span className="hidden sm:inline">Sistem Aktif</span>
             </span>
 
             {/* Role & User Badge */}
@@ -261,7 +385,9 @@ function App() {
             >
               <Shield size={12} className={isAsisten ? "text-amber-600" : "text-purple-600"} />
               <span className="font-bold">{isAsisten ? "Asisten" : "Admin"}</span>
-              <span className="text-[10px] opacity-75 font-normal">({user.username})</span>
+              <span className="text-[10px] opacity-75 font-normal hidden sm:inline">
+                ({user.username})
+              </span>
             </button>
 
             {/* User Dropdown */}

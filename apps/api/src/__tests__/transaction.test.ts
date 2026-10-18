@@ -543,6 +543,14 @@ describe("Transaction Types and Daily Transactions Engine", () => {
       ]),
     );
 
+    const trx31 = types.find((t) => t.code === "TRX-31")!;
+    expect(trx31.category).toBe("shift_sales");
+    expect(trx31.customFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "shift", dataType: "string", required: true }),
+      ]),
+    );
+
     const trx32 = types.find((t) => t.code === "TRX-32")!;
     expect(trx32.category).toBe("consignment_settlement");
     expect(trx32.customFields).toEqual(
@@ -608,4 +616,3 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(validRes.status).toBe(201);
   });
 });
-

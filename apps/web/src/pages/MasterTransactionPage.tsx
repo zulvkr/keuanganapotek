@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, X, Save, BookTemplate } from "lucide-react";
+import { Plus, Pencil, Copy, Trash2, Search, X, Save, BookTemplate } from "lucide-react";
 import {
   inferTransactionGroup,
   TRANSACTION_GROUPS,
@@ -18,11 +18,26 @@ import {
 import { MetadataSchemaBuilder } from "../components/metadata/MetadataSchemaBuilder";
 import { toast } from "../lib/toast";
 
+function getNextTransactionCode(items: TransactionType[]): string {
+  let maxNum = 0;
+  for (const t of items) {
+    const match = t.code.match(/TRX-(\d+)/i);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    }
+  }
+  return `TRX-${String(maxNum + 1).padStart(2, "0")}`;
+}
+
 export default function MasterTransactionPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState<TransactionGroup | "all">("all");
   const [editingType, setEditingType] = useState<TransactionType | null>(null);
+  const [duplicatingFromName, setDuplicatingFromName] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Form State
@@ -65,7 +80,9 @@ export default function MasterTransactionPage() {
       toast.success(
         editingType
           ? "Tipe transaksi berhasil diperbarui."
-          : "Tipe transaksi baru berhasil dibuat.",
+          : duplicatingFromName
+            ? "Tipe transaksi hasil duplikasi berhasil dibuat."
+            : "Tipe transaksi baru berhasil dibuat.",
       );
       closeForm();
       await invalidateAccountingQueries(queryClient);
@@ -88,7 +105,8 @@ export default function MasterTransactionPage() {
 
   function openCreate() {
     setEditingType(null);
-    setFormCode(`TRX-${String(transactionTypes.length + 1).padStart(2, "0")}`);
+    setDuplicatingFromName(null);
+    setFormCode(getNextTransactionCode(transactionTypes));
     setFormName("");
     setFormDebitId(accounts[0]?.id || "");
     setFormCreditId(accounts[1]?.id || "");
@@ -100,6 +118,7 @@ export default function MasterTransactionPage() {
 
   function openEdit(item: TransactionType) {
     setEditingType(item);
+    setDuplicatingFromName(null);
     setFormCode(item.code);
     setFormName(item.name);
     setFormDebitId(item.debitAccountId);
@@ -110,9 +129,23 @@ export default function MasterTransactionPage() {
     setIsCreating(true);
   }
 
+  function openDuplicate(item: TransactionType) {
+    setEditingType(null);
+    setDuplicatingFromName(item.name);
+    setFormCode(getNextTransactionCode(transactionTypes));
+    setFormName(`${item.name} (Salinan)`);
+    setFormDebitId(item.debitAccountId);
+    setFormCreditId(item.creditAccountId);
+    setFormDescription(item.description || "");
+    setFormSchema(item.metadataSchema ? JSON.parse(JSON.stringify(item.metadataSchema)) : []);
+    setFormIsActive(true);
+    setIsCreating(true);
+  }
+
   function closeForm() {
     setIsCreating(false);
     setEditingType(null);
+    setDuplicatingFromName(null);
   }
 
   const accountById = new Map(accounts.map((a) => [a.id, a]));
@@ -201,7 +234,7 @@ export default function MasterTransactionPage() {
               <th className="px-2 py-1 w-[21%] border-r border-slate-200">Akun Kredit (-)</th>
               <th className="px-2 py-1 border-r border-slate-200">Skema Metadata</th>
               <th className="px-2 py-1 w-16 text-center border-r border-slate-200">Status</th>
-              <th className="px-2 py-1 w-14 text-center">Aksi</th>
+              <th className="px-2 py-1 w-20 text-center">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs">
@@ -321,6 +354,14 @@ export default function MasterTransactionPage() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => openDuplicate(item)}
+                          className="rounded p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition"
+                          title="Duplikat / Salin tipe transaksi ini"
+                        >
+                          <Copy size={12} />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => {
                             if (confirm(`Hapus/nonaktifkan tipe transaksi ${item.name}?`)) {
                               deleteMutation.mutate(item.id);
@@ -353,10 +394,16 @@ export default function MasterTransactionPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    {editingType ? "Edit Tipe Transaksi" : "Tambah Tipe Transaksi Baru"}
+                    {editingType
+                      ? "Edit Tipe Transaksi"
+                      : duplicatingFromName
+                        ? "Duplikat Tipe Transaksi"
+                        : "Tambah Tipe Transaksi Baru"}
                   </h3>
                   <p className="text-xs text-muted">
-                    Atur nama, akun berpasangan debit/kredit, dan susun skema metadata
+                    {duplicatingFromName
+                      ? `Menduplikasi dari "${duplicatingFromName}". Seluruh akun dan skema metadata telah disalin.`
+                      : "Atur nama, akun berpasangan debit/kredit, dan susun skema metadata"}
                   </p>
                 </div>
               </div>
@@ -371,6 +418,21 @@ export default function MasterTransactionPage() {
 
             {/* Modal Body */}
             <div className="flex-1 space-y-5 overflow-y-auto p-6">
+              {duplicatingFromName && (
+                <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900">
+                  <Copy size={16} className="text-brand shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-semibold">Menduplikasi data dari:</span>{" "}
+                    {duplicatingFromName}.
+                    <p className="text-[11px] text-blue-700">
+                      Akun debit, akun kredit, dan seluruh susunan skema metadata telah disalin
+                      otomatis. Sesuaikan kode, nama, atau akun debit/kredit yang berbeda sebelum
+                      menyimpan.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700">

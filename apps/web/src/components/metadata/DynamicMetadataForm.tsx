@@ -9,9 +9,17 @@ type Props = {
   onCancel?: () => void;
   title?: string;
   className?: string;
+  layout?: "horizontal" | "vertical";
 };
 
-export function DynamicMetadataForm({ schema, initialValues, onSave, onCancel, className }: Props) {
+export function DynamicMetadataForm({
+  schema,
+  initialValues,
+  onSave,
+  onCancel,
+  className,
+  layout = "horizontal",
+}: Props) {
   const [formValues, setFormValues] = useState<Record<string, any>>({ ...initialValues });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -73,6 +81,159 @@ export function DynamicMetadataForm({ schema, initialValues, onSave, onCancel, c
             Tutup
           </button>
         )}
+      </div>
+    );
+  }
+
+  if (layout === "vertical") {
+    return (
+      <div
+        className={
+          className ||
+          "space-y-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-800"
+        }
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onCancel?.();
+          }
+        }}
+      >
+        {schema.map((field) => {
+          const error = errors[field.key];
+          const val = formValues[field.key] ?? "";
+
+          return (
+            <div key={field.key} className="space-y-1">
+              {field.type !== "boolean" && (
+                <label className="block text-xs font-semibold text-slate-700">
+                  {field.label}
+                  {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                </label>
+              )}
+
+              {field.type === "select" ? (
+                <select
+                  value={val}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  className={`h-9 w-full rounded border bg-white px-2.5 text-xs outline-none focus:border-brand ${
+                    error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                  }`}
+                >
+                  <option value="">-- Pilih {field.label} --</option>
+                  {(field.options || []).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              ) : field.type === "multi-select" ? (
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {(field.options || []).map((opt) => {
+                    const selectedList = Array.isArray(val)
+                      ? val
+                      : typeof val === "string" && val.length > 0
+                        ? val.split(",").map((s: string) => s.trim())
+                        : [];
+                    const isSelected = selectedList.includes(opt);
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => {
+                          const next = isSelected
+                            ? selectedList.filter((x: string) => x !== opt)
+                            : [...selectedList, opt];
+                          handleChange(field.key, next);
+                        }}
+                        className={`h-7 rounded px-2 text-xs font-medium border transition ${
+                          isSelected
+                            ? "border-brand bg-brand text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : field.type === "boolean" ? (
+                <label className="flex items-center gap-2 py-1 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(val)}
+                    onChange={(e) => handleChange(field.key, e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-0"
+                  />
+                  <span>{field.label}</span>
+                </label>
+              ) : field.type === "number" ? (
+                <input
+                  type="number"
+                  step="any"
+                  value={val}
+                  placeholder={field.placeholder || "0"}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  className={`h-9 w-full rounded border bg-white px-2.5 text-xs tabular-nums outline-none focus:border-brand ${
+                    error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                  }`}
+                />
+              ) : field.type === "currency" ? (
+                <div className="relative flex items-center">
+                  <span className="absolute left-2.5 text-xs text-slate-400 select-none">Rp</span>
+                  <input
+                    type="text"
+                    value={val}
+                    placeholder={field.placeholder || "0"}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    className={`h-9 w-full pl-8 pr-2.5 rounded border bg-white text-xs tabular-nums outline-none focus:border-brand ${
+                      error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                    }`}
+                  />
+                </div>
+              ) : field.type === "date" ? (
+                <input
+                  type="date"
+                  value={val}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  className={`h-9 w-full rounded border bg-white px-2.5 text-xs tabular-nums outline-none focus:border-brand ${
+                    error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                  }`}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={val}
+                  placeholder={field.placeholder || `Masukkan ${field.label.toLowerCase()}`}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  className={`h-9 w-full rounded border bg-white px-2.5 text-xs outline-none focus:border-brand ${
+                    error ? "border-red-400 bg-red-50/40" : "border-slate-300"
+                  }`}
+                />
+              )}
+              {error && <p className="text-[11px] text-red-500">{error}</p>}
+            </div>
+          );
+        })}
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="h-8 rounded border border-slate-300 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50 transition"
+            >
+              Batal
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleSave}
+            className="h-8 inline-flex items-center gap-1.5 rounded bg-brand px-3 text-xs font-semibold text-white hover:bg-blue-700 transition"
+          >
+            <Check size={14} /> Terapkan Metadata
+          </button>
+        </div>
       </div>
     );
   }

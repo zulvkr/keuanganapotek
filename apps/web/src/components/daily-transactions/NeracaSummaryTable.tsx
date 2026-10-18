@@ -175,11 +175,11 @@ export function NeracaSummaryTable({
 
       {/* Filter Tabs and Search Bar */}
       <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="flex items-center gap-1 overflow-x-auto max-w-full pb-0.5 shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab("ALL")}
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition ${
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition shrink-0 ${
               activeTab === "ALL"
                 ? "bg-slate-800 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -190,7 +190,7 @@ export function NeracaSummaryTable({
           <button
             type="button"
             onClick={() => setActiveTab("ASSETS")}
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition ${
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition shrink-0 ${
               activeTab === "ASSETS"
                 ? "bg-brand text-white"
                 : "bg-blue-50 text-brand hover:bg-blue-100"
@@ -201,7 +201,7 @@ export function NeracaSummaryTable({
           <button
             type="button"
             onClick={() => setActiveTab("LIABILITIES")}
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition ${
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition shrink-0 ${
               activeTab === "LIABILITIES"
                 ? "bg-amber-600 text-white"
                 : "bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -212,7 +212,7 @@ export function NeracaSummaryTable({
           <button
             type="button"
             onClick={() => setActiveTab("EQUITY")}
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition ${
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition shrink-0 ${
               activeTab === "EQUITY"
                 ? "bg-purple-600 text-white"
                 : "bg-purple-50 text-purple-700 hover:bg-purple-100"
@@ -222,7 +222,7 @@ export function NeracaSummaryTable({
           </button>
         </div>
 
-        <div className="relative w-48">
+        <div className="relative w-full sm:w-48">
           <Search size={11} className="absolute left-2 top-1.5 text-slate-400" />
           <input
             type="text"
@@ -236,7 +236,7 @@ export function NeracaSummaryTable({
 
       {/* Neraca Accounts Table */}
       <div className="overflow-hidden rounded border border-slate-200 bg-white">
-        <div className="max-h-72 overflow-y-auto">
+        <div className="max-h-72 overflow-y-auto overflow-x-auto">
           <table className="w-full border-collapse text-left text-xs">
             <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-700">
               <tr>

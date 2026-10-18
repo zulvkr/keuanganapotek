@@ -195,10 +195,7 @@ export function inferTransactionGroup(
   return "tidak_terkategori";
 }
 
-export type PosSyncCategory =
-  | "goods_receiving"
-  | "shift_sales"
-  | "consignment_settlement";
+export type PosSyncCategory = "goods_receiving" | "shift_sales" | "consignment_settlement";
 
 const SHIFT_SALES_CODES = new Set([
   "TRX-01",
@@ -210,9 +207,10 @@ const SHIFT_SALES_CODES = new Set([
   "TRX-15",
   "TRX-16",
   "TRX-30",
+  "TRX-31",
 ]);
 
-const GOODS_RECEIVING_CODES = new Set(["TRX-25", "TRX-26", "TRX-27", "TRX-31"]);
+const GOODS_RECEIVING_CODES = new Set(["TRX-25", "TRX-26", "TRX-27"]);
 
 const CONSIGNMENT_SETTLEMENT_CODES = new Set(["TRX-32"]);
 
@@ -243,16 +241,13 @@ export function inferPosSyncCategory(params: {
     return "consignment_settlement";
   }
 
-  if (
-    group === "pembelian_persediaan" ||
-    isInventoryAccount(params.debit) ||
-    (params.debit?.code === "5102" && params.credit?.code === "2104")
-  ) {
+  if (group === "pembelian_persediaan" || isInventoryAccount(params.debit)) {
     return "goods_receiving";
   }
 
   if (
     group === "omzet" ||
+    (params.debit?.code === "5102" && params.credit?.code === "2104") ||
     params.metadataSchema?.some((field) => field.key === "shift")
   ) {
     return "shift_sales";
@@ -260,4 +255,3 @@ export function inferPosSyncCategory(params: {
 
   return undefined;
 }
-

@@ -950,12 +950,16 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     name: "Pengakuan HPP Konsinyasi",
     debitCode: "5102",
     creditCode: "2104",
-    description: "Pencatatan beban pokok penjualan barang konsinyasi",
+    description: "Pencatatan beban pokok penjualan barang konsinyasi saat terjual di shift kasir",
     metadataSchema: [
-      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: false },
-      { key: "nama_vendor", label: "Nama Vendor", type: "text", required: false },
-      { key: "no_faktur", label: "No. Faktur", type: "text", required: false },
-      { key: "tgl_terima_barang", label: "Tanggal Terima Barang", type: "date", required: false },
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
+      { key: "nama_kasir", label: "Nama Kasir", type: "text", required: false },
     ],
   },
   {
