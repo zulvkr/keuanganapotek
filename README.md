@@ -114,7 +114,7 @@ pnpm dev
 Variabel lingkungan yang didukung:
 
 - `API_PORT`: Port server API (default mulai dari `3000`).
-- `WEB_PORT`: Port Vite client (default mulai dari `5173`).
+- `WEB_PORT`: Port Vite client (default mulai dari `5180`).
 - `VITE_API_URL`: URL API kustom jika backend dijalankan di host/port terpisah.
 - `DATABASE_PATH`: Lokasi file database SQLite per instance jika diperlukan.
 

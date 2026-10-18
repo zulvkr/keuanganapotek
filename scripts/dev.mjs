@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import net from "node:net";
 
 const defaultApiPort = 3000;
-const defaultWebPort = 5173;
+const defaultWebPort = 5180;
 
 function parsePort(name, fallback) {
   const value = process.env[name];

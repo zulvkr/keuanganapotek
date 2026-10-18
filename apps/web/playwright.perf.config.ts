@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const webPort = Number(process.env.WEB_PORT ?? process.env.E2E_WEB_PORT ?? 5173);
+const webPort = Number(process.env.WEB_PORT ?? process.env.E2E_WEB_PORT ?? 5180);
 
 export default defineConfig({
   testDir: "./src/__tests__/perf",
