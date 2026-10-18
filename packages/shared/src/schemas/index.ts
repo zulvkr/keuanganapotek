@@ -170,10 +170,7 @@ export const TransactionEntrySchema = z.object({
   transactionTypeId: z.string().min(1),
   amount: NonNegativeMoneySchema.default("0"),
   memo: z.string().trim().optional(),
-  metadata: z
-    .record(z.string(), z.any())
-    .nullish()
-    .transform((val) => val ?? {}),
+  metadata: z.record(z.string(), z.any()).nullish(),
 });
 
 export const ReportPeriodSchema = z

@@ -951,7 +951,12 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     debitCode: "5102",
     creditCode: "2104",
     description: "Pencatatan beban pokok penjualan barang konsinyasi",
-    metadataSchema: [{ key: "nama_vendor", label: "Nama Vendor", type: "text", required: false }],
+    metadataSchema: [
+      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: false },
+      { key: "nama_vendor", label: "Nama Vendor", type: "text", required: false },
+      { key: "no_faktur", label: "No. Faktur", type: "text", required: false },
+      { key: "tgl_terima_barang", label: "Tanggal Terima Barang", type: "date", required: false },
+    ],
   },
   {
     code: "TRX-32",
@@ -961,7 +966,9 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     description: "Penyelesaian bagi hasil titip jual ke pemilik produk konsinyasi",
     metadataSchema: [
       { key: "nama_vendor", label: "Nama Vendor", type: "text", required: true },
-      { key: "periode_rekap", label: "Periode Rekap", type: "text", required: false },
+      { key: "no_faktur", label: "No. Faktur", type: "text", required: true },
+      { key: "periode_rekap", label: "Periode Rekap", type: "date", required: false },
+      { key: "total_pelunasan", label: "Total Pelunasan", type: "currency", required: false },
     ],
   },
   {

@@ -23,7 +23,46 @@ export type MetadataFieldDefinition = {
 };
 
 export * from "./transaction-group.js";
-import type { TransactionGroup } from "./transaction-group.js";
+import type { PosSyncCategory, TransactionGroup } from "./transaction-group.js";
+
+export type CustomFieldDataType = "string" | "number" | "date" | "enum";
+
+export type CustomFieldContract = {
+  key: string;
+  label: string;
+  dataType: CustomFieldDataType;
+  required: boolean;
+  options?: string[];
+};
+
+export function toCustomFieldsContract(
+  schema: ReadonlyArray<MetadataFieldDefinition> = [],
+): CustomFieldContract[] {
+  return schema.map((field) => {
+    let dataType: CustomFieldDataType = "string";
+    if (field.type === "number" || field.type === "currency") {
+      dataType = "number";
+    } else if (field.type === "date") {
+      dataType = "date";
+    } else if (
+      (field.type === "select" || field.type === "multi-select") &&
+      field.key !== "shift"
+    ) {
+      dataType = "enum";
+    }
+
+    const contract: CustomFieldContract = {
+      key: field.key,
+      label: field.label,
+      dataType,
+      required: Boolean(field.required),
+    };
+    if (dataType === "enum" && field.options && field.options.length > 0) {
+      contract.options = field.options;
+    }
+    return contract;
+  });
+}
 
 export const DEFAULT_SALES_METADATA_SCHEMA: MetadataFieldDefinition[] = [
   {
@@ -194,8 +233,10 @@ export type TransactionType = {
   debitAccountId: string;
   creditAccountId: string;
   group?: TransactionGroup;
+  category?: PosSyncCategory;
   description?: string | null;
   metadataSchema: MetadataFieldDefinition[];
+  customFields?: CustomFieldContract[];
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;

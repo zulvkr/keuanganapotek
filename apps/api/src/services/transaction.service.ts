@@ -2,12 +2,16 @@ import { randomUUID } from "node:crypto";
 import { asc, desc, eq, like } from "drizzle-orm";
 import {
   accountingPeriod,
+  inferPosSyncCategory,
   inferTransactionGroup,
+  isIsoDate,
   nowIsoInstant,
   parseRupiahToSen,
   rupiahToSen,
+  toCustomFieldsContract,
 } from "@keuangan-apotek/shared";
 import type {
+  AccountLike,
   MetadataFieldDefinition,
   TransactionRecord,
   TransactionType,
@@ -49,6 +53,109 @@ function amountToSen(value: string | number): number {
   return normalized.includes(",") || thousandGroups
     ? parseRupiahToSen(normalized)
     : rupiahToSen(normalized);
+}
+
+function formatTransactionType(
+  row: {
+    id: string;
+    name: string;
+    code: string;
+    debitAccountId: string;
+    creditAccountId: string;
+    description?: string | null;
+    isActive: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+  },
+  metadataSchema: MetadataFieldDefinition[],
+  debitAccount?: AccountLike | null,
+  creditAccount?: AccountLike | null,
+): TransactionType {
+  const group = inferTransactionGroup(debitAccount, creditAccount);
+  const category = inferPosSyncCategory({
+    code: row.code,
+    name: row.name,
+    group,
+    debit: debitAccount,
+    credit: creditAccount,
+    metadataSchema,
+  });
+  return {
+    ...row,
+    group,
+    ...(category ? { category } : {}),
+    metadataSchema,
+    customFields: toCustomFieldsContract(metadataSchema),
+  };
+}
+
+export function validateTransactionMetadata(
+  schema: ReadonlyArray<MetadataFieldDefinition>,
+  metadata: Record<string, any>,
+  enforceRequired: boolean,
+): void {
+  if (!schema || schema.length === 0) return;
+
+  for (const field of schema) {
+    const key = field.key.trim();
+    if (!key) continue;
+    const label = field.label || key;
+    const rawVal = metadata[key];
+
+    const isEmpty =
+      rawVal === undefined ||
+      rawVal === null ||
+      (typeof rawVal === "string" && rawVal.trim() === "") ||
+      (Array.isArray(rawVal) && rawVal.length === 0);
+
+    if (isEmpty) {
+      if (enforceRequired && field.required) {
+        throw new Error(`Metadata wajib belum diisi: ${label} (${key})`);
+      }
+      continue;
+    }
+
+    if (field.type === "number" || field.type === "currency") {
+      if (typeof rawVal === "number") {
+        if (!Number.isFinite(rawVal)) {
+          throw new Error(`Metadata tidak valid untuk ${label} (${key}): harus berupa angka`);
+        }
+      } else if (typeof rawVal === "string") {
+        const trimmed = rawVal.trim();
+        const asNum = Number(trimmed);
+        if (!Number.isFinite(asNum)) {
+          try {
+            parseRupiahToSen(trimmed);
+          } catch {
+            throw new Error(`Metadata tidak valid untuk ${label} (${key}): harus berupa angka`);
+          }
+        }
+      } else {
+        throw new Error(`Metadata tidak valid untuk ${label} (${key}): harus berupa angka`);
+      }
+    } else if (field.type === "date") {
+      const strVal = String(rawVal).trim();
+      const datePart = strVal.length >= 10 ? strVal.slice(0, 10) : strVal;
+      if (!isIsoDate(datePart)) {
+        throw new Error(
+          `Metadata tidak valid untuk ${label} (${key}): harus berformat tanggal YYYY-MM-DD`,
+        );
+      }
+    } else if (
+      field.type === "select" &&
+      field.key !== "shift" &&
+      field.options &&
+      field.options.length > 0
+    ) {
+      const strVal = String(rawVal).trim().toLowerCase();
+      const matched = field.options.some((opt) => opt.trim().toLowerCase() === strVal);
+      if (!matched) {
+        throw new Error(
+          `Metadata tidak valid untuk ${label} (${key}): harus salah satu dari [${field.options.join(", ")}]`,
+        );
+      }
+    }
+  }
 }
 
 function nextJournalNo(tx: Executor, entryDate: string): string {
@@ -101,11 +208,8 @@ export function listTransactionTypes(
     .map((row) => {
       const debitAccount = accountById.get(row.debitAccountId);
       const creditAccount = accountById.get(row.creditAccountId);
-      return {
-        ...row,
-        group: inferTransactionGroup(debitAccount, creditAccount),
-        metadataSchema: JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[],
-      };
+      const metadataSchema = JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[];
+      return formatTransactionType(row, metadataSchema, debitAccount, creditAccount);
     });
 }
 
@@ -118,11 +222,8 @@ export function getTransactionTypeById(db: Db, id: string): TransactionType | un
     .from(accounts)
     .where(eq(accounts.id, row.creditAccountId))
     .get();
-  return {
-    ...row,
-    group: inferTransactionGroup(debitAccount, creditAccount),
-    metadataSchema: JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[],
-  };
+  const metadataSchema = JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[];
+  return formatTransactionType(row, metadataSchema, debitAccount, creditAccount);
 }
 
 export function createTransactionType(
@@ -180,11 +281,8 @@ export function createTransactionType(
       .where(eq(accounts.id, newRow.creditAccountId))
       .get();
 
-    return {
-      ...newRow,
-      group: inferTransactionGroup(debitAccount, creditAccount),
-      metadataSchema: input.metadataSchema || [],
-    };
+    const metadataSchema = input.metadataSchema || [];
+    return formatTransactionType(newRow, metadataSchema, debitAccount, creditAccount);
   });
 }
 
@@ -251,16 +349,16 @@ export function updateTransactionType(
       .where(eq(accounts.id, updated.creditAccountId))
       .get();
 
-    return {
-      id,
-      ...updated,
-      group: inferTransactionGroup(debitAccount, creditAccount),
-      createdAt: existing.createdAt,
-      metadataSchema:
-        input.metadataSchema !== undefined
-          ? input.metadataSchema
-          : (JSON.parse(existing.metadataSchema || "[]") as MetadataFieldDefinition[]),
-    };
+    const metadataSchema =
+      input.metadataSchema !== undefined
+        ? input.metadataSchema
+        : (JSON.parse(existing.metadataSchema || "[]") as MetadataFieldDefinition[]);
+    return formatTransactionType(
+      { id, ...updated, createdAt: existing.createdAt },
+      metadataSchema,
+      debitAccount,
+      creditAccount,
+    );
   });
 }
 
@@ -416,7 +514,7 @@ export function createTransaction(
     transactionTypeId: string;
     amount: string | number;
     memo?: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, any> | null;
     idempotencyKey?: string;
   },
   allowedAccountCodes?: string[] | Set<string>,
@@ -470,6 +568,15 @@ export function createTransaction(
 
     const id = randomUUID();
     const amountSen = amountToSen(input.amount);
+    const hasExplicitMetadata = input.metadata !== undefined && input.metadata !== null;
+    const metadataObj = input.metadata ?? {};
+
+    if (hasExplicitMetadata) {
+      const schema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
+      const enforceRequired = amountSen > 0 || Object.keys(metadataObj).length > 0;
+      validateTransactionMetadata(schema, metadataObj, enforceRequired);
+    }
+
     const now = nowIsoInstant();
 
     const journalId = syncTransactionJournal(
@@ -495,7 +602,7 @@ export function createTransaction(
       debitAccountId: type.debitAccountId,
       creditAccountId: type.creditAccountId,
       memo: input.memo?.trim() || null,
-      metadata: JSON.stringify(input.metadata || {}),
+      metadata: JSON.stringify(metadataObj),
       journalId,
       createdAt: now,
       updatedAt: now,
@@ -512,7 +619,7 @@ export function createTransaction(
 
     return {
       ...row,
-      metadata: input.metadata || {},
+      metadata: metadataObj,
     };
   });
 }
@@ -525,7 +632,7 @@ export function updateTransaction(
     transactionTypeId?: string;
     amount?: string | number;
     memo?: string | null;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, any> | null;
   },
   allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
@@ -590,6 +697,12 @@ export function updateTransaction(
     }
 
     const amountSen = input.amount !== undefined ? amountToSen(input.amount) : existing.amount;
+    if (input.metadata !== undefined && input.metadata !== null) {
+      const schema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
+      const enforceRequired = amountSen > 0 || Object.keys(input.metadata).length > 0;
+      validateTransactionMetadata(schema, input.metadata, enforceRequired);
+    }
+
     const memo = input.memo !== undefined ? input.memo?.trim() || null : existing.memo;
     const now = nowIsoInstant();
 
@@ -614,7 +727,8 @@ export function updateTransaction(
       debitAccountId: type.debitAccountId,
       creditAccountId: type.creditAccountId,
       memo,
-      metadata: input.metadata !== undefined ? JSON.stringify(input.metadata) : existing.metadata,
+      metadata:
+        input.metadata !== undefined ? JSON.stringify(input.metadata ?? {}) : existing.metadata,
       journalId,
       updatedAt: now,
     };
@@ -635,7 +749,7 @@ export function updateTransaction(
       createdAt: existing.createdAt,
       metadata:
         input.metadata !== undefined
-          ? input.metadata
+          ? (input.metadata ?? {})
           : (JSON.parse(existing.metadata || "{}") as Record<string, any>),
     };
   });

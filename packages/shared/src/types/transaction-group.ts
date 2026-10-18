@@ -194,3 +194,70 @@ export function inferTransactionGroup(
   // 7. Fallback
   return "tidak_terkategori";
 }
+
+export type PosSyncCategory =
+  | "goods_receiving"
+  | "shift_sales"
+  | "consignment_settlement";
+
+const SHIFT_SALES_CODES = new Set([
+  "TRX-01",
+  "TRX-02",
+  "TRX-06",
+  "TRX-10",
+  "TRX-12",
+  "TRX-14",
+  "TRX-15",
+  "TRX-16",
+  "TRX-30",
+]);
+
+const GOODS_RECEIVING_CODES = new Set(["TRX-25", "TRX-26", "TRX-27", "TRX-31"]);
+
+const CONSIGNMENT_SETTLEMENT_CODES = new Set(["TRX-32"]);
+
+/**
+ * Infers the POS synchronization contract category (`goods_receiving`, `shift_sales`,
+ * or `consignment_settlement`) for a transaction type.
+ */
+export function inferPosSyncCategory(params: {
+  code?: string;
+  name?: string;
+  group?: TransactionGroup;
+  debit?: AccountLike | null;
+  credit?: AccountLike | null;
+  metadataSchema?: ReadonlyArray<{ key: string; required?: boolean }>;
+}): PosSyncCategory | undefined {
+  const code = (params.code || "").trim().toUpperCase();
+  if (CONSIGNMENT_SETTLEMENT_CODES.has(code)) return "consignment_settlement";
+  if (GOODS_RECEIVING_CODES.has(code)) return "goods_receiving";
+  if (SHIFT_SALES_CODES.has(code)) return "shift_sales";
+
+  const nameLower = (params.name || "").toLowerCase();
+  const group = params.group ?? inferTransactionGroup(params.debit, params.credit);
+
+  if (
+    (params.debit?.code === "2104" && isCashBankAccount(params.credit)) ||
+    (group === "pembayaran_hutang" && nameLower.includes("konsinyasi"))
+  ) {
+    return "consignment_settlement";
+  }
+
+  if (
+    group === "pembelian_persediaan" ||
+    isInventoryAccount(params.debit) ||
+    (params.debit?.code === "5102" && params.credit?.code === "2104")
+  ) {
+    return "goods_receiving";
+  }
+
+  if (
+    group === "omzet" ||
+    params.metadataSchema?.some((field) => field.key === "shift")
+  ) {
+    return "shift_sales";
+  }
+
+  return undefined;
+}
+

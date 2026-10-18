@@ -497,4 +497,115 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     const journalCount2 = client.db.select().from(journals).all().length;
     expect(journalCount2).toBe(journalCount1);
   });
+
+  it("exposes POS sync category and customFields contract in GET /api/transaction-types and validates metadata on POST /api/transactions", async () => {
+    const { api } = setup();
+
+    const typeRes = await api.request("http://localhost/api/transaction-types");
+    expect(typeRes.status).toBe(200);
+    const types = (
+      (await typeRes.json()) as {
+        data: Array<{
+          id: string;
+          code: string;
+          category?: string;
+          customFields?: Array<{
+            key: string;
+            label: string;
+            dataType: string;
+            required: boolean;
+            options?: string[];
+          }>;
+        }>;
+      }
+    ).data;
+
+    const trx01 = types.find((t) => t.code === "TRX-01")!;
+    expect(trx01.category).toBe("shift_sales");
+    expect(trx01.customFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "shift",
+          dataType: "string",
+          required: true,
+        }),
+      ]),
+    );
+
+    const trx25 = types.find((t) => t.code === "TRX-25")!;
+    expect(trx25.category).toBe("goods_receiving");
+    expect(trx25.customFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "nama_supplier", dataType: "string", required: true }),
+        expect.objectContaining({ key: "no_faktur", dataType: "string", required: true }),
+        expect.objectContaining({ key: "total_order", dataType: "number", required: false }),
+        expect.objectContaining({ key: "jatuh_tempo", dataType: "date", required: true }),
+      ]),
+    );
+
+    const trx32 = types.find((t) => t.code === "TRX-32")!;
+    expect(trx32.category).toBe("consignment_settlement");
+    expect(trx32.customFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "nama_vendor", dataType: "string", required: true }),
+        expect.objectContaining({ key: "no_faktur", dataType: "string", required: true }),
+      ]),
+    );
+
+    // Reject missing required metadata when metadata object is provided
+    const missingRequiredRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-18",
+        transactionTypeId: trx25.id,
+        amount: "1500000",
+        metadata: {
+          nama_supplier: "PT Kimia Farma",
+          // missing no_faktur and jatuh_tempo
+        },
+      }),
+    });
+    expect(missingRequiredRes.status).toBe(400);
+    const missingErr = (await missingRequiredRes.json()) as { error: string };
+    expect(missingErr.error).toContain("Metadata wajib belum diisi");
+
+    // Reject invalid date format in metadata
+    const invalidDateRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-18",
+        transactionTypeId: trx25.id,
+        amount: "1500000",
+        metadata: {
+          nama_supplier: "PT Kimia Farma",
+          no_faktur: "INV-2026-001",
+          jatuh_tempo: "bukan-tanggal",
+        },
+      }),
+    });
+    expect(invalidDateRes.status).toBe(400);
+    const dateErr = (await invalidDateRes.json()) as { error: string };
+    expect(dateErr.error).toContain("YYYY-MM-DD");
+
+    // Accept valid metadata payload
+    const validRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-18",
+        transactionTypeId: trx25.id,
+        amount: "1500000",
+        metadata: {
+          nama_supplier: "PT Kimia Farma",
+          no_faktur: "INV-2026-001",
+          jatuh_tempo: "2026-11-18",
+          total_order: 1500000,
+        },
+      }),
+    });
+    expect(validRes.status).toBe(201);
+  });
 });
+
