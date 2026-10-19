@@ -1,6 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Copy, Trash2, Search, X, Save, BookTemplate } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Copy,
+  Trash2,
+  Search,
+  X,
+  Save,
+  BookTemplate,
+  Layers,
+  CheckCircle2,
+  RefreshCw,
+} from "lucide-react";
 import {
   inferTransactionGroup,
   TRANSACTION_GROUPS,
@@ -8,7 +20,13 @@ import {
   type TransactionGroup,
   type TransactionType,
 } from "@keuangan-apotek/shared";
-import { getAccounts, getTransactionTypes, queryKeys, type Account } from "../lib/queries";
+import {
+  getAccounts,
+  getTransactionTypes,
+  queryKeys,
+  type Account,
+  type SaveTransactionTypeInput,
+} from "../lib/queries";
 import {
   createTransactionType,
   deleteTransactionType,
@@ -43,6 +61,7 @@ export default function MasterTransactionPage() {
   // Form State
   const [formCode, setFormCode] = useState("");
   const [formName, setFormName] = useState("");
+  const [formGroup, setFormGroup] = useState<TransactionGroup>("omzet");
   const [formDebitId, setFormDebitId] = useState("");
   const [formCreditId, setFormCreditId] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -51,6 +70,7 @@ export default function MasterTransactionPage() {
 
   const accountsQuery = useQuery({ queryKey: queryKeys.accounts, queryFn: getAccounts });
   const accounts: Account[] = (accountsQuery.data ?? []).filter((a) => a.isActive);
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
 
   const typesQuery = useQuery({
     queryKey: queryKeys.transactionTypes(true),
@@ -60,11 +80,14 @@ export default function MasterTransactionPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = {
+      const selectedGroupConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
+      const payload: SaveTransactionTypeInput = {
         code: formCode.trim(),
         name: formName.trim(),
         debitAccountId: formDebitId,
         creditAccountId: formCreditId,
+        group: formGroup,
+        posSyncCategory: selectedGroupConf?.posSyncCategory,
         description: formDescription.trim() || undefined,
         metadataSchema: formSchema,
         isActive: formIsActive,
@@ -103,11 +126,12 @@ export default function MasterTransactionPage() {
     },
   });
 
-  function openCreate() {
+  function openCreate(defaultGroup?: TransactionGroup) {
     setEditingType(null);
     setDuplicatingFromName(null);
     setFormCode(getNextTransactionCode(transactionTypes));
     setFormName("");
+    setFormGroup(defaultGroup || "omzet");
     setFormDebitId(accounts[0]?.id || "");
     setFormCreditId(accounts[1]?.id || "");
     setFormDescription("");
@@ -117,10 +141,13 @@ export default function MasterTransactionPage() {
   }
 
   function openEdit(item: TransactionType) {
+    const debitAcc = accountById.get(item.debitAccountId);
+    const creditAcc = accountById.get(item.creditAccountId);
     setEditingType(item);
     setDuplicatingFromName(null);
     setFormCode(item.code);
     setFormName(item.name);
+    setFormGroup(item.group || inferTransactionGroup(debitAcc, creditAcc));
     setFormDebitId(item.debitAccountId);
     setFormCreditId(item.creditAccountId);
     setFormDescription(item.description || "");
@@ -130,10 +157,13 @@ export default function MasterTransactionPage() {
   }
 
   function openDuplicate(item: TransactionType) {
+    const debitAcc = accountById.get(item.debitAccountId);
+    const creditAcc = accountById.get(item.creditAccountId);
     setEditingType(null);
     setDuplicatingFromName(item.name);
     setFormCode(getNextTransactionCode(transactionTypes));
     setFormName(`${item.name} (Salinan)`);
+    setFormGroup(item.group || inferTransactionGroup(debitAcc, creditAcc));
     setFormDebitId(item.debitAccountId);
     setFormCreditId(item.creditAccountId);
     setFormDescription(item.description || "");
@@ -148,8 +178,7 @@ export default function MasterTransactionPage() {
     setDuplicatingFromName(null);
   }
 
-  const accountById = new Map(accounts.map((a) => [a.id, a]));
-
+  // Filter types by search and group
   const filteredTypes = transactionTypes.filter((t) => {
     const q = search.toLowerCase();
     const matchesSearch =
@@ -168,20 +197,29 @@ export default function MasterTransactionPage() {
   });
 
   return (
-    <div className="space-y-1.5 text-xs">
+    <div className="space-y-3 text-xs">
       {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 rounded border border-slate-200 bg-white p-1 text-xs">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xs font-bold text-slate-900 tracking-tight">Master Tipe Transaksi</h2>
-          <span className="text-[11px] text-muted hidden sm:inline">
-            Template jurnal berpasangan & skema metadata dinamis
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-xs shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-brand">
+            <Layers size={18} />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+              Master Tipe Transaksi
+            </h2>
+            <p className="text-[11px] text-muted">
+              Pengelompokan bisnis terstruktur & pewarisan skema metadata otomatis
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Group Filter */}
           <select
             value={groupFilter}
             onChange={(e) => setGroupFilter(e.target.value as TransactionGroup | "all")}
-            className="h-6 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs outline-none focus:border-brand font-medium text-slate-700"
+            className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs outline-none focus:border-brand font-medium text-slate-700 shadow-sm"
             title="Filter berdasarkan grup transaksi"
           >
             <option value="all">Semua Grup ({transactionTypes.length})</option>
@@ -202,185 +240,293 @@ export default function MasterTransactionPage() {
               );
             })}
           </select>
+
+          {/* Search box */}
           <div className="relative">
-            <Search className="absolute left-2 top-1.5 text-slate-400" size={12} />
+            <Search className="absolute left-2.5 top-2 text-slate-400" size={13} />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari tipe transaksi..."
-              className="h-6 rounded border border-slate-200 bg-white pl-6 pr-2 py-0.5 text-xs outline-none focus:border-brand"
+              placeholder="Cari kode atau nama..."
+              className="h-8 rounded-lg border border-slate-200 bg-white pl-7 pr-2.5 py-1 text-xs outline-none focus:border-brand shadow-sm w-44 sm:w-56"
             />
           </div>
+
           <button
             type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-1 rounded bg-brand px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition"
+            onClick={() => openCreate()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition"
           >
-            <Plus size={13} /> Tambah Tipe Transaksi
+            <Plus size={14} /> Tambah Tipe Transaksi
           </button>
         </div>
       </div>
 
-      {/* Table list */}
-      <div className="rounded border border-slate-200 bg-white overflow-hidden">
-        <table className="w-full table-fixed text-left border-collapse text-xs">
-          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-700">
-            <tr>
-              <th className="px-2 py-1 w-16 border-r border-slate-200">Kode</th>
-              <th className="px-2 py-1 w-[22%] border-r border-slate-200">Nama Transaksi</th>
-              <th className="px-2 py-1 w-28 border-r border-slate-200">Grup Bisnis</th>
-              <th className="px-2 py-1 w-[21%] border-r border-slate-200">Akun Debit (+)</th>
-              <th className="px-2 py-1 w-[21%] border-r border-slate-200">Akun Kredit (-)</th>
-              <th className="px-2 py-1 border-r border-slate-200">Skema Metadata</th>
-              <th className="px-2 py-1 w-16 text-center border-r border-slate-200">Status</th>
-              <th className="px-2 py-1 w-20 text-center">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 text-xs">
-            {typesQuery.isLoading ? (
-              <tr>
-                <td colSpan={8} className="px-2 py-6 text-center text-muted">
-                  Memuat tipe transaksi...
-                </td>
-              </tr>
-            ) : filteredTypes.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-2 py-6 text-center text-muted">
-                  Tidak ada tipe transaksi yang cocok.
-                </td>
-              </tr>
-            ) : (
-              filteredTypes.map((item, itemIdx) => {
-                const debitAcc = accountById.get(item.debitAccountId);
-                const creditAcc = accountById.get(item.creditAccountId);
-                const schemaFields = item.metadataSchema || [];
+      {/* Loading & Empty state */}
+      {typesQuery.isLoading && (
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-muted">
+          Memuat master tipe transaksi...
+        </div>
+      )}
 
-                return (
-                  <tr
-                    key={item.id}
-                    className={`transition ${!item.isActive ? "opacity-60 bg-slate-50/30" : itemIdx % 2 === 0 ? "bg-white hover:bg-blue-50/40" : "bg-slate-50/60 hover:bg-blue-50/40"}`}
+      {!typesQuery.isLoading && filteredTypes.length === 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-muted">
+          Tidak ada tipe transaksi yang cocok dengan kriteria pencarian atau filter grup.
+        </div>
+      )}
+
+      {/* Visual Group Sections */}
+      {!typesQuery.isLoading &&
+        TRANSACTION_GROUPS.map((grp) => {
+          if (groupFilter !== "all" && grp.key !== groupFilter) {
+            return null;
+          }
+
+          const itemsInGroup = filteredTypes.filter((t) => {
+            const debitAcc = accountById.get(t.debitAccountId);
+            const creditAcc = accountById.get(t.creditAccountId);
+            const g = t.group || inferTransactionGroup(debitAcc, creditAcc);
+            return g === grp.key;
+          });
+
+          // Jika ada filter search dan grup ini kosong, sembunyikan section
+          if (itemsInGroup.length === 0 && search.trim() !== "") {
+            return null;
+          }
+
+          const hasSharedSchema = grp.metadataSchema && grp.metadataSchema.length > 0;
+
+          return (
+            <div
+              key={grp.key}
+              className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden"
+            >
+              {/* Group Header Card */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/80 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold border ${grp.badgeClass}`}
                   >
-                    <td className="px-2 py-1 font-mono font-semibold text-brand tabular-nums border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {item.code}
-                    </td>
-                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
-                      <div className="font-semibold text-slate-900 truncate" title={item.name}>
-                        {item.name}
-                      </div>
-                      {item.description && (
-                        <div
-                          className="text-[11px] text-slate-500 truncate"
-                          title={item.description}
-                        >
-                          {item.description}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-2 py-1 border-r border-slate-100 whitespace-nowrap overflow-hidden">
-                      {(() => {
-                        const gKey = item.group || inferTransactionGroup(debitAcc, creditAcc);
-                        const gConf = TRANSACTION_GROUPS.find((g) => g.key === gKey);
-                        return gConf ? (
-                          <span
-                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${gConf.badgeClass}`}
+                    {grp.badgeLabel}
+                  </span>
+                  <span className="font-bold text-slate-800 text-xs">{grp.label}</span>
+                  <span className="text-[11px] text-slate-500 hidden md:inline">
+                    · {grp.description}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {grp.posSyncCategory && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-700 border border-purple-200"
+                      title="Tipe transaksi di grup ini dapat disinkronkan otomatis dari POS"
+                    >
+                      ⚡ POS Sync: {grp.posSyncCategory}
+                    </span>
+                  )}
+
+                  {hasSharedSchema ? (
+                    <span
+                      className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 border border-blue-200"
+                      title={`Field bawaan grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}`}
+                    >
+                      📋 Shared Metadata ({grp.metadataSchema!.length} field)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 italic">Tanpa Metadata</span>
+                  )}
+
+                  <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                    {itemsInGroup.length}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => openCreate(grp.key)}
+                    className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-[11px] font-semibold text-brand border border-blue-200 hover:bg-blue-50 transition shadow-xs"
+                    title={`Tambah tipe transaksi baru di ${grp.label}`}
+                  >
+                    <Plus size={12} /> Tambah di Grup Ini
+                  </button>
+                </div>
+              </div>
+
+              {/* Group Transactions Table */}
+              {itemsInGroup.length === 0 ? (
+                <div className="px-3 py-4 text-center text-slate-400 text-xs italic">
+                  Belum ada tipe transaksi di grup ini. Klik &quot;+ Tambah di Grup Ini&quot; untuk
+                  membuat.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full table-fixed text-left border-collapse text-xs">
+                    <thead className="border-b border-slate-200 bg-slate-100/60 text-[11px] font-semibold text-slate-600">
+                      <tr>
+                        <th className="px-2.5 py-1.5 w-20 border-r border-slate-200">Kode</th>
+                        <th className="px-2.5 py-1.5 w-[26%] border-r border-slate-200">
+                          Nama Transaksi
+                        </th>
+                        <th className="px-2.5 py-1.5 w-[22%] border-r border-slate-200">
+                          Akun Debit (+)
+                        </th>
+                        <th className="px-2.5 py-1.5 w-[22%] border-r border-slate-200">
+                          Akun Kredit (-)
+                        </th>
+                        <th className="px-2.5 py-1.5 border-r border-slate-200">Skema Metadata</th>
+                        <th className="px-2 py-1.5 w-16 text-center border-r border-slate-200">
+                          Status
+                        </th>
+                        <th className="px-2 py-1.5 w-20 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {itemsInGroup.map((item, itemIdx) => {
+                        const debitAcc = accountById.get(item.debitAccountId);
+                        const creditAcc = accountById.get(item.creditAccountId);
+                        const localSchema = item.metadataSchema || [];
+                        const isInheritingGroup = localSchema.length === 0;
+
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`transition ${!item.isActive ? "opacity-60 bg-slate-50/30" : itemIdx % 2 === 0 ? "bg-white hover:bg-blue-50/30" : "bg-slate-50/40 hover:bg-blue-50/30"}`}
                           >
-                            {gConf.badgeLabel}
-                          </span>
-                        ) : null;
-                      })()}
-                    </td>
-                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
-                      <div
-                        className="inline-flex max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 border border-emerald-100"
-                        title={debitAcc ? `${debitAcc.code} · ${debitAcc.name}` : undefined}
-                      >
-                        <span className="font-mono font-bold tabular-nums shrink-0">
-                          {debitAcc?.code || "—"}
-                        </span>
-                        <span className="text-emerald-400 shrink-0">·</span>
-                        <span className="truncate">{debitAcc?.name || "Akun tidak ditemukan"}</span>
-                      </div>
-                    </td>
-                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
-                      <div
-                        className="inline-flex max-w-full items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 border border-amber-100"
-                        title={creditAcc ? `${creditAcc.code} · ${creditAcc.name}` : undefined}
-                      >
-                        <span className="font-mono font-bold tabular-nums shrink-0">
-                          {creditAcc?.code || "—"}
-                        </span>
-                        <span className="text-amber-400 shrink-0">·</span>
-                        <span className="truncate">
-                          {creditAcc?.name || "Akun tidak ditemukan"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-2 py-1 border-r border-slate-100 min-w-0 overflow-hidden">
-                      {schemaFields.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {schemaFields.map((f, idx) => (
-                            <span
-                              key={idx}
-                              className="rounded bg-slate-100 px-1 py-0 text-[10px] text-slate-600 truncate max-w-full"
-                              title={`Tipe: ${f.type}${f.required ? " (Wajib)" : ""}`}
-                            >
-                              {f.label}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 italic text-[11px]">
-                          Tanpa field metadata
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1 text-center border-r border-slate-100 whitespace-nowrap">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${item.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}
-                      >
-                        {item.isActive ? "Aktif" : "Nonaktif"}
-                      </span>
-                    </td>
-                    <td className="px-2 py-1 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(item)}
-                          className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
-                          title="Edit tipe transaksi"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openDuplicate(item)}
-                          className="rounded p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition"
-                          title="Duplikat / Salin tipe transaksi ini"
-                        >
-                          <Copy size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`Hapus/nonaktifkan tipe transaksi ${item.name}?`)) {
-                              deleteMutation.mutate(item.id);
-                            }
-                          }}
-                          className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
-                          title="Hapus tipe transaksi"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                            <td className="px-2.5 py-1.5 font-mono font-bold text-brand tabular-nums border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
+                              {item.code}
+                            </td>
+                            <td className="px-2.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
+                              <div
+                                className="font-semibold text-slate-900 truncate"
+                                title={item.name}
+                              >
+                                {item.name}
+                              </div>
+                              {item.description && (
+                                <div
+                                  className="text-[11px] text-slate-500 truncate"
+                                  title={item.description}
+                                >
+                                  {item.description}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-2.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
+                              <div
+                                className="inline-flex max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 border border-emerald-100"
+                                title={debitAcc ? `${debitAcc.code} · ${debitAcc.name}` : undefined}
+                              >
+                                <span className="font-mono font-bold tabular-nums shrink-0">
+                                  {debitAcc?.code || "—"}
+                                </span>
+                                <span className="text-emerald-400 shrink-0">·</span>
+                                <span className="truncate">
+                                  {debitAcc?.name || "Akun tidak ditemukan"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-2.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
+                              <div
+                                className="inline-flex max-w-full items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 border border-amber-100"
+                                title={
+                                  creditAcc ? `${creditAcc.code} · ${creditAcc.name}` : undefined
+                                }
+                              >
+                                <span className="font-mono font-bold tabular-nums shrink-0">
+                                  {creditAcc?.code || "—"}
+                                </span>
+                                <span className="text-amber-400 shrink-0">·</span>
+                                <span className="truncate">
+                                  {creditAcc?.name || "Akun tidak ditemukan"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-2.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
+                              {isInheritingGroup ? (
+                                hasSharedSchema ? (
+                                  <div
+                                    className="inline-flex items-center gap-1 rounded bg-blue-50/80 px-1.5 py-0.5 text-[10px] text-blue-700 border border-blue-100"
+                                    title={`Mewarisi skema grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}`}
+                                  >
+                                    <CheckCircle2 size={11} className="text-blue-600 shrink-0" />
+                                    <span>Mewarisi Grup ({grp.metadataSchema!.length} field)</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 italic text-[11px]">
+                                    Tanpa metadata
+                                  </span>
+                                )
+                              ) : (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 border border-indigo-200">
+                                    Custom ({localSchema.length})
+                                  </span>
+                                  {localSchema.slice(0, 2).map((f, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600 truncate max-w-[120px]"
+                                      title={`Tipe: ${f.type}${f.required ? " (Wajib)" : ""}`}
+                                    >
+                                      {f.label}
+                                    </span>
+                                  ))}
+                                  {localSchema.length > 2 && (
+                                    <span className="text-[10px] text-slate-400">
+                                      +{localSchema.length - 2}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-2 py-1.5 text-center border-r border-slate-100 whitespace-nowrap">
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${item.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}
+                              >
+                                {item.isActive ? "Aktif" : "Nonaktif"}
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(item)}
+                                  className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
+                                  title="Edit tipe transaksi"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openDuplicate(item)}
+                                  className="rounded p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition"
+                                  title="Duplikat / Salin tipe transaksi ini"
+                                >
+                                  <Copy size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Hapus/nonaktifkan tipe transaksi ${item.name}?`)) {
+                                      deleteMutation.mutate(item.id);
+                                    }
+                                  }}
+                                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                                  title="Hapus tipe transaksi"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
 
       {/* Editor Modal / Drawer */}
       {isCreating && (
@@ -402,8 +548,8 @@ export default function MasterTransactionPage() {
                   </h3>
                   <p className="text-xs text-muted">
                     {duplicatingFromName
-                      ? `Menduplikasi dari "${duplicatingFromName}". Seluruh akun dan skema metadata telah disalin.`
-                      : "Atur nama, akun berpasangan debit/kredit, dan susun skema metadata"}
+                      ? `Menduplikasi dari "${duplicatingFromName}". Akun dan pengaturan telah disalin.`
+                      : "Tentukan grup bisnis, akun berpasangan debit/kredit, dan skema metadata"}
                   </p>
                 </div>
               </div>
@@ -425,7 +571,7 @@ export default function MasterTransactionPage() {
                     <span className="font-semibold">Menduplikasi data dari:</span>{" "}
                     {duplicatingFromName}.
                     <p className="text-[11px] text-blue-700">
-                      Akun debit, akun kredit, dan seluruh susunan skema metadata telah disalin
+                      Grup bisnis, akun debit, akun kredit, dan susunan metadata telah disalin
                       otomatis. Sesuaikan kode, nama, atau akun debit/kredit yang berbeda sebelum
                       menyimpan.
                     </p>
@@ -433,6 +579,68 @@ export default function MasterTransactionPage() {
                 </div>
               )}
 
+              {/* Group Business Selection Card */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3.5 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800">
+                      Grup Bisnis Transaksi
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Menentukan pengelompokan laporan, sinkronisasi POS, dan skema metadata bawaan.
+                    </p>
+                  </div>
+                  <select
+                    value={formGroup}
+                    onChange={(e) => {
+                      const nextGroup = e.target.value as TransactionGroup;
+                      setFormGroup(nextGroup);
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand shadow-xs"
+                  >
+                    {TRANSACTION_GROUPS.map((grp) => (
+                      <option key={grp.key} value={grp.key}>
+                        {grp.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Banner Shared Metadata dari Grup */}
+                {(() => {
+                  const grpConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
+                  if (!grpConf) return null;
+                  const hasGroupSchema =
+                    grpConf.metadataSchema && grpConf.metadataSchema.length > 0;
+
+                  return (
+                    <div className="text-[11px] text-slate-600 flex flex-wrap items-center gap-2 pt-2 border-t border-blue-100/70">
+                      <span
+                        className={`inline-flex items-center rounded px-2 py-0.5 font-bold border ${grpConf.badgeClass}`}
+                      >
+                        {grpConf.badgeLabel}
+                      </span>
+                      {grpConf.posSyncCategory && (
+                        <span className="inline-flex items-center gap-1 rounded bg-purple-100 px-2 py-0.5 font-semibold text-purple-700 border border-purple-200">
+                          ⚡ Sync POS: {grpConf.posSyncCategory}
+                        </span>
+                      )}
+                      {hasGroupSchema ? (
+                        <span className="text-emerald-700 font-medium">
+                          ✨ Mewarisi skema grup:{" "}
+                          {grpConf.metadataSchema!.map((f) => f.label).join(", ")}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 italic">
+                          Grup ini tidak memerlukan metadata tambahan.
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Code & Name */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700">
@@ -460,6 +668,7 @@ export default function MasterTransactionPage() {
                 </div>
               </div>
 
+              {/* Debit & Credit Accounts */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-emerald-700">
@@ -497,52 +706,6 @@ export default function MasterTransactionPage() {
                 </div>
               </div>
 
-              {/* Inferred Group Preview */}
-              {formDebitId && formCreditId && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-semibold text-slate-600">
-                      Grup Transaksi Terdeteksi Otomatis:
-                    </span>
-                    {(() => {
-                      const deb = accountById.get(formDebitId);
-                      const cred = accountById.get(formCreditId);
-                      const detectedGroup = inferTransactionGroup(deb, cred);
-                      const conf = TRANSACTION_GROUPS.find((g) => g.key === detectedGroup);
-                      return conf ? (
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${conf.badgeClass}`}
-                          >
-                            {conf.label}
-                          </span>
-                          {conf.metadataSchema && conf.metadataSchema.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setFormSchema(JSON.parse(JSON.stringify(conf.metadataSchema)))
-                              }
-                              className="text-[11px] font-semibold text-brand hover:underline"
-                            >
-                              Terapkan Schema Grup ({conf.metadataSchema.length} field)
-                            </button>
-                          )}
-                        </div>
-                      ) : null;
-                    })()}
-                  </div>
-                  <p className="text-[10px] text-slate-500">
-                    {(() => {
-                      const deb = accountById.get(formDebitId);
-                      const cred = accountById.get(formCreditId);
-                      const detectedGroup = inferTransactionGroup(deb, cred);
-                      const conf = TRANSACTION_GROUPS.find((g) => g.key === detectedGroup);
-                      return conf?.description || "";
-                    })()}
-                  </p>
-                </div>
-              )}
-
               <div>
                 <label className="block text-xs font-semibold text-slate-700">
                   Keterangan / Deskripsi
@@ -572,12 +735,82 @@ export default function MasterTransactionPage() {
                 </label>
               </div>
 
-              {/* Visual Metadata Schema Builder */}
-              <div>
-                <MetadataSchemaBuilder
-                  schema={formSchema}
-                  onChange={(newSchema) => setFormSchema(newSchema)}
-                />
+              {/* Shared Metadata vs Custom Override Schema */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800">
+                      Pengaturan Skema Metadata (Opsional)
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Secara bawaan, tipe transaksi otomatis mewarisi skema field dari grup
+                      bisnisnya.
+                    </p>
+                  </div>
+                  {formSchema.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFormSchema([])}
+                      className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200 transition"
+                      title="Hapus kustomisasi dan kembali mewarisi skema grup"
+                    >
+                      <RefreshCw size={11} /> Reset ke Bawaan Grup
+                    </button>
+                  )}
+                </div>
+
+                {formSchema.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/30 p-4 text-center">
+                    <p className="text-xs font-medium text-blue-900">
+                      Tipe transaksi ini menggunakan skema bawaan grup{" "}
+                      <span className="font-bold">
+                        {TRANSACTION_GROUPS.find((g) => g.key === formGroup)?.label}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-blue-700 mt-0.5">
+                      {(() => {
+                        const grpConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
+                        if (grpConf?.metadataSchema && grpConf.metadataSchema.length > 0) {
+                          return `Field otomatis: ${grpConf.metadataSchema.map((f) => f.label).join(", ")}.`;
+                        }
+                        return "Grup ini tidak memerlukan input metadata tambahan saat pencatatan transaksi.";
+                      })()}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const grpConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
+                        if (grpConf?.metadataSchema && grpConf.metadataSchema.length > 0) {
+                          setFormSchema(JSON.parse(JSON.stringify(grpConf.metadataSchema)));
+                        } else {
+                          setFormSchema([
+                            {
+                              key: "keterangan",
+                              label: "Keterangan",
+                              type: "text",
+                              required: false,
+                            },
+                          ]);
+                        }
+                      }}
+                      className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-brand border border-blue-200 hover:bg-blue-50 shadow-xs transition"
+                    >
+                      <Plus size={13} /> Atur Skema Khusus / Override Tipe Ini
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="mb-2 rounded-lg bg-amber-50 p-2.5 text-[11px] text-amber-800 border border-amber-200">
+                      <span className="font-semibold">Skema Khusus Aktif:</span> Tipe transaksi ini
+                      menggunakan konfigurasi field khusus yang Anda buat di bawah ini, mengabaikan
+                      bawaan grup.
+                    </div>
+                    <MetadataSchemaBuilder
+                      schema={formSchema}
+                      onChange={(newSchema) => setFormSchema(newSchema)}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

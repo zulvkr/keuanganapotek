@@ -411,7 +411,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(trx04?.group).toBe("biaya_operasional");
 
     const trx05 = types.find((t) => t.code === "TRX-05"); // Tarik Saldo Shopee ke Bank Jago
-    expect(trx05?.group).toBe("pelunasan_piutang");
+    expect(trx05?.group).toBe("transfer_antar_akun");
 
     const trx15 = types.find((t) => t.code === "TRX-15"); // Pelunasan Piutang Pelanggan
     expect(trx15?.group).toBe("pelunasan_piutang");

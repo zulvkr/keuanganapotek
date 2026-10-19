@@ -9,6 +9,9 @@ import {
   parseRupiahToSen,
   rupiahToSen,
   toCustomFieldsContract,
+  TRANSACTION_GROUPS,
+  type PosSyncCategory,
+  type TransactionGroup,
 } from "@keuangan-apotek/shared";
 import type {
   AccountLike,
@@ -50,6 +53,8 @@ function formatTransactionType(
     id: string;
     name: string;
     code: string;
+    group?: string | null;
+    posSyncCategory?: string | null;
     debitAccountId: string;
     creditAccountId: string;
     description?: string | null;
@@ -61,21 +66,37 @@ function formatTransactionType(
   debitAccount?: AccountLike | null,
   creditAccount?: AccountLike | null,
 ): TransactionType {
-  const group = inferTransactionGroup(debitAccount, creditAccount);
-  const category = inferPosSyncCategory({
-    code: row.code,
-    name: row.name,
-    group,
-    debit: debitAccount,
-    credit: creditAccount,
-    metadataSchema,
-  });
+  const inferredGroup = inferTransactionGroup(debitAccount, creditAccount);
+  const group: TransactionGroup =
+    row.group && row.group !== "tidak_terkategori"
+      ? (row.group as TransactionGroup)
+      : inferredGroup;
+
+  // Shared Metadata Schema:
+  // Jika metadataSchema pada row kosong, warisi dari skema default grup transaksi!
+  const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === group);
+  const effectiveSchema =
+    metadataSchema && metadataSchema.length > 0
+      ? metadataSchema
+      : groupConfig?.metadataSchema || [];
+
+  const category =
+    (row.posSyncCategory as PosSyncCategory) ||
+    inferPosSyncCategory({
+      code: row.code,
+      name: row.name,
+      group,
+      debit: debitAccount,
+      credit: creditAccount,
+      metadataSchema: effectiveSchema,
+    });
+
   return {
     ...row,
     group,
-    ...(category ? { category } : {}),
-    metadataSchema,
-    customFields: toCustomFieldsContract(metadataSchema),
+    ...(category ? { category, posSyncCategory: category } : {}),
+    metadataSchema: effectiveSchema,
+    customFields: toCustomFieldsContract(effectiveSchema),
   };
 }
 
@@ -221,6 +242,8 @@ export function createTransactionType(
   input: {
     name: string;
     code: string;
+    group?: TransactionGroup;
+    posSyncCategory?: PosSyncCategory;
     debitAccountId: string;
     creditAccountId: string;
     description?: string;
@@ -242,6 +265,8 @@ export function createTransactionType(
       id,
       code: input.code.trim(),
       name: input.name.trim(),
+      group: input.group || "tidak_terkategori",
+      posSyncCategory: input.posSyncCategory || null,
       debitAccountId: input.debitAccountId,
       creditAccountId: input.creditAccountId,
       description: input.description?.trim() || null,
@@ -282,6 +307,8 @@ export function updateTransactionType(
   input: {
     name?: string;
     code?: string;
+    group?: TransactionGroup;
+    posSyncCategory?: PosSyncCategory;
     debitAccountId?: string;
     creditAccountId?: string;
     description?: string | null;
@@ -306,6 +333,9 @@ export function updateTransactionType(
     const updated = {
       name: input.name !== undefined ? input.name.trim() : existing.name,
       code: input.code !== undefined ? input.code.trim() : existing.code,
+      group: input.group !== undefined ? input.group : existing.group,
+      posSyncCategory:
+        input.posSyncCategory !== undefined ? input.posSyncCategory : existing.posSyncCategory,
       debitAccountId: input.debitAccountId ?? existing.debitAccountId,
       creditAccountId: input.creditAccountId ?? existing.creditAccountId,
       description:
@@ -562,7 +592,9 @@ export function createTransaction(
     const metadataObj = input.metadata ?? {};
 
     if (hasExplicitMetadata) {
-      const schema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
+      const directSchema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
+      const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === type.group);
+      const schema = directSchema.length > 0 ? directSchema : groupConfig?.metadataSchema || [];
       const enforceRequired = amountSen > 0 || Object.keys(metadataObj).length > 0;
       validateTransactionMetadata(schema, metadataObj, enforceRequired);
     }
@@ -688,7 +720,9 @@ export function updateTransaction(
 
     const amountSen = input.amount !== undefined ? amountToSen(input.amount) : existing.amount;
     if (input.metadata !== undefined && input.metadata !== null) {
-      const schema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
+      const directSchema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
+      const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === type.group);
+      const schema = directSchema.length > 0 ? directSchema : groupConfig?.metadataSchema || [];
       const enforceRequired = amountSen > 0 || Object.keys(input.metadata).length > 0;
       validateTransactionMetadata(schema, input.metadata, enforceRequired);
     }

@@ -5,7 +5,11 @@ import { accounts, transactionTypes } from "./schema/index.js";
 import { createTransaction } from "../services/transaction.service.js";
 import { lockOpeningBalance, saveOpeningBalances } from "../services/opening-balance.service.js";
 import { seedUsers } from "./seeds/users.seed.js";
-import type { MetadataFieldDefinition } from "@keuangan-apotek/shared";
+import type {
+  MetadataFieldDefinition,
+  PosSyncCategory,
+  TransactionGroup,
+} from "@keuangan-apotek/shared";
 
 type SeedAccount = {
   code: string;
@@ -525,162 +529,72 @@ export function seedAccounts(client: ReturnType<typeof createSqliteClient>): num
 export type SeedTransactionType = {
   code: string;
   name: string;
+  group: TransactionGroup;
+  posSyncCategory?: PosSyncCategory;
   debitCode: string;
   creditCode: string;
   description: string;
-  metadataSchema: MetadataFieldDefinition[];
+  metadataSchema?: MetadataFieldDefinition[];
 };
 
 export const standardTransactionTypes: SeedTransactionType[] = [
+  // --- GRUP OMZET & PENJUALAN ---
   {
     code: "TRX-01",
     name: "Penjualan Tunai Kasir",
+    group: "omzet",
+    posSyncCategory: "shift_sales",
     debitCode: "1102",
     creditCode: "4101",
     description: "Penerimaan uang tunai dari kasir apotek atas penjualan obat dan produk",
-    metadataSchema: [
-      {
-        key: "shift",
-        label: "Shift",
-        type: "select",
-        options: ["Pagi", "Siang", "Malam"],
-        required: true,
-      },
-      { key: "nama_kasir", label: "Nama Kasir", type: "text", required: false },
-    ],
+    metadataSchema: [], // Mewarisi DEFAULT_SALES_METADATA_SCHEMA (shift)
   },
   {
     code: "TRX-02",
     name: "Penjualan Shopee (Dana Pending + Saldo)",
+    group: "omzet",
+    posSyncCategory: "shift_sales",
     debitCode: "1201",
     creditCode: "4101",
     description:
       "Penjualan marketplace Shopee selesai diproses, dana masuk ke pos dana pending + saldo Shopee",
-    metadataSchema: [
-      {
-        key: "shift",
-        label: "Shift",
-        type: "select",
-        options: ["Pagi", "Siang", "Malam"],
-        required: true,
-      },
-    ],
-  },
-  {
-    code: "TRX-04",
-    name: "Biaya Admin Shopee",
-    debitCode: "6101",
-    creditCode: "1201",
-    description: "Pemotongan biaya admin / komisi marketplace Shopee",
-    metadataSchema: [
-      {
-        key: "periode",
-        label: "Periode",
-        type: "text",
-        required: true,
-        placeholder: "Contoh: Juli 2026",
-      },
-    ],
-  },
-  {
-    code: "TRX-05",
-    name: "Tarik Saldo Shopee ke Bank Jago",
-    debitCode: "1103",
-    creditCode: "1201",
-    description: "Penarikan dana Shopee (dana pending + saldo) ke rekening Bank Jago",
-    metadataSchema: [],
+    metadataSchema: [], // Mewarisi DEFAULT_SALES_METADATA_SCHEMA (shift)
   },
   {
     code: "TRX-06",
     name: "Penjualan Blibli (Dana Pending + Saldo)",
+    group: "omzet",
+    posSyncCategory: "shift_sales",
     debitCode: "1203",
     creditCode: "4101",
     description: "Penjualan pesanan Blibli diproses, dana masuk ke pos dana pending + saldo Blibli",
-    metadataSchema: [
-      {
-        key: "shift",
-        label: "Shift",
-        type: "select",
-        options: ["Pagi", "Siang", "Malam"],
-        required: true,
-      },
-    ],
-  },
-  {
-    code: "TRX-08",
-    name: "Biaya Admin Blibli",
-    debitCode: "6101",
-    creditCode: "1203",
-    description: "Pemotongan fee dan admin merchant Blibli",
-    metadataSchema: [
-      {
-        key: "periode",
-        label: "Periode",
-        type: "text",
-        required: true,
-        placeholder: "Contoh: Juli 2026",
-      },
-    ],
-  },
-  {
-    code: "TRX-09",
-    name: "Tarik Saldo Blibli ke Bank Jago",
-    debitCode: "1103",
-    creditCode: "1203",
-    description: "Pencairan dana merchant Blibli (dana pending + saldo) masuk rekening Bank Jago",
-    metadataSchema: [],
+    metadataSchema: [], // Mewarisi DEFAULT_SALES_METADATA_SCHEMA (shift)
   },
   {
     code: "TRX-10",
     name: "Penjualan Grab Merchant",
+    group: "omzet",
+    posSyncCategory: "shift_sales",
     debitCode: "1106",
     creditCode: "4101",
     description: "Omset penjualan obat via GrabMart merchant",
-    metadataSchema: [
-      {
-        key: "shift",
-        label: "Shift",
-        type: "select",
-        options: ["Pagi", "Siang", "Malam"],
-        required: true,
-      },
-    ],
-  },
-  {
-    code: "TRX-11",
-    name: "Pencairan Grab ke Bank Jago",
-    debitCode: "1103",
-    creditCode: "1106",
-    description: "Transfer settlement otomatis dari Grab ke Bank Jago",
-    metadataSchema: [],
+    metadataSchema: [], // Mewarisi DEFAULT_SALES_METADATA_SCHEMA (shift)
   },
   {
     code: "TRX-12",
     name: "Penjualan QRIS DANA",
+    group: "omzet",
+    posSyncCategory: "shift_sales",
     debitCode: "1107",
     creditCode: "4101",
     description: "Pembayaran pelanggan di kasir menggunakan QRIS DANA Bisnis",
-    metadataSchema: [
-      {
-        key: "shift",
-        label: "Shift",
-        type: "select",
-        options: ["Pagi", "Siang", "Malam"],
-        required: true,
-      },
-    ],
-  },
-  {
-    code: "TRX-13",
-    name: "Pencairan QRIS DANA ke Bank Jago",
-    debitCode: "1103",
-    creditCode: "1107",
-    description: "Penarikan saldo merchant QRIS DANA ke Bank Jago",
-    metadataSchema: [],
+    metadataSchema: [], // Mewarisi DEFAULT_SALES_METADATA_SCHEMA (shift)
   },
   {
     code: "TRX-14",
     name: "Penjualan Kasbon",
+    group: "omzet",
+    posSyncCategory: "shift_sales",
     debitCode: "1204",
     creditCode: "4101",
     description: "Penjualan obat kasbon pelanggan / pasien atau klinik langganan",
@@ -696,31 +610,210 @@ export const standardTransactionTypes: SeedTransactionType[] = [
       { key: "jatuh_tempo", label: "Jatuh Tempo", type: "date", required: false },
     ],
   },
+
+  // --- GRUP BIAYA OPERASIONAL ---
+  {
+    code: "TRX-04",
+    name: "Biaya Admin Shopee",
+    group: "biaya_operasional",
+    debitCode: "6101",
+    creditCode: "1201",
+    description: "Pemotongan biaya admin / komisi marketplace Shopee",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-08",
+    name: "Biaya Admin Blibli",
+    group: "biaya_operasional",
+    debitCode: "6101",
+    creditCode: "1203",
+    description: "Pemotongan fee dan admin merchant Blibli",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-23",
+    name: "Pembayaran Gaji via Bank Jago",
+    group: "biaya_operasional",
+    debitCode: "6102",
+    creditCode: "1103",
+    description: "Transfer gaji apoteker & asisten langsung dari rekening Bank Jago",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-24",
+    name: "Pembayaran Gaji dari Saving Gaji",
+    group: "biaya_operasional",
+    debitCode: "6102",
+    creditCode: "1108",
+    description: "Pembayaran gaji karyawan langsung dipotong dari pos simpanan gaji",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-34",
+    name: "Bayar Listrik, Air & Internet via Bank Jago",
+    group: "biaya_operasional",
+    debitCode: "6103",
+    creditCode: "1103",
+    description: "Pembayaran utilitas outlet apotek bulanan",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-35",
+    name: "Beli Perlengkapan Toko Tunai Kasir",
+    group: "biaya_operasional",
+    debitCode: "6104",
+    creditCode: "1102",
+    description: "Beli plastik klip obat, etiket, kertas struk, dan ATK kasir apotek",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-36",
+    name: "Beban Promosi & Brosur via Bank Jago",
+    group: "biaya_operasional",
+    debitCode: "6105",
+    creditCode: "1103",
+    description: "Biaya kampanye media sosial, cetak brosur kesehatan apotek",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-38",
+    name: "Amortisasi Sewa Bangunan Bulanan",
+    group: "biaya_operasional",
+    debitCode: "6106",
+    creditCode: "1401",
+    description: "Pengakuan beban amortisasi sewa bangunan setiap akhir bulan",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-39",
+    name: "Beban Lain-lain Tunai Kasir",
+    group: "biaya_operasional",
+    debitCode: "6107",
+    creditCode: "1102",
+    description: "Biaya operasional kas kecil mendesak (parkir, kebersihan lingkungan, dll.)",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-40",
+    name: "Penyusutan Aset Tetap Bulanan",
+    group: "biaya_operasional",
+    debitCode: "6201",
+    creditCode: "1699",
+    description: "Penyusutan peralatan, etalase, rak obat, dan inventaris apotek",
+    metadataSchema: [], // Mewarisi DEFAULT_EXPENSE_METADATA_SCHEMA
+  },
+
+  // --- GRUP PELUNASAN KASBON ---
   {
     code: "TRX-15",
     name: "Pelunasan Kasbon Tunai",
+    group: "pelunasan_piutang",
+    posSyncCategory: "shift_sales",
     debitCode: "1102",
     creditCode: "1204",
     description: "Penerimaan pelunasan kasbon pelanggan secara tunai di kasir",
-    metadataSchema: [
-      { key: "nama_pelanggan", label: "Nama Pelanggan / Pasien", type: "text", required: true },
-      { key: "no_kuitansi", label: "No. Kuitansi / Referensi", type: "text", required: false },
-    ],
+    metadataSchema: [], // Mewarisi DEFAULT_RECEIVABLE_PAYMENT_METADATA_SCHEMA
   },
   {
     code: "TRX-16",
     name: "Pelunasan Kasbon via Bank Jago",
+    group: "pelunasan_piutang",
+    posSyncCategory: "shift_sales",
     debitCode: "1103",
     creditCode: "1204",
     description: "Pelanggan melunasi kasbon via transfer bank",
+    metadataSchema: [], // Mewarisi DEFAULT_RECEIVABLE_PAYMENT_METADATA_SCHEMA
+  },
+
+  // --- GRUP PEMBELIAN PERSEDIAAN ---
+  {
+    code: "TRX-25",
+    name: "Pembelian Stok Obat Tempo / Hutang Dagang",
+    group: "pembelian_persediaan",
+    posSyncCategory: "goods_receiving",
+    debitCode: "1301",
+    creditCode: "2102",
+    description: "Penerimaan faktur distributor farmasi (PBF) tempo dengan termin jatuh tempo",
+    metadataSchema: [], // Mewarisi DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-26",
+    name: "Pembelian Stok Obat COD / Tunai Bank Jago",
+    group: "pembelian_persediaan",
+    posSyncCategory: "goods_receiving",
+    debitCode: "1301",
+    creditCode: "1103",
+    description: "Pembelian obat COD atau tunai ke distributor/supplier langsung lunas",
+    metadataSchema: [], // Mewarisi DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA
+  },
+
+  // --- GRUP PEMBAYARAN HUTANG ---
+  {
+    code: "TRX-27",
+    name: "Pelunasan Hutang Dagang PBF via Bank Jago",
+    group: "pembayaran_hutang",
+    debitCode: "2102",
+    creditCode: "1103",
+    description: "Pembayaran faktur jatuh tempo ke distributor PBF",
+    metadataSchema: [], // Mewarisi DEFAULT_DEBT_PAYMENT_METADATA_SCHEMA
+  },
+  {
+    code: "TRX-32",
+    name: "Pelunasan Hutang Konsinyasi via Bank Jago",
+    group: "pembayaran_hutang",
+    posSyncCategory: "consignment_settlement",
+    debitCode: "2104",
+    creditCode: "1103",
+    description: "Penyelesaian bagi hasil titip jual ke pemilik produk konsinyasi",
     metadataSchema: [
-      { key: "nama_pelanggan", label: "Nama Pelanggan / Pasien", type: "text", required: true },
-      { key: "no_kuitansi", label: "No. Kuitansi / Bukti Transfer", type: "text", required: false },
+      { key: "nama_vendor", label: "Nama Vendor", type: "text", required: true },
+      { key: "no_faktur", label: "No. Faktur", type: "text", required: true },
+      { key: "periode_rekap", label: "Periode Rekap", type: "date", required: false },
+      { key: "total_pelunasan", label: "Total Pelunasan", type: "currency", required: false },
     ],
+  },
+
+  // --- GRUP TRANSFER ANTAR AKUN ---
+  {
+    code: "TRX-05",
+    name: "Tarik Saldo Shopee ke Bank Jago",
+    group: "transfer_antar_akun",
+    debitCode: "1103",
+    creditCode: "1201",
+    description: "Penarikan dana Shopee (dana pending + saldo) ke rekening Bank Jago",
+    metadataSchema: [],
+  },
+  {
+    code: "TRX-09",
+    name: "Tarik Saldo Blibli ke Bank Jago",
+    group: "transfer_antar_akun",
+    debitCode: "1103",
+    creditCode: "1203",
+    description: "Pencairan dana merchant Blibli (dana pending + saldo) masuk rekening Bank Jago",
+    metadataSchema: [],
+  },
+  {
+    code: "TRX-11",
+    name: "Pencairan Grab ke Bank Jago",
+    group: "transfer_antar_akun",
+    debitCode: "1103",
+    creditCode: "1106",
+    description: "Transfer settlement otomatis dari Grab ke Bank Jago",
+    metadataSchema: [],
+  },
+  {
+    code: "TRX-13",
+    name: "Pencairan QRIS DANA ke Bank Jago",
+    group: "transfer_antar_akun",
+    debitCode: "1103",
+    creditCode: "1107",
+    description: "Penarikan saldo merchant QRIS DANA ke Bank Jago",
+    metadataSchema: [],
   },
   {
     code: "TRX-17",
     name: "Setoran Tunai Kasir ke Bank Jago",
+    group: "transfer_antar_akun",
     debitCode: "1103",
     creditCode: "1102",
     description: "Setor uang fisik dari laci kasir ke rekening Bank Jago",
@@ -729,6 +822,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-18",
     name: "Penyediaan Uang Tukaran Kasir",
+    group: "transfer_antar_akun",
     debitCode: "1101",
     creditCode: "1103",
     description: "Pengisian modal uang tukaran / pecahan kecil untuk kasir kas fisik permanen",
@@ -737,6 +831,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-19",
     name: "Alokasi Saving Gaji dari Bank Jago",
+    group: "transfer_antar_akun",
     debitCode: "1108",
     creditCode: "1103",
     description: "Penyisihan pos dana khusus gaji karyawan di Bank Jago",
@@ -745,6 +840,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-20",
     name: "Alokasi Saving Sewa dari Bank Jago",
+    group: "transfer_antar_akun",
     debitCode: "1109",
     creditCode: "1103",
     description: "Penyisihan pos dana simpanan sewa tempat/ruko",
@@ -753,6 +849,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-21",
     name: "Pencairan Saving Gaji ke Bank Jago",
+    group: "transfer_antar_akun",
     debitCode: "1103",
     creditCode: "1108",
     description: "Pengembalian pos simpanan gaji ke rekening operasional utama",
@@ -761,101 +858,18 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-22",
     name: "Pencairan Saving Sewa ke Bank Jago",
+    group: "transfer_antar_akun",
     debitCode: "1103",
     creditCode: "1109",
     description: "Pengembalian pos simpanan sewa ke rekening operasional utama",
     metadataSchema: [],
   },
-  {
-    code: "TRX-23",
-    name: "Pembayaran Gaji via Bank Jago",
-    debitCode: "6102",
-    creditCode: "1103",
-    description: "Transfer gaji apoteker & asisten langsung dari rekening Bank Jago",
-    metadataSchema: [
-      {
-        key: "nama_karyawan",
-        label: "Nama Karyawan",
-        type: "text",
-        required: true,
-        placeholder: "Nama lengkap karyawan",
-      },
-      {
-        key: "deskripsi",
-        label: "Deskripsi",
-        type: "text",
-        required: false,
-        placeholder: "Gaji pokok / lembur / bonus",
-      },
-    ],
-  },
-  {
-    code: "TRX-24",
-    name: "Pembayaran Gaji dari Saving Gaji",
-    debitCode: "6102",
-    creditCode: "1108",
-    description: "Pembayaran gaji karyawan langsung dipotong dari pos simpanan gaji",
-    metadataSchema: [
-      {
-        key: "nama_karyawan",
-        label: "Nama Karyawan",
-        type: "text",
-        required: true,
-        placeholder: "Nama lengkap karyawan",
-      },
-      {
-        key: "deskripsi",
-        label: "Deskripsi",
-        type: "text",
-        required: false,
-        placeholder: "Gaji pokok / lembur / bonus",
-      },
-    ],
-  },
-  {
-    code: "TRX-25",
-    name: "Pembelian Stok Obat Tempo / Hutang Dagang",
-    debitCode: "1301",
-    creditCode: "2102",
-    description: "Penerimaan faktur distributor farmasi (PBF) tempo dengan termin jatuh tempo",
-    metadataSchema: [
-      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: true },
-      { key: "no_faktur", label: "No. Faktur", type: "text", required: true },
-      { key: "tanggal_order", label: "Tanggal Order", type: "date", required: false },
-      { key: "total_order", label: "Total Order", type: "currency", required: false },
-      { key: "tgl_terima_barang", label: "Tanggal Terima Barang", type: "date", required: false },
-      { key: "jatuh_tempo", label: "Waktu Jatuh Tempo", type: "date", required: true },
-    ],
-  },
-  {
-    code: "TRX-26",
-    name: "Pembelian Stok Obat COD / Tunai Bank Jago",
-    debitCode: "1301",
-    creditCode: "1103",
-    description: "Pembelian obat COD atau tunai ke distributor/supplier langsung lunas",
-    metadataSchema: [
-      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: true },
-      { key: "no_faktur", label: "No. Faktur", type: "text", required: false },
-      { key: "tanggal_order", label: "Tanggal Order", type: "date", required: false },
-      { key: "total_order", label: "Total Order", type: "currency", required: false },
-      { key: "tgl_terima_barang", label: "Tanggal Terima Barang", type: "date", required: false },
-    ],
-  },
-  {
-    code: "TRX-27",
-    name: "Pelunasan Hutang Dagang PBF via Bank Jago",
-    debitCode: "2102",
-    creditCode: "1103",
-    description: "Pembayaran faktur jatuh tempo ke distributor PBF",
-    metadataSchema: [
-      { key: "nama_supplier", label: "Nama Supplier", type: "text", required: true },
-      { key: "no_faktur", label: "No. Faktur Dibayar", type: "text", required: true },
-      { key: "keterangan", label: "Keterangan", type: "text", required: false },
-    ],
-  },
+
+  // --- GRUP TIDAK TERKATEGORI / LAIN-LAIN ---
   {
     code: "TRX-28",
     name: "Uang Muka / Piutang Supplier",
+    group: "tidak_terkategori",
     debitCode: "1205",
     creditCode: "1103",
     description: "Kelebihan bayar atau uang muka pesanan khusus/indent ke supplier",
@@ -867,6 +881,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-29",
     name: "Pengembalian Uang Muka dari Supplier",
+    group: "tidak_terkategori",
     debitCode: "1103",
     creditCode: "1205",
     description: "Pengembalian dana retur / order batal dari supplier ke Bank Jago",
@@ -877,6 +892,8 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-30",
     name: "Penjualan Barang Konsinyasi Tunai",
+    group: "tidak_terkategori",
+    posSyncCategory: "shift_sales",
     debitCode: "1102",
     creditCode: "2104",
     description: "Penjualan produk titipan konsinyasi di apotek tunai kasir",
@@ -896,6 +913,8 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-31",
     name: "Pengakuan HPP Konsinyasi",
+    group: "tidak_terkategori",
+    posSyncCategory: "shift_sales",
     debitCode: "5102",
     creditCode: "2104",
     description: "Pencatatan beban pokok penjualan barang konsinyasi saat terjual di shift kasir",
@@ -911,21 +930,9 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     ],
   },
   {
-    code: "TRX-32",
-    name: "Pelunasan Hutang Konsinyasi via Bank Jago",
-    debitCode: "2104",
-    creditCode: "1103",
-    description: "Penyelesaian bagi hasil titip jual ke pemilik produk konsinyasi",
-    metadataSchema: [
-      { key: "nama_vendor", label: "Nama Vendor", type: "text", required: true },
-      { key: "no_faktur", label: "No. Faktur", type: "text", required: true },
-      { key: "periode_rekap", label: "Periode Rekap", type: "date", required: false },
-      { key: "total_pelunasan", label: "Total Pelunasan", type: "currency", required: false },
-    ],
-  },
-  {
     code: "TRX-33",
     name: "Pengakuan HPP Stok Obat Terjual",
+    group: "tidak_terkategori",
     debitCode: "5101",
     creditCode: "1301",
     description: "Jurnal penyesuaian beban pokok obat atas stok barang yang keluar",
@@ -935,78 +942,9 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     ],
   },
   {
-    code: "TRX-34",
-    name: "Bayar Listrik, Air & Internet via Bank Jago",
-    debitCode: "6103",
-    creditCode: "1103",
-    description: "Pembayaran utilitas outlet apotek bulanan",
-    metadataSchema: [
-      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
-      { key: "jumlah", label: "Jumlah", type: "number", required: false },
-      {
-        key: "satuan",
-        label: "Satuan",
-        type: "text",
-        required: false,
-        placeholder: "bulan / kwh / m3",
-      },
-      {
-        key: "jenis_utilitas",
-        label: "Jenis Tagihan",
-        type: "select",
-        options: ["Listrik PLN", "Air PDAM", "Internet Indihome"],
-        required: false,
-      },
-      { key: "id_pelanggan", label: "ID Pelanggan / No. Meter", type: "text", required: false },
-    ],
-  },
-  {
-    code: "TRX-35",
-    name: "Beli Perlengkapan Toko Tunai Kasir",
-    debitCode: "6104",
-    creditCode: "1102",
-    description: "Beli plastik klip obat, etiket, kertas struk, dan ATK kasir apotek",
-    metadataSchema: [
-      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
-      { key: "jumlah", label: "Jumlah", type: "number", required: false },
-      {
-        key: "satuan",
-        label: "Satuan",
-        type: "text",
-        required: false,
-        placeholder: "pack / rim / pcs",
-      },
-      { key: "nama_toko", label: "Toko Pembelian", type: "text", required: false },
-    ],
-  },
-  {
-    code: "TRX-36",
-    name: "Beban Promosi & Brosur via Bank Jago",
-    debitCode: "6105",
-    creditCode: "1103",
-    description: "Biaya kampanye media sosial, cetak brosur kesehatan apotek",
-    metadataSchema: [
-      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
-      { key: "jumlah", label: "Jumlah", type: "number", required: false },
-      {
-        key: "satuan",
-        label: "Satuan",
-        type: "text",
-        required: false,
-        placeholder: "hari / paket / lembar",
-      },
-      {
-        key: "media_promosi",
-        label: "Media Promosi",
-        type: "select",
-        options: ["Instagram Ads", "Google Ads", "Cetak Brosur", "Banner", "Lainnya"],
-        required: false,
-      },
-    ],
-  },
-  {
     code: "TRX-37",
     name: "Pembayaran Sewa Tempat dari Saving Sewa",
+    group: "tidak_terkategori",
     debitCode: "1401",
     creditCode: "1109",
     description: "Pembayaran sewa ruko tahunan dibayar dimuka dari pos simpanan sewa",
@@ -1016,57 +954,9 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     ],
   },
   {
-    code: "TRX-38",
-    name: "Amortisasi Sewa Bangunan Bulanan",
-    debitCode: "6106",
-    creditCode: "1401",
-    description: "Pengakuan beban amortisasi sewa bangunan setiap akhir bulan",
-    metadataSchema: [
-      {
-        key: "deskripsi",
-        label: "Deskripsi",
-        type: "text",
-        required: true,
-        defaultValue: "Amortisasi Sewa Bangunan",
-      },
-      { key: "jumlah", label: "Jumlah", type: "number", required: false },
-      { key: "satuan", label: "Satuan", type: "text", required: false, placeholder: "bulan" },
-    ],
-  },
-  {
-    code: "TRX-39",
-    name: "Beban Lain-lain Tunai Kasir",
-    debitCode: "6107",
-    creditCode: "1102",
-    description: "Biaya operasional kas kecil mendesak (parkir, kebersihan lingkungan, dll.)",
-    metadataSchema: [
-      { key: "deskripsi", label: "Deskripsi", type: "text", required: true },
-      { key: "jumlah", label: "Jumlah", type: "number", required: false },
-      { key: "satuan", label: "Satuan", type: "text", required: false, placeholder: "kali / unit" },
-    ],
-  },
-  {
-    code: "TRX-40",
-    name: "Penyusutan Aset Tetap Bulanan",
-    debitCode: "6201",
-    creditCode: "1699",
-    description: "Penyusutan peralatan, etalase, rak obat, dan inventaris apotek",
-    metadataSchema: [
-      {
-        key: "deskripsi",
-        label: "Deskripsi",
-        type: "text",
-        required: true,
-        defaultValue: "Penyusutan Peralatan & Etalase",
-      },
-      { key: "jumlah", label: "Jumlah", type: "number", required: false },
-      { key: "satuan", label: "Satuan", type: "text", required: false, placeholder: "bulan" },
-      { key: "kategori_aset", label: "Kelompok Aset", type: "text", required: false },
-    ],
-  },
-  {
     code: "TRX-41",
     name: "Pembayaran Pajak via Bank Jago",
+    group: "tidak_terkategori",
     debitCode: "6301",
     creditCode: "1103",
     description: "Penyetoran pajak UMKM PPh Final atau PPh pasal 21",
@@ -1099,6 +989,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-42",
     name: "Setoran Modal Pemilik ke Bank Jago",
+    group: "tidak_terkategori",
     debitCode: "1103",
     creditCode: "3101",
     description: "Setoran modal tunai pendiri apotek ke rekening operasional",
@@ -1107,6 +998,7 @@ export const standardTransactionTypes: SeedTransactionType[] = [
   {
     code: "TRX-43",
     name: "Pendapatan Lain-lain via Bank Jago",
+    group: "tidak_terkategori",
     debitCode: "1103",
     creditCode: "4201",
     description: "Pendapatan non-operasional lainnya (bunga bagi hasil, jasa titip khusus, dll.)",
@@ -1146,20 +1038,24 @@ export function seedTransactionTypes(client: ReturnType<typeof createSqliteClien
           id,
           code: type.code,
           name: type.name,
+          group: type.group || "tidak_terkategori",
+          posSyncCategory: type.posSyncCategory || null,
           debitAccountId,
           creditAccountId,
           description: type.description,
-          metadataSchema: JSON.stringify(type.metadataSchema),
+          metadataSchema: JSON.stringify(type.metadataSchema || []),
           isActive: true,
         })
         .onConflictDoUpdate({
           target: transactionTypes.code,
           set: {
             name: type.name,
+            group: type.group || "tidak_terkategori",
+            posSyncCategory: type.posSyncCategory || null,
             debitAccountId,
             creditAccountId,
             description: type.description,
-            metadataSchema: JSON.stringify(type.metadataSchema),
+            metadataSchema: JSON.stringify(type.metadataSchema || []),
             isActive: true,
           },
         })

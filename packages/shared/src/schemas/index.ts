@@ -152,10 +152,28 @@ export const MetadataFieldSchema = z.object({
   helpText: z.string().trim().optional(),
 });
 
+export const TransactionGroupSchema = z.enum([
+  "omzet",
+  "biaya_operasional",
+  "pelunasan_piutang",
+  "pembayaran_hutang",
+  "pembelian_persediaan",
+  "transfer_antar_akun",
+  "tidak_terkategori",
+]);
+
+export const PosSyncCategorySchema = z.enum([
+  "goods_receiving",
+  "shift_sales",
+  "consignment_settlement",
+]);
+
 export const TransactionTypeSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1),
   code: z.string().trim().min(1),
+  group: TransactionGroupSchema.default("tidak_terkategori"),
+  posSyncCategory: PosSyncCategorySchema.optional(),
   debitAccountId: z.string().min(1),
   creditAccountId: z.string().min(1),
   description: z.string().trim().optional(),

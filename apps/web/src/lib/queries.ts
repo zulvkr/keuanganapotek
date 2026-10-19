@@ -5,6 +5,8 @@ import type {
   AuthUser,
   CashFlowReport,
   MetadataFieldDefinition,
+  PosSyncCategory,
+  TransactionGroup,
   TransactionType,
   TransactionWithBalances,
   TransactionsSummary,
@@ -189,6 +191,8 @@ export type JournalInput = InferRequestType<(typeof api.api.journals.general)["$
 export type SaveTransactionTypeInput = {
   code: string;
   name: string;
+  group?: TransactionGroup;
+  posSyncCategory?: PosSyncCategory;
   debitAccountId: string;
   creditAccountId: string;
   description?: string;

@@ -111,6 +111,8 @@ export const transactionTypes = sqliteTable(
     id: text("id").primaryKey().notNull(),
     code: text("code").notNull().unique(),
     name: text("name").notNull(),
+    group: text("group").notNull().default("tidak_terkategori"),
+    posSyncCategory: text("pos_sync_category"),
     debitAccountId: text("debit_account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "restrict" }),
@@ -125,6 +127,7 @@ export const transactionTypes = sqliteTable(
   },
   (table) => ({
     codeIndex: index("idx_transaction_types_code").on(table.code),
+    groupIndex: index("idx_transaction_types_group").on(table.group),
   }),
 );
 

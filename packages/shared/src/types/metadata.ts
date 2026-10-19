@@ -80,6 +80,22 @@ export const DEFAULT_EXPENSE_METADATA_SCHEMA: MetadataFieldDefinition[] = [
     width: "full",
   },
   {
+    key: "penerima",
+    label: "Penerima / Karyawan / Toko",
+    type: "text",
+    required: false,
+    placeholder: "Nama penerima, karyawan, merchant, atau toko",
+    width: "half",
+  },
+  {
+    key: "periode",
+    label: "Periode",
+    type: "text",
+    required: false,
+    placeholder: "Contoh: Juli 2026",
+    width: "half",
+  },
+  {
     key: "jumlah",
     label: "Jumlah",
     type: "number",
@@ -92,7 +108,7 @@ export const DEFAULT_EXPENSE_METADATA_SCHEMA: MetadataFieldDefinition[] = [
     label: "Satuan",
     type: "text",
     required: false,
-    placeholder: "pcs / unit / bulan / rim",
+    placeholder: "pcs / unit / bulan / orang",
     width: "half",
   },
 ];
