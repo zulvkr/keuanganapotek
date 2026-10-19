@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  inferPosSyncCategory,
   inferTransactionGroup,
   TRANSACTION_GROUPS,
   TRANSACTION_GROUP_LABELS,
@@ -22,14 +23,6 @@ describe("inferTransactionGroup", () => {
   });
 
   it("infers 'transfer_antar_akun' when both debit and credit are Cash & Bank accounts", () => {
-    // TRX-05: Bank Jago (1103) <- Saldo Shopee (1104)
-    expect(
-      inferTransactionGroup(
-        { code: "1103", name: "Bank Jago Syariah", classification: "ASET_LANCAR" },
-        { code: "1104", name: "Saldo Penjual Shopee", classification: "ASET_LANCAR" },
-      ),
-    ).toBe("transfer_antar_akun");
-
     // TRX-17: Bank Jago (1103) <- Kasir (1102)
     expect(
       inferTransactionGroup(
@@ -56,10 +49,10 @@ describe("inferTransactionGroup", () => {
       ),
     ).toBe("omzet");
 
-    // TRX-02: Dana Pending Shopee (1201) vs Omset (4101)
+    // TRX-02: Dana Pending + Saldo Shopee (1201) vs Omset (4101)
     expect(
       inferTransactionGroup(
-        { code: "1201", name: "Dana Pending Shopee" },
+        { code: "1201", name: "Dana Pending + Saldo Shopee" },
         { code: "4101", name: "Omset Penjualan", classification: "PENDAPATAN" },
       ),
     ).toBe("omzet");
@@ -74,11 +67,11 @@ describe("inferTransactionGroup", () => {
   });
 
   it("infers 'biaya_operasional' when debit is Operating Expense", () => {
-    // TRX-04: Biaya Admin Shopee (6101) vs Saldo Shopee (1104)
+    // TRX-04: Biaya Admin Shopee (6101) vs Dana Pending + Saldo Shopee (1201)
     expect(
       inferTransactionGroup(
         { code: "6101", name: "Beban Admin", classification: "BEBAN_OPERASIONAL" },
-        { code: "1104", name: "Saldo Shopee" },
+        { code: "1201", name: "Dana Pending + Saldo Shopee" },
       ),
     ).toBe("biaya_operasional");
 
@@ -118,11 +111,11 @@ describe("inferTransactionGroup", () => {
   });
 
   it("infers 'pelunasan_piutang' when credit is Receivable / Pending and debit is Cash & Bank", () => {
-    // TRX-03: Saldo Shopee (1104) vs Dana Pending Shopee (1201)
+    // TRX-05: Bank Jago (1103) vs Dana Pending + Saldo Shopee (1201)
     expect(
       inferTransactionGroup(
-        { code: "1104", name: "Saldo Shopee" },
-        { code: "1201", name: "Dana Pending Shopee" },
+        { code: "1103", name: "Bank Jago Syariah" },
+        { code: "1201", name: "Dana Pending + Saldo Shopee" },
       ),
     ).toBe("pelunasan_piutang");
 
@@ -195,5 +188,72 @@ describe("inferTransactionGroup", () => {
     for (const key of expectedKeys) {
       expect(TRANSACTION_GROUP_LABELS[key]).toBeDefined();
     }
+  });
+});
+
+describe("inferPosSyncCategory", () => {
+  it("infers goods_receiving for standard stock purchases", () => {
+    const res = inferPosSyncCategory({
+      code: "TRX-25",
+      name: "Pembelian Stok Obat Tempo",
+      debit: { code: "1301", name: "Stok Barang" },
+      credit: { code: "2102", name: "Hutang Dagang" },
+    });
+    expect(res).toBe("goods_receiving");
+  });
+
+  it("never infers goods_receiving when metadata konsinyasi or consignment traits are present", () => {
+    // 1. TRX-30 Penjualan konsinyasi
+    expect(
+      inferPosSyncCategory({
+        code: "TRX-30",
+        name: "Penjualan Barang Konsinyasi Tunai",
+        debit: { code: "1102", name: "Tunai Kasir" },
+        credit: { code: "2104", name: "Hutang Konsinyasi" },
+        metadataSchema: [{ key: "nama_vendor", label: "Nama Vendor Konsinyasi" }],
+      }),
+    ).toBe("shift_sales");
+
+    // 2. TRX-31 Pengakuan HPP konsinyasi
+    expect(
+      inferPosSyncCategory({
+        code: "TRX-31",
+        name: "Pengakuan HPP Konsinyasi",
+        debit: { code: "5102", name: "HPP Konsinyasi" },
+        credit: { code: "2104", name: "Hutang Konsinyasi" },
+      }),
+    ).toBe("shift_sales");
+
+    // 3. TRX-32 Pelunasan hutang konsinyasi
+    expect(
+      inferPosSyncCategory({
+        code: "TRX-32",
+        name: "Pelunasan Hutang Konsinyasi via Bank Jago",
+        debit: { code: "2104", name: "Hutang Konsinyasi" },
+        credit: { code: "1103", name: "Bank Jago Syariah" },
+        metadataSchema: [{ key: "nama_vendor", label: "Nama Vendor" }],
+      }),
+    ).toBe("consignment_settlement");
+
+    // 4. Custom inventory transaction that has konsinyasi metadata/name MUST NOT enter goods_receiving
+    expect(
+      inferPosSyncCategory({
+        code: "CUSTOM-01",
+        name: "Penerimaan Barang Konsinyasi",
+        debit: { code: "1301", name: "Stok Barang" },
+        credit: { code: "2104", name: "Hutang Konsinyasi" },
+        metadataSchema: [{ key: "nama_vendor", label: "Nama Vendor" }],
+      }),
+    ).not.toBe("goods_receiving");
+
+    // 5. Transaction with vendor konsinyasi metadataSchema should never be goods_receiving
+    expect(
+      inferPosSyncCategory({
+        code: "CUSTOM-02",
+        name: "Titip Jual Barang",
+        debit: { code: "1301", name: "Persediaan" },
+        metadataSchema: [{ key: "nama_vendor", label: "Vendor Konsinyasi" }],
+      }),
+    ).not.toBe("goods_receiving");
   });
 });

@@ -35,11 +35,17 @@ describe("Phase 1 database and opening balance flow", () => {
       (client.sqlite.prepare("SELECT count(*) AS count FROM accounts").get() as { count: number })
         .count,
     ).toBeGreaterThanOrEqual(30);
-    expect(client.db.select().from(accounts).where(eq(accounts.code, "1104")).get()?.name).toBe(
-      "Saldo Penjual Shopee",
-    );
+    expect(
+      client.db.select().from(accounts).where(eq(accounts.code, "1104")).get(),
+    ).toBeUndefined();
+    expect(
+      client.db.select().from(accounts).where(eq(accounts.code, "1105")).get(),
+    ).toBeUndefined();
     expect(client.db.select().from(accounts).where(eq(accounts.code, "1201")).get()?.name).toBe(
-      "Dana Pending Shopee",
+      "Dana Pending + Saldo Shopee",
+    );
+    expect(client.db.select().from(accounts).where(eq(accounts.code, "1203")).get()?.name).toBe(
+      "Dana Pending + Saldo Blibli",
     );
     expect(client.db.select().from(openingBalances).all()).toHaveLength(0);
   });

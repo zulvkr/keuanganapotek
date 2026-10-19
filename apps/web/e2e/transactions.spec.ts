@@ -76,7 +76,7 @@ test("manages transaction types with metadata schema builder", async ({ page }) 
   await expect(page.getByText("Tipe transaksi baru berhasil dibuat.")).toBeVisible();
 });
 
-test("creates and saves a transaction row in Buku Transaksi with 9 cash bank columns", async ({
+test("creates and saves a transaction row in Buku Transaksi with 7 cash bank columns", async ({
   page,
 }) => {
   const accounts = [
@@ -124,8 +124,6 @@ test("creates and saves a transaction row in Buku Transaksi with 9 cash bank col
       { code: "1101", name: "Kas Toko", balance: 50000000 },
       { code: "1102", name: "Tunai Kasir", balance: 0 },
       { code: "1103", name: "Bank Jago", balance: 0 },
-      { code: "1104", name: "Shopee", balance: 0 },
-      { code: "1105", name: "Blibli", balance: 0 },
       { code: "1106", name: "Grab", balance: 0 },
       { code: "1107", name: "QRIS DANA", balance: 0 },
       { code: "1108", name: "Sav. Gaji", balance: 0 },

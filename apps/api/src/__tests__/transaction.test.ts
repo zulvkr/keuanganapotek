@@ -44,11 +44,13 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     const types = client.db.select().from(transactionTypes).all();
     expect(types.length).toBeGreaterThanOrEqual(38);
 
-    // Verify cash/bank 1101-1109 exist
-    const cashBankCodes = ["1101", "1102", "1103", "1104", "1105", "1106", "1107", "1108", "1109"];
+    // Verify cash/bank accounts exist
+    const cashBankCodes = ["1101", "1102", "1103", "1106", "1107", "1108", "1109"];
     for (const code of cashBankCodes) {
       expect(allAccounts.some((a) => a.code === code)).toBe(true);
     }
+    expect(allAccounts.some((a) => a.code === "1104")).toBe(false);
+    expect(allAccounts.some((a) => a.code === "1105")).toBe(false);
   });
 
   it("seeds sample transactions for 2026-07-31 and 2026-08-20 including zero amounts", () => {
@@ -204,7 +206,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     ).toHaveLength(0);
   });
 
-  it("calculates sequential running balances and mutations for the 9 cash & bank columns", async () => {
+  it("calculates sequential running balances and mutations for the 7 cash & bank columns", async () => {
     const { api } = setup();
 
     const types = (
@@ -409,7 +411,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(trx04?.group).toBe("biaya_operasional");
 
     const trx05 = types.find((t) => t.code === "TRX-05"); // Tarik Saldo Shopee ke Bank Jago
-    expect(trx05?.group).toBe("transfer_antar_akun");
+    expect(trx05?.group).toBe("pelunasan_piutang");
 
     const trx15 = types.find((t) => t.code === "TRX-15"); // Pelunasan Piutang Pelanggan
     expect(trx15?.group).toBe("pelunasan_piutang");
@@ -543,8 +545,13 @@ describe("Transaction Types and Daily Transactions Engine", () => {
       ]),
     );
 
+    const trx30 = types.find((t) => t.code === "TRX-30")!;
+    expect(trx30.category).toBe("shift_sales");
+    expect(trx30.category).not.toBe("goods_receiving");
+
     const trx31 = types.find((t) => t.code === "TRX-31")!;
     expect(trx31.category).toBe("shift_sales");
+    expect(trx31.category).not.toBe("goods_receiving");
     expect(trx31.customFields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "shift", dataType: "string", required: true }),
@@ -553,6 +560,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
 
     const trx32 = types.find((t) => t.code === "TRX-32")!;
     expect(trx32.category).toBe("consignment_settlement");
+    expect(trx32.category).not.toBe("goods_receiving");
     expect(trx32.customFields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "nama_vendor", dataType: "string", required: true }),

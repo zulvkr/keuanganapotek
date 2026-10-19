@@ -510,11 +510,24 @@ export default function MasterTransactionPage() {
                       const detectedGroup = inferTransactionGroup(deb, cred);
                       const conf = TRANSACTION_GROUPS.find((g) => g.key === detectedGroup);
                       return conf ? (
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${conf.badgeClass}`}
-                        >
-                          {conf.label}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${conf.badgeClass}`}
+                          >
+                            {conf.label}
+                          </span>
+                          {conf.metadataSchema && conf.metadataSchema.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setFormSchema(JSON.parse(JSON.stringify(conf.metadataSchema)))
+                              }
+                              className="text-[11px] font-semibold text-brand hover:underline"
+                            >
+                              Terapkan Schema Grup ({conf.metadataSchema.length} field)
+                            </button>
+                          )}
+                        </div>
                       ) : null;
                     })()}
                   </div>

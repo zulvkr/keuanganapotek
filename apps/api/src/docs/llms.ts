@@ -23,7 +23,7 @@ Authorization: Bearer ka_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## Endpoint Utama untuk LLM Agent
 - \`GET /api/accounts/tree\`: Mengambil seluruh daftar bagan akun (CoA) aktif.
-- \`GET /api/transactions/summary\`: Ringkasan saldo 9 akun kas/bank operasional dan mutasi hari ini.
+- \`GET /api/transactions/summary\`: Ringkasan saldo 7 akun kas/bank operasional dan mutasi hari ini.
 - \`GET /api/transactions\`: Mengambil riwayat transaksi harian apotek (filter \`startDate\`, \`endDate\`).
 - \`POST /api/transactions\`: Mencatat transaksi keuangan apotek (penjualan obat, pembelian tempo/COD, biaya operasional).
 - \`GET /api/reports/income-statement\`: Laporan Laba Rugi (Pendapatan, HPP, Laba Kotor, Beban, Laba Bersih).
@@ -52,13 +52,11 @@ Bagan akun apotek dikelompokkan ke dalam struktur kode 4 digit:
    - \`1101\`: Uang tukaran kasir permanen
    - \`1102\`: Tunai Kasir (penerimaan tunai harian shift)
    - \`1103\`: Bank Jago Syariah (rekening operasional apotek)
-   - \`1104\`: Saldo Penjual Shopee
-   - \`1105\`: Saldo Penjual Blibli
    - \`1106\`: Saldo Grab Merchant
    - \`1107\`: Saldo QRIS DANA
    - \`1108\`: Saving Gaji (SENSITIF: Khusus Admin)
    - \`1109\`: Saving Sewa Gedung
-   - \`1201\` - \`1205\`: Piutang pelanggan, piutang marketplace, piutang supplier
+   - \`1201\` - \`1205\`: Dana pending + saldo marketplace, piutang pelanggan, piutang supplier
    - \`1301\`: Persediaan / Stok Barang Obat
    - \`1401\`: Sewa dibayar dimuka
    - \`1601\` / \`1699\`: Aset tetap dan akumulasi penyusutan

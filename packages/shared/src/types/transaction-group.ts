@@ -1,3 +1,12 @@
+import {
+  type MetadataFieldDefinition,
+  DEFAULT_DEBT_PAYMENT_METADATA_SCHEMA,
+  DEFAULT_EXPENSE_METADATA_SCHEMA,
+  DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA,
+  DEFAULT_RECEIVABLE_PAYMENT_METADATA_SCHEMA,
+  DEFAULT_SALES_METADATA_SCHEMA,
+} from "./metadata.js";
+
 export type TransactionGroup =
   | "omzet"
   | "biaya_operasional"
@@ -7,35 +16,44 @@ export type TransactionGroup =
   | "transfer_antar_akun"
   | "tidak_terkategori";
 
+export type PosSyncCategory = "goods_receiving" | "shift_sales" | "consignment_settlement";
+
 export type TransactionGroupConfig = {
   key: TransactionGroup;
   label: string;
   badgeLabel: string;
   description: string;
   badgeClass: string;
+  posSyncCategory?: PosSyncCategory;
+  metadataSchema: MetadataFieldDefinition[];
 };
 
 export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
   {
     key: "omzet",
-    label: "Omzet",
+    label: "Omzet & Penjualan",
     badgeLabel: "Omzet",
-    description: "Pendapatan dari penjualan kasir, marketplace, atau klinik",
+    description: "Pendapatan dari penjualan kasir, marketplace, atau kasbon",
     badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    posSyncCategory: "shift_sales",
+    metadataSchema: DEFAULT_SALES_METADATA_SCHEMA,
   },
   {
     key: "biaya_operasional",
     label: "Biaya Operasional",
     badgeLabel: "Biaya Operasional",
-    description: "Beban pengeluaran operasional apotek seperti gaji, admin, listrik, dan utilitas",
+    description: "Beban operasional apotek termasuk gaji, admin marketplace, listrik, dan utilitas",
     badgeClass: "bg-rose-50 text-rose-800 border-rose-200",
+    metadataSchema: DEFAULT_EXPENSE_METADATA_SCHEMA,
   },
   {
     key: "pelunasan_piutang",
-    label: "Pelunasan Piutang",
-    badgeLabel: "Pelunasan Piutang",
-    description: "Penerimaan pembayaran piutang pelanggan atau pencairan dana pending marketplace",
+    label: "Pelunasan Kasbon",
+    badgeLabel: "Pelunasan Kasbon",
+    description: "Penerimaan pembayaran kasbon pelanggan atau pasien",
     badgeClass: "bg-sky-50 text-sky-800 border-sky-200",
+    posSyncCategory: "shift_sales",
+    metadataSchema: DEFAULT_RECEIVABLE_PAYMENT_METADATA_SCHEMA,
   },
   {
     key: "pembayaran_hutang",
@@ -43,20 +61,25 @@ export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
     badgeLabel: "Pembayaran Hutang",
     description: "Pelunasan faktur hutang dagang PBF distributor atau hutang konsinyasi",
     badgeClass: "bg-amber-50 text-amber-800 border-amber-200",
+    metadataSchema: DEFAULT_DEBT_PAYMENT_METADATA_SCHEMA,
   },
   {
     key: "pembelian_persediaan",
     label: "Pembelian Persediaan",
     badgeLabel: "Pembelian Persediaan",
-    description: "Pembelian stok obat/barang dagang baik secara tempo maupun tunai",
+    description: "Pembelian stok obat/barang dagang PBF baik secara tempo maupun COD",
     badgeClass: "bg-purple-50 text-purple-800 border-purple-200",
+    posSyncCategory: "goods_receiving",
+    metadataSchema: DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA,
   },
   {
     key: "transfer_antar_akun",
     label: "Transfer Antar Akun",
     badgeLabel: "Transfer Antar Akun",
-    description: "Mutasi perpindahan dana antar rekening kas, bank, dan pos saving",
+    description:
+      "Mutasi perpindahan dana antar rekening kas, bank, pos saving, dan tarik saldo marketplace",
     badgeClass: "bg-teal-50 text-teal-800 border-teal-200",
+    metadataSchema: [],
   },
   {
     key: "tidak_terkategori",
@@ -64,13 +87,14 @@ export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
     badgeLabel: "Tidak Terkategori",
     description: "Transaksi non-operasional atau penyesuaian di luar grup utama di atas",
     badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+    metadataSchema: [],
   },
 ];
 
 export const TRANSACTION_GROUP_LABELS: Record<TransactionGroup, string> = {
   omzet: "Omzet",
   biaya_operasional: "Biaya Operasional",
-  pelunasan_piutang: "Pelunasan Piutang",
+  pelunasan_piutang: "Pelunasan Kasbon",
   pembayaran_hutang: "Pembayaran Hutang",
   pembelian_persediaan: "Pembelian Persediaan",
   transfer_antar_akun: "Transfer Antar Akun",
@@ -87,9 +111,23 @@ export type AccountLike = {
 export function isCashBankAccount(acc?: AccountLike | null): boolean {
   if (!acc) return false;
   const code = acc.code || "";
+  if (
+    code.startsWith("12") ||
+    code.startsWith("13") ||
+    code.startsWith("14") ||
+    code.startsWith("16") ||
+    code.startsWith("2") ||
+    code.startsWith("3") ||
+    code.startsWith("4") ||
+    code.startsWith("5") ||
+    code.startsWith("6")
+  ) {
+    return false;
+  }
   if (code.startsWith("11")) return true;
   if (acc.parentId === "1100" || acc.parentId === "coa-1100") return true;
   const name = (acc.name || "").toLowerCase();
+  if (name.includes("pending") || name.includes("piutang")) return false;
   return name.includes("kas") || name.includes("bank") || name.includes("saldo");
 }
 
@@ -124,7 +162,13 @@ export function isReceivableAccount(acc?: AccountLike | null): boolean {
   const code = acc.code || "";
   if (code === "1201" || code === "1203" || code === "1204" || code === "1205") return true;
   const name = (acc.name || "").toLowerCase();
-  if (name.includes("piutang") || name.includes("dana pending")) return true;
+  if (
+    name.includes("piutang") ||
+    name.includes("dana pending") ||
+    name.includes("pending") ||
+    name.includes("kasbon")
+  )
+    return true;
   if (code.startsWith("12") && !code.startsWith("13") && !code.startsWith("14")) {
     return true;
   }
@@ -153,7 +197,7 @@ export function isPayableAccount(acc?: AccountLike | null): boolean {
  * 2. Omzet: Credit is Revenue/Omset (41xx / PENDAPATAN).
  * 3. Biaya Operasional: Debit is Operating Expense (61xx, 62xx / BEBAN_OPERASIONAL).
  * 4. Pembelian Persediaan: Debit is Inventory/Stock (13xx / Stok Barang).
- * 5. Pelunasan Piutang: Credit is Receivable/Pending (12xx) and Debit is Cash/Bank (11xx).
+ * 5. Pelunasan Piutang / Kasbon: Credit is Receivable/Pending (12xx) and Debit is Cash/Bank (11xx).
  * 6. Pembayaran Hutang: Debit is Payable/Liability (21xx) and Credit is Cash/Bank (11xx).
  * 7. Fallback: "tidak_terkategori"
  */
@@ -181,7 +225,7 @@ export function inferTransactionGroup(
     return "pembelian_persediaan";
   }
 
-  // 5. Pelunasan Piutang
+  // 5. Pelunasan Piutang / Kasbon
   if (isReceivableAccount(credit) && isCashBankAccount(debit)) {
     return "pelunasan_piutang";
   }
@@ -195,28 +239,10 @@ export function inferTransactionGroup(
   return "tidak_terkategori";
 }
 
-export type PosSyncCategory = "goods_receiving" | "shift_sales" | "consignment_settlement";
-
-const SHIFT_SALES_CODES = new Set([
-  "TRX-01",
-  "TRX-02",
-  "TRX-06",
-  "TRX-10",
-  "TRX-12",
-  "TRX-14",
-  "TRX-15",
-  "TRX-16",
-  "TRX-30",
-  "TRX-31",
-]);
-
-const GOODS_RECEIVING_CODES = new Set(["TRX-25", "TRX-26", "TRX-27"]);
-
-const CONSIGNMENT_SETTLEMENT_CODES = new Set(["TRX-32"]);
-
 /**
  * Infers the POS synchronization contract category (`goods_receiving`, `shift_sales`,
- * or `consignment_settlement`) for a transaction type.
+ * or `consignment_settlement`) dynamically from group, accounts, and metadata
+ * without hardcoding transaction codes.
  */
 export function inferPosSyncCategory(params: {
   code?: string;
@@ -224,32 +250,50 @@ export function inferPosSyncCategory(params: {
   group?: TransactionGroup;
   debit?: AccountLike | null;
   credit?: AccountLike | null;
-  metadataSchema?: ReadonlyArray<{ key: string; required?: boolean }>;
+  metadataSchema?: ReadonlyArray<{ key: string; label?: string; required?: boolean }>;
 }): PosSyncCategory | undefined {
-  const code = (params.code || "").trim().toUpperCase();
-  if (CONSIGNMENT_SETTLEMENT_CODES.has(code)) return "consignment_settlement";
-  if (GOODS_RECEIVING_CODES.has(code)) return "goods_receiving";
-  if (SHIFT_SALES_CODES.has(code)) return "shift_sales";
-
   const nameLower = (params.name || "").toLowerCase();
   const group = params.group ?? inferTransactionGroup(params.debit, params.credit);
 
-  if (
-    (params.debit?.code === "2104" && isCashBankAccount(params.credit)) ||
-    (group === "pembayaran_hutang" && nameLower.includes("konsinyasi"))
-  ) {
-    return "consignment_settlement";
+  const isConsignment =
+    nameLower.includes("konsinyasi") ||
+    params.debit?.code === "2104" ||
+    params.credit?.code === "2104" ||
+    params.debit?.code === "5102" ||
+    params.credit?.code === "5102" ||
+    Boolean(
+      params.metadataSchema?.some(
+        (field) =>
+          field.key === "nama_vendor" ||
+          field.key.includes("konsinyasi") ||
+          ((field as { label?: string }).label?.toLowerCase().includes("konsinyasi") ?? false),
+      ),
+    );
+
+  // Metadata konsinyasi dan transaksi konsinyasi tidak boleh masuk ke kategori goods_receiving
+  if (isConsignment) {
+    if (
+      (params.debit?.code === "2104" && isCashBankAccount(params.credit)) ||
+      (group === "pembayaran_hutang" && nameLower.includes("konsinyasi")) ||
+      params.metadataSchema?.some((f) => f.key === "total_pelunasan" || f.key === "periode_rekap")
+    ) {
+      return "consignment_settlement";
+    }
+    return "shift_sales";
   }
 
+  // Ambil posSyncCategory yang dikonfigurasi pada grup transaksi
+  const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === group);
+  if (groupConfig?.posSyncCategory) {
+    return groupConfig.posSyncCategory;
+  }
+
+  // Fallback berdasarkan karakteristik akun atau metadata
   if (group === "pembelian_persediaan" || isInventoryAccount(params.debit)) {
     return "goods_receiving";
   }
 
-  if (
-    group === "omzet" ||
-    (params.debit?.code === "5102" && params.credit?.code === "2104") ||
-    params.metadataSchema?.some((field) => field.key === "shift")
-  ) {
+  if (group === "omzet" || params.metadataSchema?.some((field) => field.key === "shift")) {
     return "shift_sales";
   }
 

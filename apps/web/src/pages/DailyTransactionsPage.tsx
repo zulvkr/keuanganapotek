@@ -644,6 +644,13 @@ export default function DailyTransactionsPage() {
       filterMode === "month" && selectedMonth && selectedMonth !== thisMonthKey
         ? `${selectedMonth}-01`
         : todayIsoDate();
+    const lastShift =
+      draftRows.find((r) => r.metadata?.shift)?.metadata?.shift ||
+      filteredTransactionsList.find((t) => t.metadata?.shift)?.metadata?.shift ||
+      "Pagi";
+    const initialMeta = defaultType?.metadataSchema?.some((f) => f.key === "shift")
+      ? { shift: lastShift }
+      : {};
     const newDraft: DraftRow = {
       isNew: true,
       id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -651,7 +658,7 @@ export default function DailyTransactionsPage() {
       transactionTypeId: defaultType ? defaultType.id : "",
       amount: "",
       memo: "",
-      metadata: {},
+      metadata: initialMeta,
     };
     setDraftRows((prev) => [newDraft, ...prev]);
   }
@@ -1385,10 +1392,22 @@ export default function DailyTransactionsPage() {
                               value={draft.transactionTypeId}
                               onChange={(e) => {
                                 const newTypeId = e.target.value;
+                                const newType = transactionTypes.find((t) => t.id === newTypeId);
+                                const hasShift = newType?.metadataSchema?.some(
+                                  (f) => f.key === "shift",
+                                );
+                                const lastShift =
+                                  draft.metadata?.shift ||
+                                  draftRows.find((r) => r.metadata?.shift)?.metadata?.shift ||
+                                  "Pagi";
                                 setDraftRows((prev) =>
                                   prev.map((r) =>
                                     r.id === draft.id
-                                      ? { ...r, transactionTypeId: newTypeId, metadata: {} }
+                                      ? {
+                                          ...r,
+                                          transactionTypeId: newTypeId,
+                                          metadata: hasShift ? { shift: lastShift } : {},
+                                        }
                                       : r,
                                   ),
                                 );

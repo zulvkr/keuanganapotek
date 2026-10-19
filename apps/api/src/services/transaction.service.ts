@@ -33,17 +33,7 @@ import { recordAudit } from "./audit.service.js";
 type Db = SqliteClient["db"];
 type Executor = Pick<Db, "select" | "insert" | "update" | "delete">;
 
-export const CASH_BANK_CODES = [
-  "1101",
-  "1102",
-  "1103",
-  "1104",
-  "1105",
-  "1106",
-  "1107",
-  "1108",
-  "1109",
-] as const;
+export const CASH_BANK_CODES = ["1101", "1102", "1103", "1106", "1107", "1108", "1109"] as const;
 
 function amountToSen(value: string | number): number {
   if (typeof value === "number") return rupiahToSen(String(value));
