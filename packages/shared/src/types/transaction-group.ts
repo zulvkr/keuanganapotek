@@ -16,15 +16,12 @@ export type TransactionGroup =
   | "transfer_antar_akun"
   | "tidak_terkategori";
 
-export type PosSyncCategory = "goods_receiving" | "shift_sales" | "consignment_settlement";
-
 export type TransactionGroupConfig = {
   key: TransactionGroup;
   label: string;
   badgeLabel: string;
   description: string;
   badgeClass: string;
-  posSyncCategory?: PosSyncCategory;
   metadataSchema: MetadataFieldDefinition[];
 };
 
@@ -35,7 +32,6 @@ export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
     badgeLabel: "Omzet",
     description: "Pendapatan dari penjualan kasir, marketplace, atau kasbon",
     badgeClass: "bg-emerald-50 text-emerald-800 border-emerald-200",
-    posSyncCategory: "shift_sales",
     metadataSchema: DEFAULT_SALES_METADATA_SCHEMA,
   },
   {
@@ -52,7 +48,6 @@ export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
     badgeLabel: "Pelunasan Kasbon",
     description: "Penerimaan pembayaran kasbon pelanggan atau pasien",
     badgeClass: "bg-sky-50 text-sky-800 border-sky-200",
-    posSyncCategory: "shift_sales",
     metadataSchema: DEFAULT_RECEIVABLE_PAYMENT_METADATA_SCHEMA,
   },
   {
@@ -69,7 +64,6 @@ export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
     badgeLabel: "Pembelian Persediaan",
     description: "Pembelian stok obat/barang dagang PBF baik secara tempo maupun COD",
     badgeClass: "bg-purple-50 text-purple-800 border-purple-200",
-    posSyncCategory: "goods_receiving",
     metadataSchema: DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA,
   },
   {
@@ -237,65 +231,4 @@ export function inferTransactionGroup(
 
   // 7. Fallback
   return "tidak_terkategori";
-}
-
-/**
- * Infers the POS synchronization contract category (`goods_receiving`, `shift_sales`,
- * or `consignment_settlement`) dynamically from group, accounts, and metadata
- * without hardcoding transaction codes.
- */
-export function inferPosSyncCategory(params: {
-  code?: string;
-  name?: string;
-  group?: TransactionGroup;
-  debit?: AccountLike | null;
-  credit?: AccountLike | null;
-  metadataSchema?: ReadonlyArray<{ key: string; label?: string; required?: boolean }>;
-}): PosSyncCategory | undefined {
-  const nameLower = (params.name || "").toLowerCase();
-  const group = params.group ?? inferTransactionGroup(params.debit, params.credit);
-
-  const isConsignment =
-    nameLower.includes("konsinyasi") ||
-    params.debit?.code === "2104" ||
-    params.credit?.code === "2104" ||
-    params.debit?.code === "5102" ||
-    params.credit?.code === "5102" ||
-    Boolean(
-      params.metadataSchema?.some(
-        (field) =>
-          field.key === "nama_vendor" ||
-          field.key.includes("konsinyasi") ||
-          ((field as { label?: string }).label?.toLowerCase().includes("konsinyasi") ?? false),
-      ),
-    );
-
-  // Metadata konsinyasi dan transaksi konsinyasi tidak boleh masuk ke kategori goods_receiving
-  if (isConsignment) {
-    if (
-      (params.debit?.code === "2104" && isCashBankAccount(params.credit)) ||
-      (group === "pembayaran_hutang" && nameLower.includes("konsinyasi")) ||
-      params.metadataSchema?.some((f) => f.key === "total_pelunasan" || f.key === "periode_rekap")
-    ) {
-      return "consignment_settlement";
-    }
-    return "shift_sales";
-  }
-
-  // Ambil posSyncCategory yang dikonfigurasi pada grup transaksi
-  const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === group);
-  if (groupConfig?.posSyncCategory) {
-    return groupConfig.posSyncCategory;
-  }
-
-  // Fallback berdasarkan karakteristik akun atau metadata
-  if (group === "pembelian_persediaan" || isInventoryAccount(params.debit)) {
-    return "goods_receiving";
-  }
-
-  if (group === "omzet" || params.metadataSchema?.some((field) => field.key === "shift")) {
-    return "shift_sales";
-  }
-
-  return undefined;
 }

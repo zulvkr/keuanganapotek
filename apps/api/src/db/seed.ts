@@ -5,11 +5,7 @@ import { accounts, transactionTypes } from "./schema/index.js";
 import { createTransaction } from "../services/transaction.service.js";
 import { lockOpeningBalance, saveOpeningBalances } from "../services/opening-balance.service.js";
 import { seedUsers } from "./seeds/users.seed.js";
-import type {
-  MetadataFieldDefinition,
-  PosSyncCategory,
-  TransactionGroup,
-} from "@keuangan-apotek/shared";
+import type { MetadataFieldDefinition, TransactionGroup } from "@keuangan-apotek/shared";
 
 type SeedAccount = {
   code: string;
@@ -530,7 +526,6 @@ export type SeedTransactionType = {
   code: string;
   name: string;
   group: TransactionGroup;
-  posSyncCategory?: PosSyncCategory;
   debitCode: string;
   creditCode: string;
   description: string;
@@ -543,7 +538,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-01",
     name: "Penjualan Tunai Kasir",
     group: "omzet",
-    posSyncCategory: "shift_sales",
     debitCode: "1102",
     creditCode: "4101",
     description: "Penerimaan uang tunai dari kasir apotek atas penjualan obat dan produk",
@@ -553,7 +547,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-02",
     name: "Penjualan Shopee (Dana Pending + Saldo)",
     group: "omzet",
-    posSyncCategory: "shift_sales",
     debitCode: "1201",
     creditCode: "4101",
     description:
@@ -564,7 +557,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-06",
     name: "Penjualan Blibli (Dana Pending + Saldo)",
     group: "omzet",
-    posSyncCategory: "shift_sales",
     debitCode: "1203",
     creditCode: "4101",
     description: "Penjualan pesanan Blibli diproses, dana masuk ke pos dana pending + saldo Blibli",
@@ -574,7 +566,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-10",
     name: "Penjualan Grab Merchant",
     group: "omzet",
-    posSyncCategory: "shift_sales",
     debitCode: "1106",
     creditCode: "4101",
     description: "Omset penjualan obat via GrabMart merchant",
@@ -584,7 +575,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-12",
     name: "Penjualan QRIS DANA",
     group: "omzet",
-    posSyncCategory: "shift_sales",
     debitCode: "1107",
     creditCode: "4101",
     description: "Pembayaran pelanggan di kasir menggunakan QRIS DANA Bisnis",
@@ -594,21 +584,10 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-14",
     name: "Penjualan Kasbon",
     group: "omzet",
-    posSyncCategory: "shift_sales",
     debitCode: "1204",
     creditCode: "4101",
     description: "Penjualan obat kasbon pelanggan / pasien atau klinik langganan",
-    metadataSchema: [
-      {
-        key: "shift",
-        label: "Shift",
-        type: "select",
-        options: ["Pagi", "Siang", "Malam"],
-        required: true,
-      },
-      { key: "nama_pelanggan", label: "Nama Pelanggan / Pasien", type: "text", required: true },
-      { key: "jatuh_tempo", label: "Jatuh Tempo", type: "date", required: false },
-    ],
+    metadataSchema: [], // Mewarisi DEFAULT_SALES_METADATA_SCHEMA seragam grup omzet
   },
 
   // --- GRUP BIAYA OPERASIONAL ---
@@ -708,7 +687,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-15",
     name: "Pelunasan Kasbon Tunai",
     group: "pelunasan_piutang",
-    posSyncCategory: "shift_sales",
     debitCode: "1102",
     creditCode: "1204",
     description: "Penerimaan pelunasan kasbon pelanggan secara tunai di kasir",
@@ -718,7 +696,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-16",
     name: "Pelunasan Kasbon via Bank Jago",
     group: "pelunasan_piutang",
-    posSyncCategory: "shift_sales",
     debitCode: "1103",
     creditCode: "1204",
     description: "Pelanggan melunasi kasbon via transfer bank",
@@ -730,21 +707,19 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-25",
     name: "Pembelian Stok Obat Tempo / Hutang Dagang",
     group: "pembelian_persediaan",
-    posSyncCategory: "goods_receiving",
     debitCode: "1301",
     creditCode: "2102",
     description: "Penerimaan faktur distributor farmasi (PBF) tempo dengan termin jatuh tempo",
-    metadataSchema: [], // Mewarisi DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA
+    metadataSchema: [], // Mewarisi DEFAULT_PURCHASE_METADATA_SCHEMA
   },
   {
     code: "TRX-26",
     name: "Pembelian Stok Obat COD / Tunai Bank Jago",
     group: "pembelian_persediaan",
-    posSyncCategory: "goods_receiving",
     debitCode: "1301",
     creditCode: "1103",
     description: "Pembelian obat COD atau tunai ke distributor/supplier langsung lunas",
-    metadataSchema: [], // Mewarisi DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA
+    metadataSchema: [], // Mewarisi DEFAULT_PURCHASE_METADATA_SCHEMA
   },
 
   // --- GRUP PEMBAYARAN HUTANG ---
@@ -761,16 +736,10 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-32",
     name: "Pelunasan Hutang Konsinyasi via Bank Jago",
     group: "pembayaran_hutang",
-    posSyncCategory: "consignment_settlement",
     debitCode: "2104",
     creditCode: "1103",
     description: "Penyelesaian bagi hasil titip jual ke pemilik produk konsinyasi",
-    metadataSchema: [
-      { key: "nama_vendor", label: "Nama Vendor", type: "text", required: true },
-      { key: "no_faktur", label: "No. Faktur", type: "text", required: true },
-      { key: "periode_rekap", label: "Periode Rekap", type: "date", required: false },
-      { key: "total_pelunasan", label: "Total Pelunasan", type: "currency", required: false },
-    ],
+    metadataSchema: [], // Mewarisi DEFAULT_DEBT_PAYMENT_METADATA_SCHEMA seragam grup pembayaran hutang
   },
 
   // --- GRUP TRANSFER ANTAR AKUN ---
@@ -893,7 +862,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-30",
     name: "Penjualan Barang Konsinyasi Tunai",
     group: "tidak_terkategori",
-    posSyncCategory: "shift_sales",
     debitCode: "1102",
     creditCode: "2104",
     description: "Penjualan produk titipan konsinyasi di apotek tunai kasir",
@@ -914,7 +882,6 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     code: "TRX-31",
     name: "Pengakuan HPP Konsinyasi",
     group: "tidak_terkategori",
-    posSyncCategory: "shift_sales",
     debitCode: "5102",
     creditCode: "2104",
     description: "Pencatatan beban pokok penjualan barang konsinyasi saat terjual di shift kasir",
@@ -1039,7 +1006,6 @@ export function seedTransactionTypes(client: ReturnType<typeof createSqliteClien
           code: type.code,
           name: type.name,
           group: type.group || "tidak_terkategori",
-          posSyncCategory: type.posSyncCategory || null,
           debitAccountId,
           creditAccountId,
           description: type.description,
@@ -1051,7 +1017,6 @@ export function seedTransactionTypes(client: ReturnType<typeof createSqliteClien
           set: {
             name: type.name,
             group: type.group || "tidak_terkategori",
-            posSyncCategory: type.posSyncCategory || null,
             debitAccountId,
             creditAccountId,
             description: type.description,
@@ -1106,8 +1071,6 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       metadata: {
         nama_supplier: "PT Kimia Farma",
         no_faktur: "KF-2026-001",
-        tanggal_order: "2026-07-28",
-        total_order: 25000000,
         tgl_terima_barang: "2026-07-31",
         jatuh_tempo: "2026-08-31",
       },
@@ -1142,8 +1105,6 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       metadata: {
         nama_supplier: "PT Mensa Binasukses",
         no_faktur: "MB-88910",
-        tanggal_order: "2026-08-18",
-        total_order: 3500000,
         tgl_terima_barang: "2026-08-20",
         jatuh_tempo: "2026-09-20",
       },

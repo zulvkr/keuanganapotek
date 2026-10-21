@@ -11,7 +11,6 @@ import {
   BookTemplate,
   Layers,
   CheckCircle2,
-  RefreshCw,
 } from "lucide-react";
 import {
   inferTransactionGroup,
@@ -80,16 +79,15 @@ export default function MasterTransactionPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const selectedGroupConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
+      const isGroupStandard = formGroup !== "tidak_terkategori";
       const payload: SaveTransactionTypeInput = {
         code: formCode.trim(),
         name: formName.trim(),
         debitAccountId: formDebitId,
         creditAccountId: formCreditId,
         group: formGroup,
-        posSyncCategory: selectedGroupConf?.posSyncCategory,
         description: formDescription.trim() || undefined,
-        metadataSchema: formSchema,
+        metadataSchema: isGroupStandard ? [] : formSchema,
         isActive: formIsActive,
       };
 
@@ -143,15 +141,16 @@ export default function MasterTransactionPage() {
   function openEdit(item: TransactionType) {
     const debitAcc = accountById.get(item.debitAccountId);
     const creditAcc = accountById.get(item.creditAccountId);
+    const grp = item.group || inferTransactionGroup(debitAcc, creditAcc);
     setEditingType(item);
     setDuplicatingFromName(null);
     setFormCode(item.code);
     setFormName(item.name);
-    setFormGroup(item.group || inferTransactionGroup(debitAcc, creditAcc));
+    setFormGroup(grp);
     setFormDebitId(item.debitAccountId);
     setFormCreditId(item.creditAccountId);
     setFormDescription(item.description || "");
-    setFormSchema(item.metadataSchema || []);
+    setFormSchema(grp === "tidak_terkategori" ? item.metadataSchema || [] : []);
     setFormIsActive(item.isActive);
     setIsCreating(true);
   }
@@ -159,15 +158,22 @@ export default function MasterTransactionPage() {
   function openDuplicate(item: TransactionType) {
     const debitAcc = accountById.get(item.debitAccountId);
     const creditAcc = accountById.get(item.creditAccountId);
+    const grp = item.group || inferTransactionGroup(debitAcc, creditAcc);
     setEditingType(null);
     setDuplicatingFromName(item.name);
     setFormCode(getNextTransactionCode(transactionTypes));
     setFormName(`${item.name} (Salinan)`);
-    setFormGroup(item.group || inferTransactionGroup(debitAcc, creditAcc));
+    setFormGroup(grp);
     setFormDebitId(item.debitAccountId);
     setFormCreditId(item.creditAccountId);
     setFormDescription(item.description || "");
-    setFormSchema(item.metadataSchema ? JSON.parse(JSON.stringify(item.metadataSchema)) : []);
+    setFormSchema(
+      grp === "tidak_terkategori"
+        ? item.metadataSchema
+          ? JSON.parse(JSON.stringify(item.metadataSchema))
+          : []
+        : [],
+    );
     setFormIsActive(true);
     setIsCreating(true);
   }
@@ -317,15 +323,6 @@ export default function MasterTransactionPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {grp.posSyncCategory && (
-                    <span
-                      className="inline-flex items-center gap-1 rounded bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-700 border border-purple-200"
-                      title="Tipe transaksi di grup ini dapat disinkronkan otomatis dari POS"
-                    >
-                      ⚡ POS Sync: {grp.posSyncCategory}
-                    </span>
-                  )}
-
                   {hasSharedSchema ? (
                     <span
                       className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 border border-blue-200"
@@ -385,7 +382,6 @@ export default function MasterTransactionPage() {
                         const debitAcc = accountById.get(item.debitAccountId);
                         const creditAcc = accountById.get(item.creditAccountId);
                         const localSchema = item.metadataSchema || [];
-                        const isInheritingGroup = localSchema.length === 0;
 
                         return (
                           <tr
@@ -442,11 +438,11 @@ export default function MasterTransactionPage() {
                               </div>
                             </td>
                             <td className="px-2.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
-                              {isInheritingGroup ? (
+                              {grp.key !== "tidak_terkategori" ? (
                                 hasSharedSchema ? (
                                   <div
                                     className="inline-flex items-center gap-1 rounded bg-blue-50/80 px-1.5 py-0.5 text-[10px] text-blue-700 border border-blue-100"
-                                    title={`Mewarisi skema grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}`}
+                                    title={`Skema seragam grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}`}
                                   >
                                     <CheckCircle2 size={11} className="text-blue-600 shrink-0" />
                                     <span>Mewarisi Grup ({grp.metadataSchema!.length} field)</span>
@@ -456,10 +452,10 @@ export default function MasterTransactionPage() {
                                     Tanpa metadata
                                   </span>
                                 )
-                              ) : (
+                              ) : localSchema.length > 0 ? (
                                 <div className="flex flex-wrap items-center gap-1">
                                   <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 border border-indigo-200">
-                                    Custom ({localSchema.length})
+                                    Bebas ({localSchema.length})
                                   </span>
                                   {localSchema.slice(0, 2).map((f, idx) => (
                                     <span
@@ -476,6 +472,10 @@ export default function MasterTransactionPage() {
                                     </span>
                                   )}
                                 </div>
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">
+                                  Tanpa metadata
+                                </span>
                               )}
                             </td>
                             <td className="px-2 py-1.5 text-center border-r border-slate-100 whitespace-nowrap">
@@ -620,11 +620,6 @@ export default function MasterTransactionPage() {
                       >
                         {grpConf.badgeLabel}
                       </span>
-                      {grpConf.posSyncCategory && (
-                        <span className="inline-flex items-center gap-1 rounded bg-purple-100 px-2 py-0.5 font-semibold text-purple-700 border border-purple-200">
-                          ⚡ Sync POS: {grpConf.posSyncCategory}
-                        </span>
-                      )}
                       {hasGroupSchema ? (
                         <span className="text-emerald-700 font-medium">
                           ✨ Mewarisi skema grup:{" "}
@@ -739,71 +734,40 @@ export default function MasterTransactionPage() {
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="text-xs font-bold text-slate-800">
-                      Pengaturan Skema Metadata (Opsional)
-                    </h4>
+                    <h4 className="text-xs font-bold text-slate-800">Pengaturan Skema Metadata</h4>
                     <p className="text-[11px] text-slate-500">
-                      Secara bawaan, tipe transaksi otomatis mewarisi skema field dari grup
-                      bisnisnya.
+                      {formGroup !== "tidak_terkategori"
+                        ? "Seluruh tipe transaksi dalam satu grup bisnis memiliki skema metadata yang seragam."
+                        : "Grup Tidak Terkategori memiliki skema metadata bebas yang dapat dikustomisasi per tipe transaksi."}
                     </p>
                   </div>
-                  {formSchema.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setFormSchema([])}
-                      className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200 transition"
-                      title="Hapus kustomisasi dan kembali mewarisi skema grup"
-                    >
-                      <RefreshCw size={11} /> Reset ke Bawaan Grup
-                    </button>
-                  )}
                 </div>
 
-                {formSchema.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/30 p-4 text-center">
-                    <p className="text-xs font-medium text-blue-900">
-                      Tipe transaksi ini menggunakan skema bawaan grup{" "}
-                      <span className="font-bold">
+                {formGroup !== "tidak_terkategori" ? (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3.5">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={14} className="text-blue-600 shrink-0" />
+                      <p className="text-xs font-semibold text-blue-900">
+                        Skema Seragam Grup:{" "}
                         {TRANSACTION_GROUPS.find((g) => g.key === formGroup)?.label}
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-blue-700 mt-0.5">
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-blue-700 mt-1">
                       {(() => {
                         const grpConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
                         if (grpConf?.metadataSchema && grpConf.metadataSchema.length > 0) {
-                          return `Field otomatis: ${grpConf.metadataSchema.map((f) => f.label).join(", ")}.`;
+                          return `Field seragam grup: ${grpConf.metadataSchema.map((f) => `${f.label}${f.required ? " (Wajib)" : " (Opsional)"}`).join(", ")}. Field opsional dapat dikosongkan saat input transaksi.`;
                         }
-                        return "Grup ini tidak memerlukan input metadata tambahan saat pencatatan transaksi.";
+                        return "Grup ini tidak memerlukan input metadata tambahan.";
                       })()}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const grpConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
-                        if (grpConf?.metadataSchema && grpConf.metadataSchema.length > 0) {
-                          setFormSchema(JSON.parse(JSON.stringify(grpConf.metadataSchema)));
-                        } else {
-                          setFormSchema([
-                            {
-                              key: "keterangan",
-                              label: "Keterangan",
-                              type: "text",
-                              required: false,
-                            },
-                          ]);
-                        }
-                      }}
-                      className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-brand border border-blue-200 hover:bg-blue-50 shadow-xs transition"
-                    >
-                      <Plus size={13} /> Atur Skema Khusus / Override Tipe Ini
-                    </button>
                   </div>
                 ) : (
                   <div>
-                    <div className="mb-2 rounded-lg bg-amber-50 p-2.5 text-[11px] text-amber-800 border border-amber-200">
-                      <span className="font-semibold">Skema Khusus Aktif:</span> Tipe transaksi ini
-                      menggunakan konfigurasi field khusus yang Anda buat di bawah ini, mengabaikan
-                      bawaan grup.
+                    <div className="mb-2 rounded-lg bg-indigo-50 p-2.5 text-[11px] text-indigo-800 border border-indigo-200">
+                      <span className="font-semibold">Skema Bebas / Fleksibel:</span> Tipe transaksi
+                      di grup Tidak Terkategori bebas menentukan field metadata sendiri atau
+                      dikosongkan jika tanpa metadata.
                     </div>
                     <MetadataSchemaBuilder
                       schema={formSchema}

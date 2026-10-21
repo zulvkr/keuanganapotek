@@ -500,7 +500,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(journalCount2).toBe(journalCount1);
   });
 
-  it("exposes POS sync category and customFields contract in GET /api/transaction-types and validates metadata on POST /api/transactions", async () => {
+  it("exposes accounting group and customFields contract in GET /api/transaction-types and validates metadata on POST /api/transactions", async () => {
     const { api } = setup();
 
     const typeRes = await api.request("http://localhost/api/transaction-types");
@@ -510,7 +510,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
         data: Array<{
           id: string;
           code: string;
-          category?: string;
+          group: string;
           customFields?: Array<{
             key: string;
             label: string;
@@ -523,52 +523,63 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     ).data;
 
     const trx01 = types.find((t) => t.code === "TRX-01")!;
-    expect(trx01.category).toBe("shift_sales");
+    expect(trx01.group).toBe("omzet");
     expect(trx01.customFields).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          key: "shift",
-          dataType: "string",
-          required: true,
-        }),
+        expect.objectContaining({ key: "shift", dataType: "string", required: true }),
+        expect.objectContaining({ key: "nama_pelanggan", dataType: "string", required: false }),
+        expect.objectContaining({ key: "jatuh_tempo", dataType: "date", required: false }),
       ]),
     );
 
+    // TRX-14 in same group (omzet) must have the exact same customFields schema
+    const trx14 = types.find((t) => t.code === "TRX-14")!;
+    expect(trx14.group).toBe("omzet");
+    expect(trx14.customFields).toEqual(trx01.customFields);
+
     const trx25 = types.find((t) => t.code === "TRX-25")!;
-    expect(trx25.category).toBe("goods_receiving");
+    expect(trx25.group).toBe("pembelian_persediaan");
     expect(trx25.customFields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "nama_supplier", dataType: "string", required: true }),
-        expect.objectContaining({ key: "no_faktur", dataType: "string", required: true }),
-        expect.objectContaining({ key: "total_order", dataType: "number", required: false }),
-        expect.objectContaining({ key: "jatuh_tempo", dataType: "date", required: true }),
+        expect.objectContaining({ key: "no_faktur", dataType: "string", required: false }),
+        expect.objectContaining({ key: "tgl_terima_barang", dataType: "date", required: false }),
+        expect.objectContaining({ key: "jatuh_tempo", dataType: "date", required: false }),
       ]),
     );
+    // total_order and tanggal_order must be removed
+    expect(trx25.customFields?.some((f) => f.key === "total_order")).toBe(false);
+    expect(trx25.customFields?.some((f) => f.key === "tanggal_order")).toBe(false);
+
+    // TRX-26 in same group (pembelian_persediaan) must have the exact same schema
+    const trx26 = types.find((t) => t.code === "TRX-26")!;
+    expect(trx26.group).toBe("pembelian_persediaan");
+    expect(trx26.customFields).toEqual(trx25.customFields);
 
     const trx30 = types.find((t) => t.code === "TRX-30")!;
-    expect(trx30.category).toBe("shift_sales");
-    expect(trx30.category).not.toBe("goods_receiving");
+    expect(trx30.group).toBe("tidak_terkategori");
 
     const trx31 = types.find((t) => t.code === "TRX-31")!;
-    expect(trx31.category).toBe("shift_sales");
-    expect(trx31.category).not.toBe("goods_receiving");
-    expect(trx31.customFields).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: "shift", dataType: "string", required: true }),
-      ]),
-    );
+    expect(trx31.group).toBe("tidak_terkategori");
 
     const trx32 = types.find((t) => t.code === "TRX-32")!;
-    expect(trx32.category).toBe("consignment_settlement");
-    expect(trx32.category).not.toBe("goods_receiving");
+    expect(trx32.group).toBe("pembayaran_hutang");
     expect(trx32.customFields).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: "nama_vendor", dataType: "string", required: true }),
-        expect.objectContaining({ key: "no_faktur", dataType: "string", required: true }),
+        expect.objectContaining({ key: "nama_supplier", dataType: "string", required: false }),
+        expect.objectContaining({ key: "nama_vendor", dataType: "string", required: false }),
+        expect.objectContaining({ key: "no_faktur", dataType: "string", required: false }),
+        expect.objectContaining({ key: "periode_rekap", dataType: "date", required: false }),
+        expect.objectContaining({ key: "total_pelunasan", dataType: "number", required: false }),
       ]),
     );
 
-    // Reject missing required metadata when metadata object is provided
+    // TRX-27 in same group (pembayaran_hutang) must have the exact same schema
+    const trx27 = types.find((t) => t.code === "TRX-27")!;
+    expect(trx27.group).toBe("pembayaran_hutang");
+    expect(trx27.customFields).toEqual(trx32.customFields);
+
+    // Reject missing required metadata (nama_supplier) when required
     const missingRequiredRes = await api.request("http://localhost/api/transactions", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -577,14 +588,29 @@ describe("Transaction Types and Daily Transactions Engine", () => {
         transactionTypeId: trx25.id,
         amount: "1500000",
         metadata: {
-          nama_supplier: "PT Kimia Farma",
-          // missing no_faktur and jatuh_tempo
+          no_faktur: "INV-2026-001",
+          // missing required nama_supplier
         },
       }),
     });
     expect(missingRequiredRes.status).toBe(400);
     const missingErr = (await missingRequiredRes.json()) as { error: string };
     expect(missingErr.error).toContain("Metadata wajib belum diisi");
+
+    // Accept when optional fields (no_faktur, jatuh_tempo) are omitted
+    const optionalOmittedRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-18",
+        transactionTypeId: trx25.id,
+        amount: "1500000",
+        metadata: {
+          nama_supplier: "PT Kimia Farma",
+        },
+      }),
+    });
+    expect(optionalOmittedRes.status).toBe(201);
 
     // Reject invalid date format in metadata
     const invalidDateRes = await api.request("http://localhost/api/transactions", {
@@ -617,7 +643,6 @@ describe("Transaction Types and Daily Transactions Engine", () => {
           nama_supplier: "PT Kimia Farma",
           no_faktur: "INV-2026-001",
           jatuh_tempo: "2026-11-18",
-          total_order: 1500000,
         },
       }),
     });

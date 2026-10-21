@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { asc, desc, eq, like } from "drizzle-orm";
 import {
   accountingPeriod,
-  inferPosSyncCategory,
   inferTransactionGroup,
   isIsoDate,
   nowIsoInstant,
@@ -10,7 +9,6 @@ import {
   rupiahToSen,
   toCustomFieldsContract,
   TRANSACTION_GROUPS,
-  type PosSyncCategory,
   type TransactionGroup,
 } from "@keuangan-apotek/shared";
 import type {
@@ -54,7 +52,6 @@ function formatTransactionType(
     name: string;
     code: string;
     group?: string | null;
-    posSyncCategory?: string | null;
     debitAccountId: string;
     creditAccountId: string;
     description?: string | null;
@@ -73,28 +70,19 @@ function formatTransactionType(
       : inferredGroup;
 
   // Shared Metadata Schema:
-  // Jika metadataSchema pada row kosong, warisi dari skema default grup transaksi!
+  // Untuk grup bisnis standar: seluruh tipe dalam grup memiliki skema seragam dari grupnya.
+  // Untuk grup tidak_terkategori: skemanya bebas (bisa custom per tipe atau kosong).
   const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === group);
   const effectiveSchema =
-    metadataSchema && metadataSchema.length > 0
-      ? metadataSchema
+    group === "tidak_terkategori"
+      ? metadataSchema && metadataSchema.length > 0
+        ? metadataSchema
+        : []
       : groupConfig?.metadataSchema || [];
-
-  const category =
-    (row.posSyncCategory as PosSyncCategory) ||
-    inferPosSyncCategory({
-      code: row.code,
-      name: row.name,
-      group,
-      debit: debitAccount,
-      credit: creditAccount,
-      metadataSchema: effectiveSchema,
-    });
 
   return {
     ...row,
     group,
-    ...(category ? { category, posSyncCategory: category } : {}),
     metadataSchema: effectiveSchema,
     customFields: toCustomFieldsContract(effectiveSchema),
   };
@@ -243,7 +231,6 @@ export function createTransactionType(
     name: string;
     code: string;
     group?: TransactionGroup;
-    posSyncCategory?: PosSyncCategory;
     debitAccountId: string;
     creditAccountId: string;
     description?: string;
@@ -266,7 +253,6 @@ export function createTransactionType(
       code: input.code.trim(),
       name: input.name.trim(),
       group: input.group || "tidak_terkategori",
-      posSyncCategory: input.posSyncCategory || null,
       debitAccountId: input.debitAccountId,
       creditAccountId: input.creditAccountId,
       description: input.description?.trim() || null,
@@ -308,7 +294,6 @@ export function updateTransactionType(
     name?: string;
     code?: string;
     group?: TransactionGroup;
-    posSyncCategory?: PosSyncCategory;
     debitAccountId?: string;
     creditAccountId?: string;
     description?: string | null;
@@ -334,8 +319,6 @@ export function updateTransactionType(
       name: input.name !== undefined ? input.name.trim() : existing.name,
       code: input.code !== undefined ? input.code.trim() : existing.code,
       group: input.group !== undefined ? input.group : existing.group,
-      posSyncCategory:
-        input.posSyncCategory !== undefined ? input.posSyncCategory : existing.posSyncCategory,
       debitAccountId: input.debitAccountId ?? existing.debitAccountId,
       creditAccountId: input.creditAccountId ?? existing.creditAccountId,
       description:

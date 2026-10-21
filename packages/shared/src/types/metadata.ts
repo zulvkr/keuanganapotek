@@ -68,6 +68,21 @@ export const DEFAULT_SALES_METADATA_SCHEMA: MetadataFieldDefinition[] = [
     required: true,
     width: "half",
   },
+  {
+    key: "nama_pelanggan",
+    label: "Nama Pelanggan / Pasien",
+    type: "text",
+    required: false,
+    placeholder: "Nama pelanggan / pasien (opsional)",
+    width: "half",
+  },
+  {
+    key: "jatuh_tempo",
+    label: "Jatuh Tempo",
+    type: "date",
+    required: false,
+    width: "half",
+  },
 ];
 
 export const DEFAULT_EXPENSE_METADATA_SCHEMA: MetadataFieldDefinition[] = [
@@ -135,126 +150,26 @@ export const DEFAULT_RECEIVABLE_PAYMENT_METADATA_SCHEMA: MetadataFieldDefinition
 export const DEFAULT_DEBT_PAYMENT_METADATA_SCHEMA: MetadataFieldDefinition[] = [
   {
     key: "nama_supplier",
-    label: "Nama Supplier / Vendor",
-    type: "text",
-    required: true,
-    placeholder: "Nama supplier PBF / vendor konsinyasi",
-    width: "full",
-  },
-  {
-    key: "no_faktur",
-    label: "No. Faktur",
-    type: "text",
-    required: false,
-    placeholder: "Nomor faktur pembelian",
-    width: "half",
-  },
-];
-
-export const DEFAULT_PURCHASE_COD_METADATA_SCHEMA: MetadataFieldDefinition[] = [
-  {
-    key: "nama_supplier",
     label: "Nama Supplier",
     type: "text",
-    required: true,
-    placeholder: "Nama distributor / supplier PBF",
-    width: "full",
-  },
-  {
-    key: "no_faktur",
-    label: "No. Faktur",
-    type: "text",
     required: false,
-    placeholder: "Nomor faktur pembelian",
+    placeholder: "Nama supplier PBF (jika hutang dagang)",
     width: "half",
   },
-  {
-    key: "tanggal_order",
-    label: "Tanggal Order",
-    type: "date",
-    required: false,
-    width: "half",
-  },
-  {
-    key: "total_order",
-    label: "Total Order",
-    type: "currency",
-    required: false,
-    placeholder: "0",
-    width: "half",
-  },
-  {
-    key: "tgl_terima_barang",
-    label: "Tanggal Terima Barang",
-    type: "date",
-    required: false,
-    width: "half",
-  },
-];
-
-export const DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA: MetadataFieldDefinition[] = [
-  {
-    key: "nama_supplier",
-    label: "Nama Supplier",
-    type: "text",
-    required: true,
-    placeholder: "Nama distributor / supplier PBF",
-    width: "full",
-  },
-  {
-    key: "no_faktur",
-    label: "No. Faktur",
-    type: "text",
-    required: true,
-    placeholder: "Nomor faktur distributor",
-    width: "half",
-  },
-  {
-    key: "tanggal_order",
-    label: "Tanggal Order",
-    type: "date",
-    required: false,
-    width: "half",
-  },
-  {
-    key: "total_order",
-    label: "Total Order",
-    type: "currency",
-    required: false,
-    placeholder: "0",
-    width: "half",
-  },
-  {
-    key: "tgl_terima_barang",
-    label: "Tanggal Terima Barang",
-    type: "date",
-    required: false,
-    width: "half",
-  },
-  {
-    key: "jatuh_tempo",
-    label: "Waktu Jatuh Tempo",
-    type: "date",
-    required: true,
-    width: "half",
-  },
-];
-
-export const DEFAULT_CONSIGNMENT_METADATA_SCHEMA: MetadataFieldDefinition[] = [
   {
     key: "nama_vendor",
     label: "Nama Vendor",
     type: "text",
-    required: true,
-    placeholder: "Nama vendor / pemilik barang konsinyasi",
-    width: "full",
+    required: false,
+    placeholder: "Nama vendor konsinyasi (jika hutang konsinyasi)",
+    width: "half",
   },
   {
     key: "no_faktur",
-    label: "No. Faktur / Bukti Titip",
+    label: "No. Faktur",
     type: "text",
-    required: true,
-    placeholder: "Nomor faktur titip atau bagi hasil",
+    required: false,
+    placeholder: "Nomor faktur / bukti bayar",
     width: "half",
   },
   {
@@ -274,6 +189,48 @@ export const DEFAULT_CONSIGNMENT_METADATA_SCHEMA: MetadataFieldDefinition[] = [
   },
 ];
 
+export const DEFAULT_CONSIGNMENT_METADATA_SCHEMA: MetadataFieldDefinition[] =
+  DEFAULT_DEBT_PAYMENT_METADATA_SCHEMA;
+
+export const DEFAULT_PURCHASE_METADATA_SCHEMA: MetadataFieldDefinition[] = [
+  {
+    key: "nama_supplier",
+    label: "Nama Supplier",
+    type: "text",
+    required: true,
+    placeholder: "Nama distributor / supplier PBF",
+    width: "full",
+  },
+  {
+    key: "no_faktur",
+    label: "No. Faktur",
+    type: "text",
+    required: false,
+    placeholder: "Nomor faktur pembelian (opsional)",
+    width: "half",
+  },
+  {
+    key: "tgl_terima_barang",
+    label: "Tanggal Terima Barang",
+    type: "date",
+    required: false,
+    width: "half",
+  },
+  {
+    key: "jatuh_tempo",
+    label: "Waktu Jatuh Tempo",
+    type: "date",
+    required: false,
+    width: "half",
+  },
+];
+
+export const DEFAULT_PURCHASE_COD_METADATA_SCHEMA: MetadataFieldDefinition[] =
+  DEFAULT_PURCHASE_METADATA_SCHEMA;
+
+export const DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA: MetadataFieldDefinition[] =
+  DEFAULT_PURCHASE_METADATA_SCHEMA;
+
 export type MetadataPresetTemplate = {
   id: string;
   name: string;
@@ -285,13 +242,13 @@ export const METADATA_PRESET_TEMPLATES: MetadataPresetTemplate[] = [
   {
     id: "penjualan",
     name: "Penjualan (Shift)",
-    description: "Metadata penjualan shift tanpa nomor struk atau pesanan",
+    description: "Shift kasir, nama pelanggan (opsional), dan jatuh tempo kasbon (opsional)",
     schema: DEFAULT_SALES_METADATA_SCHEMA,
   },
   {
     id: "biaya_operasional",
     name: "Biaya Operasional",
-    description: "Deskripsi keperluan, jumlah, dan satuan biaya",
+    description: "Deskripsi keperluan, penerima, jumlah, dan satuan biaya",
     schema: DEFAULT_EXPENSE_METADATA_SCHEMA,
   },
   {
@@ -303,26 +260,14 @@ export const METADATA_PRESET_TEMPLATES: MetadataPresetTemplate[] = [
   {
     id: "pembayaran_hutang",
     name: "Pembayaran Hutang",
-    description: "Nama supplier PBF / vendor konsinyasi dan no faktur",
+    description: "Nama supplier/vendor, no faktur, periode rekap, dan total pelunasan",
     schema: DEFAULT_DEBT_PAYMENT_METADATA_SCHEMA,
   },
   {
-    id: "pembelian_cod",
-    name: "Pembelian COD",
-    description: "Tanggal order, total order, tgl terima, no faktur, nama supplier",
-    schema: DEFAULT_PURCHASE_COD_METADATA_SCHEMA,
-  },
-  {
-    id: "pembelian_tempo",
-    name: "Pembelian Tempo",
+    id: "pembelian_persediaan",
+    name: "Pembelian Persediaan",
     description:
-      "Tanggal order, total order, tgl terima, no faktur, nama supplier, waktu jatuh tempo",
-    schema: DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA,
-  },
-  {
-    id: "konsinyasi",
-    name: "Konsinyasi (Vendor)",
-    description: "Nama vendor, no faktur titip, periode rekap, total pelunasan",
-    schema: DEFAULT_CONSIGNMENT_METADATA_SCHEMA,
+      "Nama supplier, no faktur, tgl terima barang, dan jatuh tempo (opsional untuk COD)",
+    schema: DEFAULT_PURCHASE_METADATA_SCHEMA,
   },
 ];

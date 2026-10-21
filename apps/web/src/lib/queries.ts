@@ -5,7 +5,6 @@ import type {
   AuthUser,
   CashFlowReport,
   MetadataFieldDefinition,
-  PosSyncCategory,
   TransactionGroup,
   TransactionType,
   TransactionWithBalances,
@@ -192,7 +191,6 @@ export type SaveTransactionTypeInput = {
   code: string;
   name: string;
   group?: TransactionGroup;
-  posSyncCategory?: PosSyncCategory;
   debitAccountId: string;
   creditAccountId: string;
   description?: string;

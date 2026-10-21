@@ -2,7 +2,7 @@ export type SourceModule = "GENERAL" | "OPENING_BALANCE" | "TRANSACTION";
 
 export * from "./metadata.js";
 export * from "./transaction-group.js";
-import type { PosSyncCategory, TransactionGroup } from "./transaction-group.js";
+import type { TransactionGroup } from "./transaction-group.js";
 import type { CustomFieldContract, MetadataFieldDefinition } from "./metadata.js";
 
 export type TransactionType = {
@@ -12,7 +12,6 @@ export type TransactionType = {
   debitAccountId: string;
   creditAccountId: string;
   group?: TransactionGroup;
-  category?: PosSyncCategory;
   description?: string | null;
   metadataSchema: MetadataFieldDefinition[];
   customFields?: CustomFieldContract[];

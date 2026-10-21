@@ -112,7 +112,6 @@ export const transactionTypes = sqliteTable(
     code: text("code").notNull().unique(),
     name: text("name").notNull(),
     group: text("group").notNull().default("tidak_terkategori"),
-    posSyncCategory: text("pos_sync_category"),
     debitAccountId: text("debit_account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "restrict" }),
