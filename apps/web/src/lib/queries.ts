@@ -6,6 +6,7 @@ import type {
   CashFlowReport,
   MetadataFieldDefinition,
   TransactionGroup,
+  TransactionGroupDetail,
   TransactionType,
   TransactionWithBalances,
   TransactionsSummary,
@@ -21,6 +22,7 @@ export const queryKeys = {
   journal: (id: string) => ["journal", id] as const,
   transactionTypes: (includeInactive?: boolean) =>
     ["transaction-types", includeInactive ?? false] as const,
+  transactionGroups: ["transaction-groups"] as const,
   transactions: (filters?: { startDate?: string; endDate?: string }) =>
     ["transactions", filters ?? {}] as const,
   transactionsSummary: ["transactions", "summary"] as const,
@@ -202,7 +204,7 @@ export type SaveTransactionInput = {
   transactionDate: string;
   transactionTypeId: string;
   amount: string | number;
-  memo?: string;
+  pic?: string;
   metadata?: Record<string, any>;
 };
 
@@ -283,4 +285,8 @@ export function getUsers(): Promise<AuthUser[]> {
 
 export function getApiKeys(): Promise<ApiKeyItem[]> {
   return requestJson<ApiKeyItem[]>("/api/api-keys");
+}
+
+export function getTransactionGroups(): Promise<TransactionGroupDetail[]> {
+  return requestJson<TransactionGroupDetail[]>("/api/transaction-groups");
 }

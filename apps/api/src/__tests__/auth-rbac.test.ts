@@ -281,7 +281,7 @@ describe("Authentication & RBAC with CoA-level Access Control", () => {
         transactionDate: "2026-08-25",
         transactionTypeId: trx23.id,
         amount: "5000000",
-        memo: "Percobaan input gaji oleh asisten",
+        pic: "ASISTEN",
       }),
     });
 

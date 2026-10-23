@@ -119,7 +119,7 @@ export function getOpenApiSpec(baseUrl = ""): Record<string, unknown> {
             transactionDate: { type: "string", format: "date", example: "2026-10-17" },
             transactionTypeId: { type: "string", example: "type-sales-cash" },
             amount: { type: "number", example: 150000 },
-            memo: { type: "string", example: "Penjualan resep & OTC Shift Pagi" },
+            pic: { type: "string", maxLength: 10, example: "KASIR" },
             metadata: {
               type: "object",
               additionalProperties: true,

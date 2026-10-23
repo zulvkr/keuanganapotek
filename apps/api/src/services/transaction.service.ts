@@ -14,6 +14,7 @@ import {
 import type {
   AccountLike,
   MetadataFieldDefinition,
+  TransactionGroupDetail,
   TransactionRecord,
   TransactionType,
   TransactionWithBalances,
@@ -26,6 +27,7 @@ import {
   journalLines,
   journals,
   openingBalances,
+  transactionGroupConfigs,
   transactionTypes,
   transactions,
 } from "../db/schema/index.js";
@@ -46,6 +48,146 @@ function amountToSen(value: string | number): number {
     : rupiahToSen(normalized);
 }
 
+export function getCustomGroupSchemas(
+  db: Executor,
+): Map<TransactionGroup, MetadataFieldDefinition[]> {
+  try {
+    const rows = db.select().from(transactionGroupConfigs).all();
+    const map = new Map<TransactionGroup, MetadataFieldDefinition[]>();
+    for (const r of rows) {
+      try {
+        const schema = JSON.parse(r.metadataSchema || "[]") as MetadataFieldDefinition[];
+        map.set(r.group as TransactionGroup, schema);
+      } catch {
+        // ignore JSON parse error
+      }
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+export function getEffectiveGroupSchema(
+  group: TransactionGroup,
+  customSchemas?: Map<TransactionGroup, MetadataFieldDefinition[]>,
+): MetadataFieldDefinition[] {
+  if (customSchemas?.has(group)) {
+    return customSchemas.get(group)!;
+  }
+  const defaultConf = TRANSACTION_GROUPS.find((g) => g.key === group);
+  return defaultConf?.metadataSchema || [];
+}
+
+export function listTransactionGroups(db: Executor): TransactionGroupDetail[] {
+  const customSchemas = getCustomGroupSchemas(db);
+  return TRANSACTION_GROUPS.map((grp) => {
+    const isCustomized = customSchemas.has(grp.key);
+    const metadataSchema = isCustomized ? customSchemas.get(grp.key)! : grp.metadataSchema;
+    return {
+      ...grp,
+      metadataSchema,
+      isCustomized,
+    };
+  });
+}
+
+export function updateTransactionGroupSchema(
+  db: Executor,
+  groupKey: TransactionGroup,
+  metadataSchema: MetadataFieldDefinition[],
+  actor = "system",
+): TransactionGroupDetail {
+  const exists = TRANSACTION_GROUPS.find((g) => g.key === groupKey);
+  if (!exists) {
+    throw new Error(`Grup transaksi ${groupKey} tidak valid`);
+  }
+  const now = nowIsoInstant();
+  db.insert(transactionGroupConfigs)
+    .values({
+      group: groupKey,
+      metadataSchema: JSON.stringify(metadataSchema),
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: transactionGroupConfigs.group,
+      set: {
+        metadataSchema: JSON.stringify(metadataSchema),
+        updatedAt: now,
+      },
+    })
+    .run();
+
+  recordAudit(db, {
+    entityType: "TRANSACTION_GROUP",
+    entityId: groupKey,
+    action: "UPDATE",
+    actor,
+    after: { group: groupKey, metadataSchema },
+  });
+
+  return {
+    ...exists,
+    metadataSchema,
+    isCustomized: true,
+  };
+}
+
+export function resetTransactionGroupSchema(
+  db: Executor,
+  groupKey: TransactionGroup,
+  actor = "system",
+): TransactionGroupDetail {
+  const exists = TRANSACTION_GROUPS.find((g) => g.key === groupKey);
+  if (!exists) {
+    throw new Error(`Grup transaksi ${groupKey} tidak valid`);
+  }
+  db.delete(transactionGroupConfigs).where(eq(transactionGroupConfigs.group, groupKey)).run();
+
+  recordAudit(db, {
+    entityType: "TRANSACTION_GROUP",
+    entityId: groupKey,
+    action: "UPDATE",
+    actor,
+    after: { group: groupKey, resetToDefault: true, metadataSchema: exists.metadataSchema },
+  });
+
+  return {
+    ...exists,
+    isCustomized: false,
+  };
+}
+
+function inferPosCategory(
+  group: TransactionGroup,
+  code?: string,
+  name?: string,
+  debitAccount?: AccountLike | null,
+  _creditAccount?: AccountLike | null,
+): string | undefined {
+  if (group === "pembelian_persediaan") return "goods_receiving";
+  if (group === "omzet") return "shift_sales";
+  if (group === "pelunasan_piutang") return "shift_sales";
+  if (group === "pembayaran_hutang") {
+    const combined = `${code || ""} ${name || ""}`.toLowerCase();
+    if (combined.includes("konsinyasi")) return "consignment_settlement";
+  }
+  const combined = `${code || ""} ${name || ""}`.toLowerCase();
+  if (
+    debitAccount?.code === "5102" ||
+    (combined.includes("hpp") && combined.includes("konsinyasi"))
+  ) {
+    return "consignment_hpp";
+  }
+  if (
+    debitAccount?.code === "5101" ||
+    (combined.includes("hpp") && !combined.includes("konsinyasi"))
+  ) {
+    return "normal_hpp";
+  }
+  return undefined;
+}
+
 function formatTransactionType(
   row: {
     id: string;
@@ -62,6 +204,7 @@ function formatTransactionType(
   metadataSchema: MetadataFieldDefinition[],
   debitAccount?: AccountLike | null,
   creditAccount?: AccountLike | null,
+  customGroupSchemas?: Map<TransactionGroup, MetadataFieldDefinition[]>,
 ): TransactionType {
   const inferredGroup = inferTransactionGroup(debitAccount, creditAccount);
   const group: TransactionGroup =
@@ -70,19 +213,23 @@ function formatTransactionType(
       : inferredGroup;
 
   // Shared Metadata Schema:
-  // Untuk grup bisnis standar: seluruh tipe dalam grup memiliki skema seragam dari grupnya.
+  // Untuk grup bisnis standar: seluruh tipe dalam grup memiliki skema seragam dari grupnya (kustom atau default).
   // Untuk grup tidak_terkategori: skemanya bebas (bisa custom per tipe atau kosong).
-  const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === group);
+  const effectiveGroupSchema = getEffectiveGroupSchema(group, customGroupSchemas);
   const effectiveSchema =
     group === "tidak_terkategori"
       ? metadataSchema && metadataSchema.length > 0
         ? metadataSchema
         : []
-      : groupConfig?.metadataSchema || [];
+      : effectiveGroupSchema;
+
+  const posCategory = inferPosCategory(group, row.code, row.name, debitAccount, creditAccount);
 
   return {
     ...row,
     group,
+    category: posCategory,
+    posSyncCategory: posCategory,
     metadataSchema: effectiveSchema,
     customFields: toCustomFieldsContract(effectiveSchema),
   };
@@ -187,6 +334,7 @@ export function listTransactionTypes(
         ? new Set(allowedAccountCodes)
         : undefined;
 
+  const customGroupSchemas = getCustomGroupSchemas(db);
   const query = db.select().from(transactionTypes);
   const rows = options.includeInactive
     ? query.orderBy(asc(transactionTypes.code)).all()
@@ -208,13 +356,20 @@ export function listTransactionTypes(
       const debitAccount = accountById.get(row.debitAccountId);
       const creditAccount = accountById.get(row.creditAccountId);
       const metadataSchema = JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[];
-      return formatTransactionType(row, metadataSchema, debitAccount, creditAccount);
+      return formatTransactionType(
+        row,
+        metadataSchema,
+        debitAccount,
+        creditAccount,
+        customGroupSchemas,
+      );
     });
 }
 
 export function getTransactionTypeById(db: Db, id: string): TransactionType | undefined {
   const row = db.select().from(transactionTypes).where(eq(transactionTypes.id, id)).get();
   if (!row) return undefined;
+  const customGroupSchemas = getCustomGroupSchemas(db);
   const debitAccount = db.select().from(accounts).where(eq(accounts.id, row.debitAccountId)).get();
   const creditAccount = db
     .select()
@@ -222,7 +377,13 @@ export function getTransactionTypeById(db: Db, id: string): TransactionType | un
     .where(eq(accounts.id, row.creditAccountId))
     .get();
   const metadataSchema = JSON.parse(row.metadataSchema || "[]") as MetadataFieldDefinition[];
-  return formatTransactionType(row, metadataSchema, debitAccount, creditAccount);
+  return formatTransactionType(
+    row,
+    metadataSchema,
+    debitAccount,
+    creditAccount,
+    customGroupSchemas,
+  );
 }
 
 export function createTransactionType(
@@ -283,7 +444,14 @@ export function createTransactionType(
       .get();
 
     const metadataSchema = input.metadataSchema || [];
-    return formatTransactionType(newRow, metadataSchema, debitAccount, creditAccount);
+    const customGroupSchemas = getCustomGroupSchemas(tx);
+    return formatTransactionType(
+      newRow,
+      metadataSchema,
+      debitAccount,
+      creditAccount,
+      customGroupSchemas,
+    );
   });
 }
 
@@ -356,11 +524,13 @@ export function updateTransactionType(
       input.metadataSchema !== undefined
         ? input.metadataSchema
         : (JSON.parse(existing.metadataSchema || "[]") as MetadataFieldDefinition[]);
+    const customGroupSchemas = getCustomGroupSchemas(tx);
     return formatTransactionType(
       { id, ...updated, createdAt: existing.createdAt },
       metadataSchema,
       debitAccount,
       creditAccount,
+      customGroupSchemas,
     );
   });
 }
@@ -407,7 +577,7 @@ function syncTransactionJournal(
     amount: number;
     debitAccountId: string;
     creditAccountId: string;
-    memo: string | null;
+    pic: string | null;
     journalId: string | null;
   },
   typeName: string,
@@ -419,7 +589,7 @@ function syncTransactionJournal(
     return null;
   }
 
-  const memo = transaction.memo || typeName;
+  const journalMemo = typeName;
   const now = nowIsoInstant();
 
   if (transaction.journalId) {
@@ -432,7 +602,7 @@ function syncTransactionJournal(
       tx.update(journals)
         .set({
           entryDate: transaction.transactionDate,
-          memo,
+          memo: journalMemo,
           updatedAt: now,
         })
         .where(eq(journals.id, transaction.journalId))
@@ -446,7 +616,7 @@ function syncTransactionJournal(
             journalId: transaction.journalId,
             lineNumber: 1,
             accountId: transaction.debitAccountId,
-            description: memo,
+            description: journalMemo,
             debit: transaction.amount,
             credit: 0,
           },
@@ -455,7 +625,7 @@ function syncTransactionJournal(
             journalId: transaction.journalId,
             lineNumber: 2,
             accountId: transaction.creditAccountId,
-            description: memo,
+            description: journalMemo,
             debit: 0,
             credit: transaction.amount,
           },
@@ -477,7 +647,7 @@ function syncTransactionJournal(
       referenceNo: null,
       sourceModule: "TRANSACTION",
       sourceId: transaction.id,
-      memo,
+      memo: journalMemo,
       createdBy: "system",
       createdAt: now,
       updatedAt: now,
@@ -491,7 +661,7 @@ function syncTransactionJournal(
         journalId,
         lineNumber: 1,
         accountId: transaction.debitAccountId,
-        description: memo,
+        description: journalMemo,
         debit: transaction.amount,
         credit: 0,
       },
@@ -500,7 +670,7 @@ function syncTransactionJournal(
         journalId,
         lineNumber: 2,
         accountId: transaction.creditAccountId,
-        description: memo,
+        description: journalMemo,
         debit: 0,
         credit: transaction.amount,
       },
@@ -516,7 +686,7 @@ export function createTransaction(
     transactionDate: string;
     transactionTypeId: string;
     amount: string | number;
-    memo?: string;
+    pic?: string;
     metadata?: Record<string, any> | null;
     idempotencyKey?: string;
   },
@@ -576,8 +746,10 @@ export function createTransaction(
 
     if (hasExplicitMetadata) {
       const directSchema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
-      const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === type.group);
-      const schema = directSchema.length > 0 ? directSchema : groupConfig?.metadataSchema || [];
+      const schema =
+        type.group === "tidak_terkategori"
+          ? directSchema
+          : getEffectiveGroupSchema(type.group as TransactionGroup, getCustomGroupSchemas(tx));
       const enforceRequired = amountSen > 0 || Object.keys(metadataObj).length > 0;
       validateTransactionMetadata(schema, metadataObj, enforceRequired);
     }
@@ -592,7 +764,7 @@ export function createTransaction(
         amount: amountSen,
         debitAccountId: type.debitAccountId,
         creditAccountId: type.creditAccountId,
-        memo: input.memo?.trim() || null,
+        pic: input.pic?.trim() || null,
         journalId: null,
       },
       type.name,
@@ -606,7 +778,7 @@ export function createTransaction(
       amount: amountSen,
       debitAccountId: type.debitAccountId,
       creditAccountId: type.creditAccountId,
-      memo: input.memo?.trim() || null,
+      pic: input.pic?.trim() || null,
       metadata: JSON.stringify(metadataObj),
       journalId,
       createdAt: now,
@@ -636,7 +808,7 @@ export function updateTransaction(
     transactionDate?: string;
     transactionTypeId?: string;
     amount?: string | number;
-    memo?: string | null;
+    pic?: string | null;
     metadata?: Record<string, any> | null;
   },
   allowedAccountCodes?: string[] | Set<string>,
@@ -704,13 +876,15 @@ export function updateTransaction(
     const amountSen = input.amount !== undefined ? amountToSen(input.amount) : existing.amount;
     if (input.metadata !== undefined && input.metadata !== null) {
       const directSchema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
-      const groupConfig = TRANSACTION_GROUPS.find((g) => g.key === type.group);
-      const schema = directSchema.length > 0 ? directSchema : groupConfig?.metadataSchema || [];
+      const schema =
+        type.group === "tidak_terkategori"
+          ? directSchema
+          : getEffectiveGroupSchema(type.group as TransactionGroup, getCustomGroupSchemas(tx));
       const enforceRequired = amountSen > 0 || Object.keys(input.metadata).length > 0;
       validateTransactionMetadata(schema, input.metadata, enforceRequired);
     }
 
-    const memo = input.memo !== undefined ? input.memo?.trim() || null : existing.memo;
+    const pic = input.pic !== undefined ? input.pic?.trim() || null : existing.pic;
     const now = nowIsoInstant();
 
     const journalId = syncTransactionJournal(
@@ -721,7 +895,7 @@ export function updateTransaction(
         amount: amountSen,
         debitAccountId: type.debitAccountId,
         creditAccountId: type.creditAccountId,
-        memo,
+        pic,
         journalId: existing.journalId,
       },
       type.name,
@@ -733,7 +907,7 @@ export function updateTransaction(
       amount: amountSen,
       debitAccountId: type.debitAccountId,
       creditAccountId: type.creditAccountId,
-      memo,
+      pic,
       metadata:
         input.metadata !== undefined ? JSON.stringify(input.metadata ?? {}) : existing.metadata,
       journalId,
@@ -888,7 +1062,7 @@ export function listTransactions(
       amount: transactions.amount,
       debitAccountId: transactions.debitAccountId,
       creditAccountId: transactions.creditAccountId,
-      memo: transactions.memo,
+      pic: transactions.pic,
       metadata: transactions.metadata,
       journalId: transactions.journalId,
       createdAt: transactions.createdAt,
@@ -946,7 +1120,7 @@ export function listTransactions(
       debitAccountName: debitAccount?.name,
       creditAccountCode: creditAccount?.code,
       creditAccountName: creditAccount?.name,
-      memo: row.memo,
+      pic: row.pic,
       metadata: JSON.parse(row.metadata || "{}") as Record<string, any>,
       journalId: row.journalId,
       createdAt: row.createdAt,

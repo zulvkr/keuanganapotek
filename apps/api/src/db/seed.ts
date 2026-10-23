@@ -904,6 +904,13 @@ export const standardTransactionTypes: SeedTransactionType[] = [
     creditCode: "1301",
     description: "Jurnal penyesuaian beban pokok obat atas stok barang yang keluar",
     metadataSchema: [
+      {
+        key: "shift",
+        label: "Shift",
+        type: "select",
+        options: ["Pagi", "Siang", "Malam"],
+        required: true,
+      },
       { key: "periode_hpp", label: "Periode / Tanggal Rekap", type: "text", required: false },
       { key: "catatan", label: "Catatan Perhitungan", type: "textarea", required: false },
     ],
@@ -1038,7 +1045,7 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
     date: string;
     typeCode: string;
     amount: number;
-    memo?: string;
+    pic?: string;
     metadata?: Record<string, any>;
   }> = [
     // 2026-07-31
@@ -1046,28 +1053,28 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       date: "2026-07-31",
       typeCode: "TRX-42", // Setor modal
       amount: 50000000,
-      memo: "Setoran modal awal apotek",
+      pic: "OWNER",
       metadata: { nama_pemilik: "Owner Apotek" },
     },
     {
       date: "2026-07-31",
       typeCode: "TRX-18", // Penyediaan uang tukaran
       amount: 500000,
-      memo: "Modal uang tukaran kasir",
-      metadata: { penanggung_jawab: "Kasir 1" },
+      pic: "KASIR",
+      metadata: { deskripsi: "Modal uang tukaran kasir", penanggung_jawab: "Kasir 1" },
     },
     {
       date: "2026-07-31",
       typeCode: "TRX-20", // Alokasi saving sewa
       amount: 12000000,
-      memo: "Alokasi simpanan sewa ruko tahun 2026",
-      metadata: { alokasi_tahun: "2026" },
+      pic: "SYS",
+      metadata: { deskripsi: "Alokasi simpanan sewa ruko tahun 2026", alokasi_tahun: "2026" },
     },
     {
       date: "2026-07-31",
       typeCode: "TRX-25", // Pembelian stok tempo
       amount: 25000000,
-      memo: "Stok awal obat distributor Kimia Farma",
+      pic: "SYS",
       metadata: {
         nama_supplier: "PT Kimia Farma",
         no_faktur: "KF-2026-001",
@@ -1080,28 +1087,28 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       date: "2026-08-20",
       typeCode: "TRX-01", // Penjualan tunai kasir
       amount: 2450000,
-      memo: "Penjualan tunai shift pagi",
+      pic: "DEWI",
       metadata: { shift: "Pagi", nama_kasir: "Dewi" },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-02", // Penjualan Shopee pending
       amount: 1200000,
-      memo: "Penjualan Shopee etikal & suplemen",
+      pic: "DEWI",
       metadata: { shift: "Pagi" },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-12", // Penjualan QRIS DANA
       amount: 850000,
-      memo: "Penerimaan QRIS kasir siang",
+      pic: "NITA",
       metadata: { shift: "Siang" },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-25", // Beli stok obat tempo
       amount: 3500000,
-      memo: "Faktur pembelian obat bebas PBF Mensa",
+      pic: "SYS",
       metadata: {
         nama_supplier: "PT Mensa Binasukses",
         no_faktur: "MB-88910",
@@ -1113,14 +1120,14 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       date: "2026-08-20",
       typeCode: "TRX-33", // Pengakuan HPP
       amount: 2100000,
-      memo: "Pengakuan HPP harian 20 Agustus 2026",
-      metadata: { periode_hpp: "2026-08-20" },
+      pic: "DEWI",
+      metadata: { shift: "Pagi", periode_hpp: "2026-08-20" },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-34", // Bayar listrik
       amount: 450000,
-      memo: "Listrik PLN outlet Agustus",
+      pic: "SYS",
       metadata: {
         deskripsi: "Listrik PLN outlet Agustus",
         jumlah: 1,
@@ -1133,7 +1140,7 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       date: "2026-08-20",
       typeCode: "TRX-35", // Beli perlengkapan tunai
       amount: 125000,
-      memo: "Kertas kasir & plastik klip obat",
+      pic: "SYS",
       metadata: {
         deskripsi: "3 roll kertas kasir, 2 pack plastik klip",
         jumlah: 5,
@@ -1145,21 +1152,28 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       date: "2026-08-20",
       typeCode: "TRX-17", // Setor kasir ke bank
       amount: 1500000,
-      memo: "Setoran tunai kasir ke Bank Jago",
-      metadata: { disetor_oleh: "Dewi", shift: "Pagi" },
+      pic: "DEWI",
+      metadata: {
+        deskripsi: "Setoran tunai kasir ke Bank Jago",
+        disetor_oleh: "Dewi",
+        shift: "Pagi",
+      },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-19", // Alokasi saving gaji
       amount: 1000000,
-      memo: "Simpanan gaji mingguan ke pos saving",
-      metadata: { alokasi_bulan: "Agustus 2026" },
+      pic: "SYS",
+      metadata: {
+        deskripsi: "Simpanan gaji mingguan ke pos saving",
+        alokasi_bulan: "Agustus 2026",
+      },
     },
     {
       date: "2026-08-20",
       typeCode: "TRX-01", // Baris draft nominal 0
       amount: 0,
-      memo: "Draft transaksi kosong (nominal Rp 0)",
+      pic: "KASIR",
       metadata: {},
     },
   ];
@@ -1172,7 +1186,7 @@ export function seedSampleTransactions(client: ReturnType<typeof createSqliteCli
       transactionDate: item.date,
       transactionTypeId: type.id,
       amount: item.amount,
-      memo: item.memo,
+      pic: item.pic,
       metadata: item.metadata,
     });
     seededCount++;

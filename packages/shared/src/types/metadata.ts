@@ -231,6 +231,17 @@ export const DEFAULT_PURCHASE_COD_METADATA_SCHEMA: MetadataFieldDefinition[] =
 export const DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA: MetadataFieldDefinition[] =
   DEFAULT_PURCHASE_METADATA_SCHEMA;
 
+export const DEFAULT_TRANSFER_METADATA_SCHEMA: MetadataFieldDefinition[] = [
+  {
+    key: "deskripsi",
+    label: "Deskripsi",
+    type: "text",
+    required: false,
+    placeholder: "Keterangan mutasi / transfer dana antar akun kas & bank",
+    width: "full",
+  },
+];
+
 export type MetadataPresetTemplate = {
   id: string;
   name: string;
@@ -269,5 +280,11 @@ export const METADATA_PRESET_TEMPLATES: MetadataPresetTemplate[] = [
     description:
       "Nama supplier, no faktur, tgl terima barang, dan jatuh tempo (opsional untuk COD)",
     schema: DEFAULT_PURCHASE_METADATA_SCHEMA,
+  },
+  {
+    id: "transfer_antar_akun",
+    name: "Transfer Antar Akun",
+    description: "Keterangan mutasi / deskripsi transfer kas & bank",
+    schema: DEFAULT_TRANSFER_METADATA_SCHEMA,
   },
 ];

@@ -12,6 +12,8 @@ export type TransactionType = {
   debitAccountId: string;
   creditAccountId: string;
   group?: TransactionGroup;
+  category?: string;
+  posSyncCategory?: string;
   description?: string | null;
   metadataSchema: MetadataFieldDefinition[];
   customFields?: CustomFieldContract[];
@@ -27,7 +29,7 @@ export type TransactionRecord = {
   amount: number;
   debitAccountId: string;
   creditAccountId: string;
-  memo?: string | null;
+  pic?: string | null;
   metadata: Record<string, any>;
   journalId?: string | null;
   createdAt: string;

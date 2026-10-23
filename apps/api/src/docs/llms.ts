@@ -140,7 +140,7 @@ X-API-Key: ka_live_...
   "transactionDate": "2026-10-17",
   "transactionTypeId": "<id_tipe_penjualan_tunai>",
   "amount": 2450000,
-  "memo": "Penjualan shift pagi kasir apotek",
+  "pic": "DEWI",
   "metadata": {
     "shift": "Pagi"
   }

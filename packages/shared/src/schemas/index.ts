@@ -167,11 +167,17 @@ export const TransactionTypeSchema = z.object({
   name: z.string().trim().min(1),
   code: z.string().trim().min(1),
   group: TransactionGroupSchema.default("tidak_terkategori"),
+  category: z.string().optional(),
+  posSyncCategory: z.string().optional(),
   debitAccountId: z.string().min(1),
   creditAccountId: z.string().min(1),
   description: z.string().trim().optional(),
   metadataSchema: z.array(MetadataFieldSchema).default([]),
   isActive: z.boolean().default(true),
+});
+
+export const UpdateTransactionGroupSchema = z.object({
+  metadataSchema: z.array(MetadataFieldSchema),
 });
 
 export const TransactionEntrySchema = z.object({
@@ -180,7 +186,7 @@ export const TransactionEntrySchema = z.object({
   transactionDate: IsoDateSchema,
   transactionTypeId: z.string().min(1),
   amount: NonNegativeMoneySchema.default("0"),
-  memo: z.string().trim().optional(),
+  pic: z.string().trim().max(10).optional(),
   metadata: z.record(z.string(), z.any()).nullish(),
 });
 

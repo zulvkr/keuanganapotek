@@ -14,6 +14,8 @@ import {
   nowIsoInstant,
   SaveOpeningBalancesSchema,
   TransactionTypeSchema,
+  TransactionGroupSchema,
+  UpdateTransactionGroupSchema,
   TransactionEntrySchema,
   AccountJournalDrillDownQuerySchema,
   BalanceSheetQuerySchema,
@@ -63,9 +65,12 @@ import {
   deleteTransactionType,
   getTransactionTypeById,
   getTransactionsSummary,
+  listTransactionGroups,
   listTransactionTypes,
   listTransactions,
+  resetTransactionGroupSchema,
   updateTransaction,
+  updateTransactionGroupSchema,
   updateTransactionType,
 } from "./services/transaction.service.js";
 import {
@@ -891,6 +896,63 @@ export function createApiApp(client: SqliteClient) {
       try {
         deleteJournal(client.db, context.req.param("id"));
         return context.body(null, 204);
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
+
+    // Transaction Groups endpoints
+    .get("/api/transaction-groups", (context) => {
+      return context.json({ data: listTransactionGroups(client.db) });
+    })
+
+    .put(
+      "/api/transaction-groups/:groupKey",
+      validateJson(UpdateTransactionGroupSchema),
+      async (context) => {
+        if (!requireAdmin(context)) {
+          return context.json(
+            { error: "Akses ditolak: Hanya Admin yang dapat mengubah skema metadata grup" },
+            403,
+          );
+        }
+        const groupKeyParam = context.req.param("groupKey");
+        const parsedKey = TransactionGroupSchema.safeParse(groupKeyParam);
+        if (!parsedKey.success) {
+          return context.json({ error: `Grup transaksi ${groupKeyParam} tidak valid` }, 400);
+        }
+        try {
+          const body = context.req.valid("json");
+          const user = getAuthUser(context);
+          const updated = updateTransactionGroupSchema(
+            client.db,
+            parsedKey.data,
+            body.metadataSchema,
+            user.username,
+          );
+          return context.json({ data: updated });
+        } catch (error) {
+          return errorResponse(context, error);
+        }
+      },
+    )
+
+    .post("/api/transaction-groups/:groupKey/reset", async (context) => {
+      if (!requireAdmin(context)) {
+        return context.json(
+          { error: "Akses ditolak: Hanya Admin yang dapat mereset skema metadata grup" },
+          403,
+        );
+      }
+      const groupKeyParam = context.req.param("groupKey");
+      const parsedKey = TransactionGroupSchema.safeParse(groupKeyParam);
+      if (!parsedKey.success) {
+        return context.json({ error: `Grup transaksi ${groupKeyParam} tidak valid` }, 400);
+      }
+      try {
+        const user = getAuthUser(context);
+        const reset = resetTransactionGroupSchema(client.db, parsedKey.data, user.username);
+        return context.json({ data: reset });
       } catch (error) {
         return errorResponse(context, error);
       }

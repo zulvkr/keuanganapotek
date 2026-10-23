@@ -29,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  Keyboard,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import {
@@ -57,6 +58,13 @@ import {
 } from "../lib/mutations";
 import { DynamicMetadataForm } from "../components/metadata/DynamicMetadataForm";
 import { NeracaSummaryTable } from "../components/daily-transactions/NeracaSummaryTable";
+import { IsoDateInput } from "../components/daily-transactions/IsoDateInput";
+import { SearchableTransactionTypeSelect } from "../components/daily-transactions/SearchableTransactionTypeSelect";
+import {
+  useKeyTips,
+  KeyTipBadge,
+  KeyboardShortcutsModal,
+} from "../components/daily-transactions/KeyboardTipsOverlay";
 import { toast } from "../lib/toast";
 
 function formatSen(value: number): string {
@@ -128,7 +136,7 @@ type DraftRow = {
   transactionDate: string;
   transactionTypeId: string;
   amount: string;
-  memo: string;
+  pic: string;
   metadata: Record<string, any>;
 };
 
@@ -588,7 +596,7 @@ export default function DailyTransactionsPage() {
         transactionDate: draft.transactionDate,
         transactionTypeId: draft.transactionTypeId,
         amount: draft.amount || "0",
-        memo: draft.memo || undefined,
+        pic: draft.pic || undefined,
         metadata: draft.metadata,
       }),
     onSuccess: async (_, draft) => {
@@ -607,7 +615,7 @@ export default function DailyTransactionsPage() {
         transactionDate: draft.transactionDate,
         transactionTypeId: draft.transactionTypeId,
         amount: draft.amount || "0",
-        memo: draft.memo || undefined,
+        pic: draft.pic || undefined,
         metadata: draft.metadata,
       }),
     onSuccess: async () => {
@@ -657,7 +665,7 @@ export default function DailyTransactionsPage() {
       transactionDate: draftDate,
       transactionTypeId: defaultType ? defaultType.id : "",
       amount: "",
-      memo: "",
+      pic: "",
       metadata: initialMeta,
     };
     setDraftRows((prev) => [newDraft, ...prev]);
@@ -670,7 +678,7 @@ export default function DailyTransactionsPage() {
       transactionDate: tx.transactionDate,
       transactionTypeId: tx.transactionTypeId,
       amount: senToRupiah(tx.amount).toFixed(2),
-      memo: tx.memo || "",
+      pic: tx.pic || "",
       metadata: tx.metadata || {},
     });
   }
@@ -698,7 +706,7 @@ export default function DailyTransactionsPage() {
       transactionDate: draftDate,
       transactionTypeId: defaultType ? defaultType.id : "",
       amount: "",
-      memo: "",
+      pic: "",
       metadata: {},
     };
     setMobileModalDraft(newDraft);
@@ -712,7 +720,7 @@ export default function DailyTransactionsPage() {
       transactionDate: tx.transactionDate,
       transactionTypeId: tx.transactionTypeId,
       amount: senToRupiah(tx.amount).toFixed(2),
-      memo: tx.memo || "",
+      pic: tx.pic || "",
       metadata: tx.metadata || {},
     });
     setMobileModalOpen(true);
@@ -725,6 +733,102 @@ export default function DailyTransactionsPage() {
       addNewRow();
     }
   }
+
+  function handleDraftKeyDown(e: React.KeyboardEvent, draft: DraftRow, isLastField = false) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.key.toLowerCase() === "s")) {
+      e.preventDefault();
+      if (!draft.transactionTypeId) {
+        toast.error("Pilih tipe transaksi terlebih dahulu.");
+        return;
+      }
+      if (!createMutation.isPending) {
+        createMutation.mutate(draft);
+      }
+      return;
+    }
+
+    if (isLastField && e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!draft.transactionTypeId) {
+        toast.error("Pilih tipe transaksi terlebih dahulu.");
+        return;
+      }
+      if (!createMutation.isPending) {
+        createMutation.mutate(draft);
+      }
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setDraftRows((prev) => prev.filter((r) => r.id !== draft.id));
+    }
+  }
+
+  function handleEditKeyDown(
+    e: React.KeyboardEvent,
+    txId: string,
+    draft: DraftRow,
+    isLastField = false,
+  ) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.key.toLowerCase() === "s")) {
+      e.preventDefault();
+      if (!draft.transactionTypeId) {
+        toast.error("Pilih tipe transaksi terlebih dahulu.");
+        return;
+      }
+      if (!updateMutation.isPending) {
+        updateMutation.mutate({ id: txId, draft });
+      }
+      return;
+    }
+
+    if (isLastField && e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!draft.transactionTypeId) {
+        toast.error("Pilih tipe transaksi terlebih dahulu.");
+        return;
+      }
+      if (!updateMutation.isPending) {
+        updateMutation.mutate({ id: txId, draft });
+      }
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEditExisting();
+    }
+  }
+
+  const { isKeyTipsActive, isHelpOpen, setIsHelpOpen } = useKeyTips({
+    onAddNewRow: handleAddNew,
+    onToggleFilter: () => setShowNeracaFilter((prev) => !prev),
+    onCurrentMonth: handleCurrentMonth,
+    onPrevMonth: handlePrevMonth,
+    onAllPeriod: handleAllPeriod,
+    onCustomPeriod: () => setFilterMode(filterMode === "custom" ? "month" : "custom"),
+    onToggleView: () => setViewMode((prev) => (prev === "cards" ? "table" : "cards")),
+    onSaveCurrentRow: () => {
+      if (draftRows.length > 0) {
+        const first = draftRows[0];
+        if (first && first.transactionTypeId && !createMutation.isPending) {
+          createMutation.mutate(first);
+        }
+      } else if (
+        editingRowId &&
+        editingRowState &&
+        editingRowState.transactionTypeId &&
+        !updateMutation.isPending
+      ) {
+        updateMutation.mutate({ id: editingRowId, draft: editingRowState });
+      }
+    },
+    canSaveCurrentRow: Boolean(
+      (draftRows.length > 0 && draftRows[0]?.transactionTypeId) ||
+      (editingRowId && editingRowState?.transactionTypeId),
+    ),
+  });
 
   return (
     <div className="space-y-1.5 text-xs">
@@ -791,40 +895,43 @@ export default function DailyTransactionsPage() {
               <button
                 type="button"
                 onClick={handleCurrentMonth}
-                className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${
+                className={`relative rounded px-1.5 py-0.5 text-xs font-medium transition ${
                   filterMode === "month" && selectedMonth === thisMonthKey
                     ? "bg-white font-semibold text-brand shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 Bulan Ini
+                <KeyTipBadge keyChar="M" visible={isKeyTipsActive} />
               </button>
               <button
                 type="button"
                 onClick={handlePrevMonth}
-                className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${
+                className={`relative rounded px-1.5 py-0.5 text-xs font-medium transition ${
                   filterMode === "month" && selectedMonth === stepMonth(thisMonthKey, -1)
                     ? "bg-white font-semibold text-brand shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 Bulan Lalu
+                <KeyTipBadge keyChar="L" visible={isKeyTipsActive} />
               </button>
               <button
                 type="button"
                 onClick={handleAllPeriod}
-                className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${
+                className={`relative rounded px-1.5 py-0.5 text-xs font-medium transition ${
                   filterMode === "all"
                     ? "bg-white font-semibold text-brand shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 Semua
+                <KeyTipBadge keyChar="A" visible={isKeyTipsActive} />
               </button>
               <button
                 type="button"
                 onClick={() => setFilterMode(filterMode === "custom" ? "month" : "custom")}
-                className={`rounded px-1.5 py-0.5 text-xs font-medium transition ${
+                className={`relative rounded px-1.5 py-0.5 text-xs font-medium transition ${
                   filterMode === "custom"
                     ? "bg-white font-semibold text-brand shadow-xs"
                     : "text-slate-500 hover:text-slate-800"
@@ -833,6 +940,7 @@ export default function DailyTransactionsPage() {
               >
                 <Calendar size={12} className="inline mr-0.5" />
                 Kustom
+                <KeyTipBadge keyChar="K" visible={isKeyTipsActive} />
               </button>
             </div>
 
@@ -860,7 +968,7 @@ export default function DailyTransactionsPage() {
           <button
             type="button"
             onClick={() => setShowNeracaFilter((prev) => !prev)}
-            className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-semibold transition ${
+            className={`relative inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-semibold transition ${
               showNeracaFilter
                 ? "border-brand bg-blue-50 text-brand"
                 : selectedAccounts.length > 0
@@ -879,6 +987,7 @@ export default function DailyTransactionsPage() {
               Filter Akun {selectedAccounts.length > 0 ? `(${selectedAccounts.length}/2)` : ""}
             </span>
             {showNeracaFilter ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            <KeyTipBadge keyChar="F" visible={isKeyTipsActive} />
           </button>
 
           {/* Summary Filter Aktif */}
@@ -976,7 +1085,7 @@ export default function DailyTransactionsPage() {
 
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
           {/* View Mode Toggle */}
-          <div className="inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5">
+          <div className="relative inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5">
             <button
               type="button"
               onClick={() => setViewMode("cards")}
@@ -1001,14 +1110,29 @@ export default function DailyTransactionsPage() {
             >
               Tabel
             </button>
+            <KeyTipBadge keyChar="V" visible={isKeyTipsActive} />
           </div>
+
+          {/* Keyboard Shortcuts Help Button */}
+          <button
+            type="button"
+            onClick={() => setIsHelpOpen(true)}
+            className="relative inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-brand transition shrink-0"
+            title="Bantuan Pintasan Keyboard (Alt / ?)"
+            aria-label="Bantuan Pintasan Keyboard"
+          >
+            <Keyboard size={13} />
+            <span className="hidden sm:inline">Pintasan</span>
+            <KeyTipBadge keyChar="?" visible={isKeyTipsActive} />
+          </button>
 
           <button
             type="button"
             onClick={handleAddNew}
-            className="inline-flex items-center gap-1 rounded bg-brand px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition shrink-0"
+            className="relative inline-flex items-center gap-1 rounded bg-brand px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition shrink-0"
           >
             <Plus size={13} /> Baris Baru
+            <KeyTipBadge keyChar="N" visible={isKeyTipsActive} />
           </button>
         </div>
       </div>
@@ -1196,9 +1320,9 @@ export default function DailyTransactionsPage() {
                       <span className="font-bold text-slate-800 text-xs tabular-nums">
                         {tx.transactionDate}
                       </span>
-                      {tx.memo && (
+                      {tx.pic && (
                         <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-mono font-semibold text-slate-700">
-                          {tx.memo}
+                          {tx.pic}
                         </span>
                       )}
                     </div>
@@ -1371,27 +1495,25 @@ export default function DailyTransactionsPage() {
                       >
                         {/* Date */}
                         <td className="px-2 py-1 border-r border-slate-200">
-                          <input
-                            type="date"
+                          <IsoDateInput
                             value={draft.transactionDate}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               setDraftRows((prev) =>
                                 prev.map((r) =>
-                                  r.id === draft.id ? { ...r, transactionDate: e.target.value } : r,
+                                  r.id === draft.id ? { ...r, transactionDate: val } : r,
                                 ),
                               )
                             }
-                            className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs outline-none focus:border-brand"
+                            onKeyDown={(e) => handleDraftKeyDown(e, draft)}
                           />
                         </td>
 
                         {/* Transaction Type with Group badge & (i) Tooltip */}
                         <td className="px-2 py-1 border-r border-slate-200">
                           <div className="flex items-center gap-1 min-w-0">
-                            <select
+                            <SearchableTransactionTypeSelect
                               value={draft.transactionTypeId}
-                              onChange={(e) => {
-                                const newTypeId = e.target.value;
+                              onChange={(newTypeId) => {
                                 const newType = transactionTypes.find((t) => t.id === newTypeId);
                                 const hasShift = newType?.metadataSchema?.some(
                                   (f) => f.key === "shift",
@@ -1412,22 +1534,10 @@ export default function DailyTransactionsPage() {
                                   ),
                                 );
                               }}
-                              className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs outline-none focus:border-brand font-medium truncate"
-                            >
-                              {TRANSACTION_GROUPS.map((grp) => {
-                                const typesInGroup = groupedTransactionTypes.get(grp.key) || [];
-                                if (typesInGroup.length === 0) return null;
-                                return (
-                                  <optgroup key={grp.key} label={grp.label}>
-                                    {typesInGroup.map((t) => (
-                                      <option key={t.id} value={t.id}>
-                                        {t.code} · {t.name}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                );
-                              })}
-                            </select>
+                              transactionTypes={transactionTypes}
+                              accountById={accountById}
+                              onKeyDown={(e) => handleDraftKeyDown(e, draft)}
+                            />
                             <TransactionTypeInfoTooltip
                               debitCode={debitAcc?.code}
                               debitName={debitAcc?.name}
@@ -1458,6 +1568,7 @@ export default function DailyTransactionsPage() {
                                 ),
                               )
                             }
+                            onKeyDown={(e) => handleDraftKeyDown(e, draft)}
                             className="w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-right font-mono text-xs tabular-nums outline-none focus:border-brand"
                           />
                         </td>
@@ -1468,14 +1579,15 @@ export default function DailyTransactionsPage() {
                             type="text"
                             placeholder="PIC"
                             maxLength={10}
-                            value={draft.memo}
+                            value={draft.pic}
                             onChange={(e) =>
                               setDraftRows((prev) =>
                                 prev.map((r) =>
-                                  r.id === draft.id ? { ...r, memo: e.target.value } : r,
+                                  r.id === draft.id ? { ...r, pic: e.target.value } : r,
                                 ),
                               )
                             }
+                            onKeyDown={(e) => handleDraftKeyDown(e, draft, true)}
                             className="w-full h-6 text-center uppercase font-mono rounded border border-slate-200 bg-white px-1 py-0.5 text-xs outline-none focus:border-brand"
                           />
                         </td>
@@ -1512,10 +1624,14 @@ export default function DailyTransactionsPage() {
                               type="button"
                               disabled={createMutation.isPending || !draft.transactionTypeId}
                               onClick={() => createMutation.mutate(draft)}
-                              className="rounded bg-brand p-1 text-white hover:bg-blue-700 disabled:opacity-50 transition"
-                              title="Simpan baris transaksi"
+                              className="relative rounded bg-brand p-1 text-white hover:bg-blue-700 disabled:opacity-50 transition"
+                              title="Simpan baris transaksi (Ctrl+Enter)"
                             >
                               <Check size={12} />
+                              <KeyTipBadge
+                                keyChar="S"
+                                visible={isKeyTipsActive && draftRows[0]?.id === draft.id}
+                              />
                             </button>
                             <button
                               type="button"
@@ -1523,7 +1639,7 @@ export default function DailyTransactionsPage() {
                                 setDraftRows((prev) => prev.filter((r) => r.id !== draft.id))
                               }
                               className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
-                              title="Batal"
+                              title="Batal (Esc)"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -1631,15 +1747,14 @@ export default function DailyTransactionsPage() {
                           {/* Tanggal */}
                           <td className="px-2 py-1 border-r border-slate-200 tabular-nums">
                             {isEditing ? (
-                              <input
-                                type="date"
+                              <IsoDateInput
                                 value={currentDraft!.transactionDate}
-                                onChange={(e) =>
+                                onChange={(val) =>
                                   setEditingRowState((prev) =>
-                                    prev ? { ...prev, transactionDate: e.target.value } : null,
+                                    prev ? { ...prev, transactionDate: val } : null,
                                   )
                                 }
-                                className="w-full h-6 rounded border border-slate-200 px-1.5 py-0.5 text-xs outline-none focus:border-brand"
+                                onKeyDown={(e) => handleEditKeyDown(e, tx.id, currentDraft!)}
                               />
                             ) : (
                               tx.transactionDate
@@ -1650,30 +1765,17 @@ export default function DailyTransactionsPage() {
                           <td className="px-2 py-1 border-r border-slate-200">
                             {isEditing ? (
                               <div className="flex items-center gap-1 min-w-0">
-                                <select
+                                <SearchableTransactionTypeSelect
                                   value={currentDraft!.transactionTypeId}
-                                  onChange={(e) => {
-                                    const newTypeId = e.target.value;
+                                  onChange={(newTypeId) => {
                                     setEditingRowState((prev) =>
                                       prev ? { ...prev, transactionTypeId: newTypeId } : null,
                                     );
                                   }}
-                                  className="w-full h-6 rounded border border-slate-200 px-1.5 py-0.5 text-xs outline-none focus:border-brand font-medium truncate"
-                                >
-                                  {TRANSACTION_GROUPS.map((grp) => {
-                                    const typesInGroup = groupedTransactionTypes.get(grp.key) || [];
-                                    if (typesInGroup.length === 0) return null;
-                                    return (
-                                      <optgroup key={grp.key} label={grp.label}>
-                                        {typesInGroup.map((t) => (
-                                          <option key={t.id} value={t.id}>
-                                            {t.code} · {t.name}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                    );
-                                  })}
-                                </select>
+                                  transactionTypes={transactionTypes}
+                                  accountById={accountById}
+                                  onKeyDown={(e) => handleEditKeyDown(e, tx.id, currentDraft!)}
+                                />
                                 <TransactionTypeInfoTooltip
                                   debitCode={editingDebitAcc?.code}
                                   debitName={editingDebitAcc?.name}
@@ -1740,6 +1842,7 @@ export default function DailyTransactionsPage() {
                                     prev ? { ...prev, amount: e.target.value } : null,
                                   )
                                 }
+                                onKeyDown={(e) => handleEditKeyDown(e, tx.id, currentDraft!)}
                                 className="w-full h-6 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-xs tabular-nums outline-none focus:border-brand"
                               />
                             ) : (
@@ -1756,17 +1859,18 @@ export default function DailyTransactionsPage() {
                                 type="text"
                                 placeholder="PIC"
                                 maxLength={10}
-                                value={currentDraft!.memo}
+                                value={currentDraft!.pic}
                                 onChange={(e) =>
                                   setEditingRowState((prev) =>
-                                    prev ? { ...prev, memo: e.target.value } : null,
+                                    prev ? { ...prev, pic: e.target.value } : null,
                                   )
                                 }
+                                onKeyDown={(e) => handleEditKeyDown(e, tx.id, currentDraft!, true)}
                                 className="w-full h-6 text-center uppercase font-mono rounded border border-slate-200 px-1 py-0.5 text-xs outline-none focus:border-brand"
                               />
                             ) : (
                               <span className="font-mono text-xs font-semibold text-slate-700">
-                                {tx.memo || "—"}
+                                {tx.pic || "—"}
                               </span>
                             )}
                           </td>
@@ -1818,16 +1922,20 @@ export default function DailyTransactionsPage() {
                                   onClick={() =>
                                     updateMutation.mutate({ id: tx.id, draft: currentDraft! })
                                   }
-                                  className="rounded bg-brand p-1 text-white hover:bg-blue-700 transition"
-                                  title="Simpan perubahan"
+                                  className="relative rounded bg-brand p-1 text-white hover:bg-blue-700 transition"
+                                  title="Simpan perubahan (Ctrl+Enter)"
                                 >
                                   <Check size={12} />
+                                  <KeyTipBadge
+                                    keyChar="S"
+                                    visible={isKeyTipsActive && editingRowId === tx.id}
+                                  />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={cancelEditExisting}
                                   className="rounded p-1 text-slate-400 hover:bg-slate-100 transition"
-                                  title="Batal"
+                                  title="Batal (Esc)"
                                 >
                                   <RotateCcw size={12} />
                                 </button>
@@ -1937,25 +2045,21 @@ export default function DailyTransactionsPage() {
                     Hari Ini
                   </button>
                 </div>
-                <input
-                  type="date"
+                <IsoDateInput
                   value={mobileModalDraft.transactionDate}
-                  onChange={(e) =>
-                    setMobileModalDraft((prev) =>
-                      prev ? { ...prev, transactionDate: e.target.value } : null,
-                    )
+                  onChange={(val) =>
+                    setMobileModalDraft((prev) => (prev ? { ...prev, transactionDate: val } : null))
                   }
-                  className="w-full h-8 rounded border border-slate-300 bg-white px-2.5 text-xs outline-none focus:border-brand"
+                  className="h-8 px-2"
                 />
               </div>
 
               {/* Tipe Transaksi */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Tipe Transaksi</label>
-                <select
+                <SearchableTransactionTypeSelect
                   value={mobileModalDraft.transactionTypeId}
-                  onChange={(e) => {
-                    const newTypeId = e.target.value;
+                  onChange={(newTypeId) => {
                     setMobileModalDraft((prev) =>
                       prev
                         ? {
@@ -1966,22 +2070,10 @@ export default function DailyTransactionsPage() {
                         : null,
                     );
                   }}
-                  className="w-full h-8 rounded border border-slate-300 bg-white px-2 text-xs outline-none focus:border-brand font-medium truncate"
-                >
-                  {TRANSACTION_GROUPS.map((grp) => {
-                    const typesInGroup = groupedTransactionTypes.get(grp.key) || [];
-                    if (typesInGroup.length === 0) return null;
-                    return (
-                      <optgroup key={grp.key} label={grp.label}>
-                        {typesInGroup.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.code} · {t.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    );
-                  })}
-                </select>
+                  transactionTypes={transactionTypes}
+                  accountById={accountById}
+                  className="h-8 px-2"
+                />
 
                 {/* Automatic debit/credit preview */}
                 {(() => {
@@ -2031,15 +2123,15 @@ export default function DailyTransactionsPage() {
 
               {/* PIC */}
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">PIC / Memo</label>
+                <label className="block font-semibold text-slate-700 mb-1">PIC</label>
                 <input
                   type="text"
                   placeholder="Contoh: ADM, KSR, GUD"
                   maxLength={10}
-                  value={mobileModalDraft.memo}
+                  value={mobileModalDraft.pic}
                   onChange={(e) =>
                     setMobileModalDraft((prev) =>
-                      prev ? { ...prev, memo: e.target.value.toUpperCase() } : null,
+                      prev ? { ...prev, pic: e.target.value.toUpperCase() } : null,
                     )
                   }
                   className="w-full h-8 rounded border border-slate-300 bg-white px-2.5 font-mono uppercase text-xs outline-none focus:border-brand"
@@ -2113,6 +2205,9 @@ export default function DailyTransactionsPage() {
           </div>
         </div>
       )}
+
+      {/* Keyboard Shortcuts Cheat-sheet Modal */}
+      <KeyboardShortcutsModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
   );
 }

@@ -11,16 +11,19 @@ import {
   BookTemplate,
   Layers,
   CheckCircle2,
+  RotateCcw,
 } from "lucide-react";
 import {
   inferTransactionGroup,
   TRANSACTION_GROUPS,
   type MetadataFieldDefinition,
   type TransactionGroup,
+  type TransactionGroupDetail,
   type TransactionType,
 } from "@keuangan-apotek/shared";
 import {
   getAccounts,
+  getTransactionGroups,
   getTransactionTypes,
   queryKeys,
   type Account,
@@ -30,6 +33,8 @@ import {
   createTransactionType,
   deleteTransactionType,
   invalidateAccountingQueries,
+  resetTransactionGroup,
+  updateTransactionGroup,
   updateTransactionType,
 } from "../lib/mutations";
 import { MetadataSchemaBuilder } from "../components/metadata/MetadataSchemaBuilder";
@@ -123,6 +128,56 @@ export default function MasterTransactionPage() {
       toast.error(err instanceof Error ? err.message : "Gagal menghapus tipe transaksi");
     },
   });
+
+  const groupsQuery = useQuery({
+    queryKey: queryKeys.transactionGroups,
+    queryFn: getTransactionGroups,
+  });
+  const transactionGroups: TransactionGroupDetail[] =
+    groupsQuery.data && groupsQuery.data.length > 0 ? groupsQuery.data : TRANSACTION_GROUPS;
+  const groupByKey = new Map(transactionGroups.map((g) => [g.key, g]));
+
+  const [editingGroup, setEditingGroup] = useState<TransactionGroupDetail | null>(null);
+  const [groupSchemaDraft, setGroupSchemaDraft] = useState<MetadataFieldDefinition[]>([]);
+
+  const saveGroupMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingGroup) return;
+      return updateTransactionGroup(editingGroup.key, groupSchemaDraft);
+    },
+    onSuccess: async () => {
+      toast.success(`Skema metadata grup ${editingGroup?.label} berhasil diperbarui.`);
+      setEditingGroup(null);
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal memperbarui skema grup");
+    },
+  });
+
+  const resetGroupMutation = useMutation({
+    mutationFn: async (groupKey: string) => {
+      return resetTransactionGroup(groupKey);
+    },
+    onSuccess: async () => {
+      toast.success("Skema metadata grup berhasil dikembalikan ke default sistem.");
+      setEditingGroup(null);
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal mereset skema grup");
+    },
+  });
+
+  function openEditGroup(grp: TransactionGroupDetail) {
+    setEditingGroup(grp);
+    setGroupSchemaDraft(JSON.parse(JSON.stringify(grp.metadataSchema || [])));
+  }
+
+  function closeEditGroup() {
+    setEditingGroup(null);
+    setGroupSchemaDraft([]);
+  }
 
   function openCreate(defaultGroup?: TransactionGroup) {
     setEditingType(null);
@@ -229,7 +284,7 @@ export default function MasterTransactionPage() {
             title="Filter berdasarkan grup transaksi"
           >
             <option value="all">Semua Grup ({transactionTypes.length})</option>
-            {TRANSACTION_GROUPS.map((grp) => {
+            {transactionGroups.map((grp) => {
               const count = transactionTypes.filter((t) => {
                 const g =
                   t.group ||
@@ -284,7 +339,7 @@ export default function MasterTransactionPage() {
 
       {/* Visual Group Sections */}
       {!typesQuery.isLoading &&
-        TRANSACTION_GROUPS.map((grp) => {
+        transactionGroups.map((grp) => {
           if (groupFilter !== "all" && grp.key !== groupFilter) {
             return null;
           }
@@ -320,21 +375,47 @@ export default function MasterTransactionPage() {
                   <span className="text-[11px] text-slate-500 hidden md:inline">
                     · {grp.description}
                   </span>
+
+                  {/* Field summary pills/chips for quick viewing */}
+                  {hasSharedSchema && (
+                    <div className="flex flex-wrap items-center gap-1 ml-1">
+                      {grp.metadataSchema.map((f, fIdx) => (
+                        <span
+                          key={fIdx}
+                          className="inline-flex items-center gap-0.5 rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-700 font-mono border border-slate-200/80 shadow-2xs"
+                          title={`Field: ${f.label} (${f.type})${f.required ? " - Wajib" : " - Opsional"}`}
+                        >
+                          {f.label}
+                          {f.required && <span className="text-rose-500 font-bold">*</span>}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {hasSharedSchema ? (
-                    <span
-                      className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 border border-blue-200"
-                      title={`Field bawaan grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}`}
+                  {grp.key !== "tidak_terkategori" ? (
+                    <button
+                      type="button"
+                      onClick={() => openEditGroup(grp)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition shadow-xs cursor-pointer ${
+                        hasSharedSchema
+                          ? "bg-blue-50 text-brand border-blue-200 hover:bg-blue-100/80 hover:border-blue-300"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                      }`}
+                      title="Klik untuk melihat dan mengubah shared metadata grup ini"
                     >
-                      📋 Shared Metadata ({grp.metadataSchema!.length} field)
-                    </span>
+                      <span>📋 Shared Metadata ({grp.metadataSchema?.length || 0})</span>
+                      <Pencil size={11} className="text-blue-500" />
+                    </button>
                   ) : (
-                    <span className="text-[10px] text-slate-400 italic">Tanpa Metadata</span>
+                    <span className="text-[10px] text-slate-400 italic">Skema Bebas</span>
                   )}
 
-                  <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                  <span
+                    className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-700"
+                    title={`Jumlah tipe transaksi di grup ${grp.label}`}
+                  >
                     {itemsInGroup.length}
                   </span>
 
@@ -440,17 +521,24 @@ export default function MasterTransactionPage() {
                             <td className="px-2.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
                               {grp.key !== "tidak_terkategori" ? (
                                 hasSharedSchema ? (
-                                  <div
-                                    className="inline-flex items-center gap-1 rounded bg-blue-50/80 px-1.5 py-0.5 text-[10px] text-blue-700 border border-blue-100"
-                                    title={`Skema seragam grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}`}
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditGroup(grp)}
+                                    className="inline-flex items-center gap-1 rounded bg-blue-50/80 px-1.5 py-0.5 text-[10px] text-blue-700 border border-blue-100 hover:bg-blue-100/90 transition cursor-pointer"
+                                    title={`Skema seragam grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}. Klik untuk melihat atau mengubah.`}
                                   >
                                     <CheckCircle2 size={11} className="text-blue-600 shrink-0" />
                                     <span>Mewarisi Grup ({grp.metadataSchema!.length} field)</span>
-                                  </div>
+                                  </button>
                                 ) : (
-                                  <span className="text-slate-400 italic text-[11px]">
-                                    Tanpa metadata
-                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditGroup(grp)}
+                                    className="text-slate-400 hover:text-brand italic text-[11px] underline cursor-pointer"
+                                    title="Klik untuk mengatur metadata grup ini"
+                                  >
+                                    Atur metadata grup
+                                  </button>
                                 )
                               ) : localSchema.length > 0 ? (
                                 <div className="flex flex-wrap items-center gap-1">
@@ -598,7 +686,7 @@ export default function MasterTransactionPage() {
                     }}
                     className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand shadow-xs"
                   >
-                    {TRANSACTION_GROUPS.map((grp) => (
+                    {transactionGroups.map((grp) => (
                       <option key={grp.key} value={grp.key}>
                         {grp.label}
                       </option>
@@ -608,7 +696,7 @@ export default function MasterTransactionPage() {
 
                 {/* Banner Shared Metadata dari Grup */}
                 {(() => {
-                  const grpConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
+                  const grpConf = groupByKey.get(formGroup);
                   if (!grpConf) return null;
                   const hasGroupSchema =
                     grpConf.metadataSchema && grpConf.metadataSchema.length > 0;
@@ -748,13 +836,12 @@ export default function MasterTransactionPage() {
                     <div className="flex items-center gap-2">
                       <CheckCircle2 size={14} className="text-blue-600 shrink-0" />
                       <p className="text-xs font-semibold text-blue-900">
-                        Skema Seragam Grup:{" "}
-                        {TRANSACTION_GROUPS.find((g) => g.key === formGroup)?.label}
+                        Skema Seragam Grup: {groupByKey.get(formGroup)?.label}
                       </p>
                     </div>
                     <p className="text-[11px] text-blue-700 mt-1">
                       {(() => {
-                        const grpConf = TRANSACTION_GROUPS.find((g) => g.key === formGroup);
+                        const grpConf = groupByKey.get(formGroup);
                         if (grpConf?.metadataSchema && grpConf.metadataSchema.length > 0) {
                           return `Field seragam grup: ${grpConf.metadataSchema.map((f) => `${f.label}${f.required ? " (Wajib)" : " (Opsional)"}`).join(", ")}. Field opsional dapat dikosongkan saat input transaksi.`;
                         }
@@ -797,6 +884,101 @@ export default function MasterTransactionPage() {
               >
                 <Save size={14} /> Simpan Tipe Transaksi
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group Metadata Editor Modal */}
+      {editingGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div className="flex items-center gap-2.5">
+                <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-brand">
+                  <Layers size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Pengaturan Shared Metadata: {editingGroup.label}
+                  </h3>
+                  <p className="text-xs text-muted">
+                    Skema seragam untuk seluruh tipe transaksi di bawah grup{" "}
+                    {editingGroup.badgeLabel}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditGroup}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 space-y-4 overflow-y-auto p-6">
+              <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 text-xs text-blue-900 space-y-1">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-brand shrink-0" />
+                  <span className="font-bold">Konsep Pewarisan Skema Grup</span>
+                </div>
+                <p className="text-[11px] text-blue-700 leading-relaxed">
+                  Semua tipe transaksi dalam grup <strong>{editingGroup.label}</strong> akan secara
+                  otomatis mewarisi field yang ditentukan di sini. Perubahan akan langsung tercermin
+                  saat input di Buku Transaksi / Transaksi Harian.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-2">
+                  Daftar Field Metadata ({groupSchemaDraft.length} field)
+                </label>
+                <MetadataSchemaBuilder
+                  schema={groupSchemaDraft}
+                  onChange={(newSchema) => setGroupSchemaDraft(newSchema)}
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 bg-slate-50/50">
+              <button
+                type="button"
+                disabled={resetGroupMutation.isPending || saveGroupMutation.isPending}
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Kembalikan susunan metadata grup "${editingGroup.label}" ke standar default sistem?`,
+                    )
+                  ) {
+                    resetGroupMutation.mutate(editingGroup.key);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 transition"
+              >
+                <RotateCcw size={13} /> Reset ke Default Sistem
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={closeEditGroup}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={saveGroupMutation.isPending || resetGroupMutation.isPending}
+                  onClick={() => saveGroupMutation.mutate()}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition"
+                >
+                  <Save size={14} /> Simpan Perubahan Skema
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 node_modules/
 apps/api/node_modules/
-dist/
-apps/web/dist/
+apps/api/dist/
+packages/shared/dist/
 coverage/
 *.sqlite
 *.sqlite-shm

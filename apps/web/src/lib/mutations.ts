@@ -6,7 +6,13 @@ import type {
   SaveTransactionInput,
   SaveTransactionTypeInput,
 } from "./queries";
-import type { AuthUser, TransactionRecord, TransactionType } from "@keuangan-apotek/shared";
+import type {
+  AuthUser,
+  MetadataFieldDefinition,
+  TransactionGroupDetail,
+  TransactionRecord,
+  TransactionType,
+} from "@keuangan-apotek/shared";
 
 export function invalidateAccountingQueries(queryClient: QueryClient) {
   return Promise.all([
@@ -16,6 +22,7 @@ export function invalidateAccountingQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: ["reports"] }),
     queryClient.invalidateQueries({ queryKey: ["opening-balance"] }),
     queryClient.invalidateQueries({ queryKey: ["transaction-types"] }),
+    queryClient.invalidateQueries({ queryKey: ["transaction-groups"] }),
     queryClient.invalidateQueries({ queryKey: ["transactions"] }),
   ]);
 }
@@ -64,6 +71,29 @@ export function deleteTransactionType(id: string) {
   return requestJson<null>(`/api/transaction-types/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export function updateTransactionGroup(
+  groupKey: string,
+  metadataSchema: MetadataFieldDefinition[],
+) {
+  return requestJson<TransactionGroupDetail>(
+    `/api/transaction-groups/${encodeURIComponent(groupKey)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metadataSchema }),
+    },
+  );
+}
+
+export function resetTransactionGroup(groupKey: string) {
+  return requestJson<TransactionGroupDetail>(
+    `/api/transaction-groups/${encodeURIComponent(groupKey)}/reset`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function createTransaction(input: SaveTransactionInput) {

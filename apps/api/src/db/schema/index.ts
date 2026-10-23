@@ -130,6 +130,12 @@ export const transactionTypes = sqliteTable(
   }),
 );
 
+export const transactionGroupConfigs = sqliteTable("transaction_group_configs", {
+  group: text("group").primaryKey().notNull(),
+  metadataSchema: text("metadata_schema").notNull().default("[]"),
+  updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
+});
+
 export const transactions = sqliteTable(
   "transactions",
   {
@@ -146,7 +152,7 @@ export const transactions = sqliteTable(
     creditAccountId: text("credit_account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "restrict" }),
-    memo: text("memo"),
+    pic: text("pic"),
     metadata: text("metadata").notNull().default("{}"),
     journalId: text("journal_id").references(() => journals.id, { onDelete: "set null" }),
     createdAt: text("created_at").notNull().default("(datetime('now'))"),
@@ -207,6 +213,7 @@ export type JournalRow = typeof journals.$inferSelect;
 export type JournalLineRow = typeof journalLines.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type TransactionTypeRow = typeof transactionTypes.$inferSelect;
+export type TransactionGroupConfigRow = typeof transactionGroupConfigs.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
 export type ApiKeyRow = typeof apiKeys.$inferSelect;

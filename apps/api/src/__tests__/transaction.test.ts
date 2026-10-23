@@ -44,6 +44,24 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     const types = client.db.select().from(transactionTypes).all();
     expect(types.length).toBeGreaterThanOrEqual(38);
 
+    const trx33 = types.find((t) => t.code === "TRX-33");
+    expect(trx33).toBeDefined();
+    const trx33Schema = JSON.parse(trx33?.metadataSchema || "[]");
+    expect(
+      trx33Schema.some(
+        (f: { key: string; required: boolean }) => f.key === "shift" && f.required === true,
+      ),
+    ).toBe(true);
+
+    const trx31 = types.find((t) => t.code === "TRX-31");
+    expect(trx31).toBeDefined();
+    const trx31Schema = JSON.parse(trx31?.metadataSchema || "[]");
+    expect(
+      trx31Schema.some(
+        (f: { key: string; required: boolean }) => f.key === "shift" && f.required === true,
+      ),
+    ).toBe(true);
+
     // Verify cash/bank accounts exist
     const cashBankCodes = ["1101", "1102", "1103", "1106", "1107", "1108", "1109"];
     for (const code of cashBankCodes) {
@@ -150,13 +168,15 @@ describe("Transaction Types and Daily Transactions Engine", () => {
         transactionDate: "2026-08-21",
         transactionTypeId: cashSaleType.id,
         amount: "500000",
-        memo: "Penjualan resep sore",
+        pic: "KASIR",
         metadata: { shift: "Pagi" },
       }),
     });
     expect(postRes.status).toBe(201);
-    const tx = ((await postRes.json()) as { data: { id: string; journalId: string } }).data;
+    const tx = ((await postRes.json()) as { data: { id: string; journalId: string; pic: string } })
+      .data;
     expect(tx.journalId).toBeDefined();
+    expect(tx.pic).toBe("KASIR");
 
     // Check generated journal
     const journal = client.db.select().from(journals).where(eq(journals.id, tx.journalId)).get();
@@ -179,7 +199,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         amount: "750000",
-        memo: "Penjualan resep sore update",
+        pic: "DEWI",
       }),
     });
     expect(putRes.status).toBe(200);
@@ -468,7 +488,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
         transactionDate: "2026-10-17",
         transactionTypeId: trx01.id,
         amount: "250.000",
-        memo: "Penjualan Shift 1",
+        pic: "KASIR",
       }),
     });
     expect(res1.status).toBe(201);
@@ -488,7 +508,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
         transactionDate: "2026-10-17",
         transactionTypeId: trx01.id,
         amount: "250.000",
-        memo: "Penjualan Shift 1",
+        pic: "KASIR",
       }),
     });
     expect(res2.status).toBe(201);
@@ -579,6 +599,20 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(trx27.group).toBe("pembayaran_hutang");
     expect(trx27.customFields).toEqual(trx32.customFields);
 
+    // TRX-05 in group transfer_antar_akun must have 'deskripsi'
+    const trx05 = types.find((t) => t.code === "TRX-05")!;
+    expect(trx05.group).toBe("transfer_antar_akun");
+    expect(trx05.customFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "deskripsi", dataType: "string", required: false }),
+      ]),
+    );
+
+    // TRX-17 in same group (transfer_antar_akun) must have the exact same schema
+    const trx17 = types.find((t) => t.code === "TRX-17")!;
+    expect(trx17.group).toBe("transfer_antar_akun");
+    expect(trx17.customFields).toEqual(trx05.customFields);
+
     // Reject missing required metadata (nama_supplier) when required
     const missingRequiredRes = await api.request("http://localhost/api/transactions", {
       method: "POST",
@@ -647,5 +681,134 @@ describe("Transaction Types and Daily Transactions Engine", () => {
       }),
     });
     expect(validRes.status).toBe(201);
+  });
+
+  it("allows viewing, updating, and resetting shared metadata at the group level via /api/transaction-groups", async () => {
+    const { api } = setup();
+
+    // 1. GET /api/transaction-groups
+    const groupsRes = await api.request("http://localhost/api/transaction-groups");
+    expect(groupsRes.status).toBe(200);
+    const groupsData = (
+      (await groupsRes.json()) as {
+        data: Array<{
+          key: string;
+          label: string;
+          metadataSchema: Array<{ key: string; label: string; required?: boolean }>;
+          isCustomized?: boolean;
+        }>;
+      }
+    ).data;
+
+    expect(groupsData).toHaveLength(7);
+    const transferGroup = groupsData.find((g) => g.key === "transfer_antar_akun")!;
+    expect(transferGroup).toBeDefined();
+    expect(transferGroup.metadataSchema).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "deskripsi" })]),
+    );
+    expect(transferGroup.isCustomized).toBe(false);
+
+    // 2. PUT /api/transaction-groups/transfer_antar_akun
+    const updatedSchema = [
+      {
+        key: "deskripsi",
+        label: "Deskripsi Mutasi",
+        type: "text",
+        required: true,
+      },
+      {
+        key: "no_referensi",
+        label: "Nomor Referensi",
+        type: "text",
+        required: true,
+      },
+    ];
+
+    const putRes = await api.request(
+      "http://localhost/api/transaction-groups/transfer_antar_akun",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ metadataSchema: updatedSchema }),
+      },
+    );
+    expect(putRes.status).toBe(200);
+    const putData = (await putRes.json()) as {
+      data: { isCustomized: boolean; metadataSchema: any[] };
+    };
+    expect(putData.data.isCustomized).toBe(true);
+    expect(putData.data.metadataSchema).toHaveLength(2);
+
+    // 3. GET /api/transaction-types: TRX-05 must reflect the updated schema
+    const typeRes = await api.request("http://localhost/api/transaction-types");
+    const types = (
+      (await typeRes.json()) as { data: Array<{ code: string; customFields?: any[] }> }
+    ).data;
+    const trx05 = types.find((t) => t.code === "TRX-05")!;
+    expect(trx05.customFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "deskripsi", required: true }),
+        expect.objectContaining({ key: "no_referensi", required: true }),
+      ]),
+    );
+
+    // 4. POST /api/transactions with TRX-05: Missing required 'no_referensi' must fail
+    const trxTypesList = (
+      (await (await api.request("http://localhost/api/transaction-types")).json()) as {
+        data: Array<{ id: string; code: string }>;
+      }
+    ).data;
+    const trx05Id = trxTypesList.find((t) => t.code === "TRX-05")!.id;
+
+    const invalidTrxRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-18",
+        transactionTypeId: trx05Id,
+        amount: "500000",
+        metadata: {
+          deskripsi: "Tarik Saldo",
+          // missing required no_referensi
+        },
+      }),
+    });
+    expect(invalidTrxRes.status).toBe(400);
+
+    // Valid transaction with both fields succeeds
+    const validTrxRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-18",
+        transactionTypeId: trx05Id,
+        amount: "500000",
+        metadata: {
+          deskripsi: "Tarik Saldo Shopee",
+          no_referensi: "REF-12345",
+        },
+      }),
+    });
+    expect(validTrxRes.status).toBe(201);
+
+    // 5. POST /api/transaction-groups/transfer_antar_akun/reset: Resets back to default
+    const resetRes = await api.request(
+      "http://localhost/api/transaction-groups/transfer_antar_akun/reset",
+      {
+        method: "POST",
+      },
+    );
+    expect(resetRes.status).toBe(200);
+
+    // 6. Check that TRX-05 is back to default
+    const typesAfterReset = (
+      (await (await api.request("http://localhost/api/transaction-types")).json()) as {
+        data: Array<{ code: string; customFields?: any[] }>;
+      }
+    ).data;
+    const trx05AfterReset = typesAfterReset.find((t) => t.code === "TRX-05")!;
+    expect(trx05AfterReset.customFields).toHaveLength(1);
+    expect(trx05AfterReset.customFields![0].key).toBe("deskripsi");
+    expect(trx05AfterReset.customFields![0].required).toBe(false);
   });
 });

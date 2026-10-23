@@ -19,6 +19,17 @@ describe("inferTransactionGroup", () => {
       "transfer_antar_akun",
       "tidak_terkategori",
     ]);
+
+    const transferGroup = TRANSACTION_GROUPS.find((g) => g.key === "transfer_antar_akun")!;
+    expect(transferGroup.metadataSchema).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "deskripsi",
+          type: "text",
+          required: false,
+        }),
+      ]),
+    );
   });
 
   it("infers 'transfer_antar_akun' when both debit and credit are Cash & Bank accounts", () => {

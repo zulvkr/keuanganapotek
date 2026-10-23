@@ -5,6 +5,7 @@ import {
   DEFAULT_PURCHASE_TEMPO_METADATA_SCHEMA,
   DEFAULT_RECEIVABLE_PAYMENT_METADATA_SCHEMA,
   DEFAULT_SALES_METADATA_SCHEMA,
+  DEFAULT_TRANSFER_METADATA_SCHEMA,
 } from "./metadata.js";
 
 export type TransactionGroup =
@@ -23,6 +24,10 @@ export type TransactionGroupConfig = {
   description: string;
   badgeClass: string;
   metadataSchema: MetadataFieldDefinition[];
+};
+
+export type TransactionGroupDetail = TransactionGroupConfig & {
+  isCustomized?: boolean;
 };
 
 export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
@@ -73,7 +78,7 @@ export const TRANSACTION_GROUPS: TransactionGroupConfig[] = [
     description:
       "Mutasi perpindahan dana antar rekening kas, bank, pos saving, dan tarik saldo marketplace",
     badgeClass: "bg-teal-50 text-teal-800 border-teal-200",
-    metadataSchema: [],
+    metadataSchema: DEFAULT_TRANSFER_METADATA_SCHEMA,
   },
   {
     key: "tidak_terkategori",
