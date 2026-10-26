@@ -17,6 +17,8 @@ import {
   TransactionGroupSchema,
   UpdateTransactionGroupSchema,
   TransactionEntrySchema,
+  BulkDeleteTransactionsSchema,
+  BulkUpdateTransactionsSchema,
   AccountJournalDrillDownQuerySchema,
   BalanceSheetQuerySchema,
   IncomeStatementQuerySchema,
@@ -63,6 +65,8 @@ import {
   createTransactionType,
   deleteTransaction,
   deleteTransactionType,
+  bulkDeleteTransactions,
+  bulkUpdateTransactions,
   getTransactionTypeById,
   getTransactionsSummary,
   listTransactionGroups,
@@ -1091,6 +1095,38 @@ export function createApiApp(client: SqliteClient) {
           return context.json({
             data: updateTransaction(client.db, context.req.param("id")!, body, allowedCodes),
           });
+        } catch (error) {
+          return errorResponse(context, error);
+        }
+      },
+    )
+
+    .post(
+      "/api/transactions/bulk-delete",
+      validateJson(BulkDeleteTransactionsSchema),
+      (context) => {
+        try {
+          const user = getAuthUser(context);
+          const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
+          const body = context.req.valid("json");
+          const result = bulkDeleteTransactions(client.db, body.ids, allowedCodes);
+          return context.json({ data: result });
+        } catch (error) {
+          return errorResponse(context, error);
+        }
+      },
+    )
+
+    .post(
+      "/api/transactions/bulk-update",
+      validateJson(BulkUpdateTransactionsSchema),
+      (context) => {
+        try {
+          const user = getAuthUser(context);
+          const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
+          const body = context.req.valid("json");
+          const result = bulkUpdateTransactions(client.db, body, allowedCodes);
+          return context.json({ data: result });
         } catch (error) {
           return errorResponse(context, error);
         }

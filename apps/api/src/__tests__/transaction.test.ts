@@ -811,4 +811,116 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(trx05AfterReset.customFields![0].key).toBe("deskripsi");
     expect(trx05AfterReset.customFields![0].required).toBe(false);
   });
+
+  it("handles bulk delete and bulk update operations atomically", async () => {
+    const { client, api } = setup();
+
+    const types = client.db.select().from(transactionTypes).all();
+    const type1 = types.find((t) => t.code === "TRX-42") || types[0]!;
+    const type2 = types.find((t) => t.code === "TRX-18") || types[1]!;
+
+    // Create 2 test transactions
+    const createTx = async (amount: string, date: string, typeId: string, pic?: string) => {
+      const res = await api.request("http://localhost/api/transactions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          transactionDate: date,
+          transactionTypeId: typeId,
+          amount,
+          pic,
+          metadata: {},
+        }),
+      });
+      expect(res.status).toBe(201);
+      const json = (await res.json()) as { data: { id: string; journalId: string } };
+      return json.data;
+    };
+
+    const tx1 = await createTx("100000", "2026-08-01", type1.id, "KSR-1");
+    const tx2 = await createTx("200000", "2026-08-01", type1.id, "KSR-1");
+
+    // 1. Bulk Update Date & PIC
+    const updateRes = await api.request("http://localhost/api/transactions/bulk-update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ids: [tx1.id, tx2.id],
+        updates: {
+          transactionDate: "2026-08-05",
+          pic: "KSR-2",
+        },
+      }),
+    });
+    expect(updateRes.status).toBe(200);
+    const updateJson = (await updateRes.json()) as { data: { updatedCount: number } };
+    expect(updateJson.data.updatedCount).toBe(2);
+
+    // Verify DB records and journals have new date and pic
+    const updated1 = client.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, tx1.id))
+      .get()!;
+    const updated2 = client.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, tx2.id))
+      .get()!;
+    expect(updated1.transactionDate).toBe("2026-08-05");
+    expect(updated1.pic).toBe("KSR-2");
+    expect(updated2.transactionDate).toBe("2026-08-05");
+    expect(updated2.pic).toBe("KSR-2");
+
+    const journal1 = client.db.select().from(journals).where(eq(journals.id, tx1.journalId)).get()!;
+    expect(journal1.entryDate).toBe("2026-08-05");
+
+    // 2. Bulk Update Transaction Type
+    const updateTypeRes = await api.request("http://localhost/api/transactions/bulk-update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ids: [tx1.id, tx2.id],
+        updates: {
+          transactionTypeId: type2.id,
+        },
+      }),
+    });
+    expect(updateTypeRes.status).toBe(200);
+
+    const retyped1 = client.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, tx1.id))
+      .get()!;
+    expect(retyped1.transactionTypeId).toBe(type2.id);
+    expect(retyped1.debitAccountId).toBe(type2.debitAccountId);
+    expect(retyped1.creditAccountId).toBe(type2.creditAccountId);
+
+    // 3. Bulk Delete
+    const deleteRes = await api.request("http://localhost/api/transactions/bulk-delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ids: [tx1.id, tx2.id],
+      }),
+    });
+    expect(deleteRes.status).toBe(200);
+    const deleteJson = (await deleteRes.json()) as { data: { deletedCount: number } };
+    expect(deleteJson.data.deletedCount).toBe(2);
+
+    // Verify transactions and journals are gone
+    const txAfterDelete = client.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, tx1.id))
+      .get();
+    expect(txAfterDelete).toBeUndefined();
+    const journalAfterDelete = client.db
+      .select()
+      .from(journals)
+      .where(eq(journals.id, tx1.journalId))
+      .get();
+    expect(journalAfterDelete).toBeUndefined();
+  });
 });

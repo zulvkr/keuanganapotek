@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kalkulator Penyelesaian Pembayaran Pesanan (DuckDB-WASM)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS to read XLSX in browser -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  </head>
+  <body class="bg-slate-50 text-slate-800 min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 py-8">
+      <!-- Header -->
+      <header
+        class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-6"
+      >
+        <div>
+          <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <span>📊</span> Kalkulator Penyelesaian Pembayaran
+          </h1>
+          <p class="text-sm text-slate-500 mt-1">
+            Deduplikasi pesanan multi-item secara instan di browser via DuckDB-WASM (Client-Side,
+            aman & tanpa server).
+          </p>
+        </div>
+        <div
+          id="db-status"
+          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800"
+        >
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+          Memuat DuckDB-WASM...
+        </div>
+      </header>
+
+      <!-- Upload Zone -->
+      <div
+        id="drop-zone"
+        class="border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-white rounded-xl p-8 text-center transition cursor-pointer mb-8 shadow-sm"
+      >
+        <input type="file" id="file-input" accept=".xlsx, .xls, .csv" class="hidden" />
+        <div class="flex flex-col items-center justify-center space-y-2">
+          <svg
+            class="w-12 h-12 text-indigo-500 mb-1"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+            />
+          </svg>
+          <p class="text-base font-semibold text-slate-700">
+            Tarik & Lepas file Excel pesanan (.xlsx) ke sini
+          </p>
+          <p class="text-xs text-slate-400">atau klik untuk memilih file dari komputer</p>
+        </div>
+      </div>
+
+      <!-- Loading / Processing indicator -->
+      <div id="processing" class="hidden text-center py-8">
+        <div
+          class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent mb-2"
+        ></div>
+        <p id="processing-text" class="text-sm font-medium text-slate-600">
+          Sedang memproses data dengan DuckDB...
+        </p>
+      </div>
+
+      <!-- Main Content (hidden until file processed) -->
+      <div id="result-view" class="hidden space-y-8">
+        <!-- Options Bar -->
+        <div
+          class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4"
+        >
+          <div class="flex flex-wrap items-center gap-4">
+            <!-- Filter Apotek -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                >Apotek:</span
+              >
+              <label
+                class="inline-flex items-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 transition select-none"
+              >
+                <input
+                  type="checkbox"
+                  id="filter-aldila"
+                  checked
+                  class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                />
+                <span>Apotek Aldila</span>
+              </label>
+              <label
+                class="inline-flex items-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 transition select-none"
+              >
+                <input
+                  type="checkbox"
+                  id="filter-isa"
+                  class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                />
+                <span>Apotek Isa</span>
+              </label>
+            </div>
+
+            <!-- Filter Status -->
+            <div class="flex items-center gap-2">
+              <label
+                for="status-filter"
+                class="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                >Status:</label
+              >
+              <select
+                id="status-filter"
+                class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:ring-indigo-500 focus:border-indigo-500 font-medium"
+              >
+                <option value="ALL">Semua Status</option>
+                <option value="EXCLUDE_CANCEL">Kecualikan Batal (Cancellations)</option>
+                <option value="COMPLETED_ONLY">Hanya Selesai (Completed)</option>
+              </select>
+            </div>
+          </div>
+          <div class="text-xs text-slate-500" id="file-meta"></div>
+        </div>
+
+        <!-- KPI Summary Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div
+            class="bg-white p-5 rounded-xl border border-indigo-100 shadow-sm relative overflow-hidden"
+          >
+            <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-600"></div>
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Total Penyelesaian (Bersih)
+            </p>
+            <p id="kpi-total-bersih" class="text-2xl font-black text-indigo-700 mt-2">Rp 0</p>
+            <p class="text-xs text-slate-400 mt-1">Dihitung 1x per pesanan unik</p>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Total Pesanan Unik
+            </p>
+            <p id="kpi-total-pesanan" class="text-2xl font-bold text-slate-800 mt-2">0</p>
+            <p id="kpi-total-items" class="text-xs text-slate-400 mt-1">dari 0 baris item</p>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-rose-100 shadow-sm">
+            <p class="text-xs font-semibold text-rose-500 uppercase tracking-wider">
+              Duplikat Tereliminasi
+            </p>
+            <p id="kpi-selisih-nominal" class="text-2xl font-bold text-rose-600 mt-2">Rp 0</p>
+            <p id="kpi-duplikat-count" class="text-xs text-slate-400 mt-1">
+              0 baris item multi-pesanan
+            </p>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Total Nilai Faktur
+            </p>
+            <p id="kpi-total-faktur" class="text-2xl font-bold text-slate-800 mt-2">Rp 0</p>
+            <p class="text-xs text-slate-400 mt-1">Total kotor pesanan</p>
+          </div>
+        </div>
+
+        <!-- Breakdown Grids -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Breakdown by Store -->
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <h3 class="text-base font-bold text-slate-800 mb-3 flex items-center justify-between">
+              <span>🏪 Rincian per Toko / Channel</span>
+            </h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-medium">
+                  <tr>
+                    <th class="py-2.5 px-3">Toko</th>
+                    <th class="py-2.5 px-3 text-right">Pesanan</th>
+                    <th class="py-2.5 px-3 text-right">Penyelesaian</th>
+                  </tr>
+                </thead>
+                <tbody id="table-channel-body" class="divide-y divide-slate-100"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Breakdown by Status -->
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <h3 class="text-base font-bold text-slate-800 mb-3 flex items-center justify-between">
+              <span>📋 Rincian per Status Pesanan</span>
+            </h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-medium">
+                  <tr>
+                    <th class="py-2.5 px-3">Status</th>
+                    <th class="py-2.5 px-3 text-right">Pesanan</th>
+                    <th class="py-2.5 px-3 text-right">Penyelesaian</th>
+                  </tr>
+                </thead>
+                <tbody id="table-status-body" class="divide-y divide-slate-100"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cleaned Orders Table -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div
+            class="p-5 border-b border-slate-100 flex flex-col sm:row sm:items-center sm:justify-between gap-3"
+          >
+            <div>
+              <h3 class="text-base font-bold text-slate-800">
+                Daftar Pesanan Bersih (Deduplicated)
+              </h3>
+              <p class="text-xs text-slate-400 mt-0.5">Tiap nomor pesanan hanya muncul 1 kali</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                id="search-input"
+                placeholder="Cari No Pesanan / Toko..."
+                class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+              <button
+                id="btn-export-csv"
+                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition"
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
+          <div class="overflow-x-auto max-h-96">
+            <table class="w-full text-left text-sm">
+              <thead
+                class="bg-slate-50 text-slate-500 text-xs uppercase font-medium sticky top-0 shadow-sm"
+              >
+                <tr>
+                  <th class="py-2.5 px-4">No Pesanan MP</th>
+                  <th class="py-2.5 px-4">Waktu</th>
+                  <th class="py-2.5 px-4">Status</th>
+                  <th class="py-2.5 px-4">Toko</th>
+                  <th class="py-2.5 px-4 text-center">Items</th>
+                  <th class="py-2.5 px-4 text-right">Total Faktur</th>
+                  <th class="py-2.5 px-4 text-right">Penyelesaian</th>
+                </tr>
+              </thead>
+              <tbody
+                id="table-orders-body"
+                class="divide-y divide-slate-100 font-mono text-xs"
+              ></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm";
+
+      let db = null;
+      let conn = null;
+      let rawCsvText = null;
+      let cleanedOrdersData = [];
+      let colMap = {};
+
+      const formatRp = (num) =>
+        new Intl.NumberFormat("id-ID", {
+          style: "currency",
+          currency: "IDR",
+          maximumFractionDigits: 0,
+        }).format(num || 0);
+
+      // Initialize DuckDB-WASM
+      async function initDuckDB() {
+        const statusEl = document.getElementById("db-status");
+        try {
+          const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+          const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+          const worker = await duckdb.createWorker(bundle.mainWorker);
+          const logger = new duckdb.ConsoleLogger();
+          db = new duckdb.AsyncDuckDB(logger, worker);
+          await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+          conn = await db.connect();
+
+          statusEl.className =
+            "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800";
+          statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span>DuckDB-WASM Siap`;
+        } catch (err) {
+          console.error("DuckDB initialization failed:", err);
+          statusEl.className =
+            "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800";
+          statusEl.innerHTML = `Gagal memuat DuckDB-WASM: ${err.message}`;
+        }
+      }
+
+      initDuckDB();
+
+      // File input & Drag/Drop
+      const dropZone = document.getElementById("drop-zone");
+      const fileInput = document.getElementById("file-input");
+
+      dropZone.addEventListener("click", () => fileInput.click());
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("border-indigo-500", "bg-indigo-50/20");
+      });
+      dropZone.addEventListener("dragleave", () =>
+        dropZone.classList.remove("border-indigo-500", "bg-indigo-50/20"),
+      );
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("border-indigo-500", "bg-indigo-50/20");
+        if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+      });
+      fileInput.addEventListener("change", (e) => {
+        if (e.target.files.length) handleFile(e.target.files[0]);
+      });
+
+      async function handleFile(file) {
+        if (!db || !conn) {
+          alert("DuckDB-WASM belum selesai dimuat. Tunggu sejenak...");
+          return;
+        }
+
+        document.getElementById("processing").classList.remove("hidden");
+        document.getElementById("result-view").classList.add("hidden");
+        document.getElementById("processing-text").innerText = `Membaca file ${file.name}...`;
+
+        try {
+          const buffer = await file.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+
+          // Detect column positions dynamically from headers
+          const headerRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+          if (!headerRows || headerRows.length < 2) {
+            throw new Error("File kosong atau tidak memiliki baris data.");
+          }
+
+          const rawHeaders = (headerRows[0] || []).map((h) =>
+            (h || "")
+              .toString()
+              .toLowerCase()
+              .replace(/[\r\n\s]+/g, " "),
+          );
+          const findCol = (keywords, fallbackIdx) => {
+            const idx = rawHeaders.findIndex((h) => keywords.every((k) => h.includes(k)));
+            return idx !== -1 ? `#${idx + 1}` : `#${fallbackIdx}`;
+          };
+
+          colMap = {
+            desty: findCol(["pesanan", "desty"], 4),
+            mp: findCol(["pesanan", "marketplace"], 5),
+            tanggal: findCol(["tanggal pesanan"], 2),
+            status: findCol(["status pesanan"], 7),
+            toko: findCol(["toko"], 8),
+            qty: findCol(["jumlah"], 25),
+            faktur: findCol(["total", "faktur"], 32),
+            penyelesaian: findCol(["penyelesaian", "pembayaran"], 38),
+          };
+
+          rawCsvText = XLSX.utils.sheet_to_csv(firstSheet);
+          await db.registerFileText("raw_orders.csv", rawCsvText);
+
+          document.getElementById("processing-text").innerText =
+            "Menjalankan kueri SQL di DuckDB-WASM...";
+
+          // Load into DuckDB using read_csv_auto with all_varchar=true
+          await conn.query(`
+          CREATE OR REPLACE TABLE raw_orders AS 
+          SELECT * FROM read_csv_auto('raw_orders.csv', all_varchar=true, ignore_errors=true);
+        `);
+
+          document.getElementById("file-meta").innerText =
+            `File: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+          await runAnalytics();
+
+          document.getElementById("processing").classList.add("hidden");
+          document.getElementById("result-view").classList.remove("hidden");
+        } catch (err) {
+          console.error(err);
+          alert("Gagal memproses file: " + err.message);
+          document.getElementById("processing").classList.add("hidden");
+        }
+      }
+
+      async function runAnalytics() {
+        const includeAldila = document.getElementById("filter-aldila").checked;
+        const includeIsa = document.getElementById("filter-isa").checked;
+        const statusFilter = document.getElementById("status-filter").value;
+
+        const colDesty = colMap.desty || "#4";
+        const colMP = colMap.mp || "#5";
+        const colTanggal = colMap.tanggal || "#2";
+        const colStatus = colMap.status || "#7";
+        const colToko = colMap.toko || "#8";
+        const colQty = colMap.qty || "#25";
+        const colFaktur = colMap.faktur || "#32";
+        const colPenyelesaian = colMap.penyelesaian || "#38";
+
+        // Filter conditions
+        let whereClauses = [];
+
+        // Filter Apotek
+        let apotekConditions = [];
+        if (includeAldila) apotekConditions.push(`LOWER(${colToko}) LIKE '%aldila%'`);
+        if (includeIsa) apotekConditions.push(`LOWER(${colToko}) LIKE '%isa%'`);
+
+        if (apotekConditions.length > 0) {
+          whereClauses.push(`(${apotekConditions.join(" OR ")})`);
+        } else {
+          whereClauses.push(`1=0`);
+        }
+
+        if (statusFilter === "EXCLUDE_CANCEL") {
+          whereClauses.push(`LOWER(${colStatus}) NOT LIKE '%cancel%'`);
+        } else if (statusFilter === "COMPLETED_ONLY") {
+          whereClauses.push(`LOWER(${colStatus}) = 'completed'`);
+        }
+
+        const whereSql = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
+
+        // Deduplicated orders view
+        await conn.query(`
+        CREATE OR REPLACE VIEW view_orders_cleaned AS
+        SELECT 
+            ${colDesty} AS no_desty,
+            ${colMP} AS no_mp,
+            MAX(${colTanggal}) AS tanggal_pesanan,
+            MAX(${colStatus}) AS status_pesanan,
+            MAX(${colToko}) AS channel_toko,
+            COUNT(*) AS total_item,
+            SUM(TRY_CAST(REPLACE(REPLACE(${colQty}, ',', ''), ' ', '') AS DOUBLE)) AS total_qty,
+            MAX(TRY_CAST(REPLACE(REPLACE(${colFaktur}, ',', ''), ' ', '') AS DOUBLE)) AS total_faktur,
+            MAX(TRY_CAST(REPLACE(REPLACE(${colPenyelesaian}, ',', ''), ' ', '') AS DOUBLE)) AS penyelesaian_pembayaran
+        FROM raw_orders
+        ${whereSql}
+        GROUP BY ${colDesty}, ${colMP};
+      `);
+
+        // 1. Raw sum vs Cleaned sum
+        const rawRes = await conn.query(`
+        SELECT 
+            COUNT(*) AS total_rows, 
+            COALESCE(SUM(TRY_CAST(REPLACE(REPLACE(${colPenyelesaian}, ',', ''), ' ', '') AS DOUBLE)), 0) AS raw_sum
+        FROM raw_orders
+        ${whereSql};
+      `);
+        const rawData = rawRes.toArray()[0];
+        const rawCount = Number(rawData.total_rows);
+        const rawSum = Number(rawData.raw_sum);
+
+        const cleanedRes = await conn.query(`
+        SELECT 
+            COUNT(*) AS total_orders,
+            COALESCE(SUM(penyelesaian_pembayaran), 0) AS clean_sum,
+            COALESCE(SUM(total_faktur), 0) AS faktur_sum
+        FROM view_orders_cleaned;
+      `);
+        const cleanData = cleanedRes.toArray()[0];
+        const cleanOrders = Number(cleanData.total_orders);
+        const cleanSum = Number(cleanData.clean_sum);
+        const totalFaktur = Number(cleanData.faktur_sum);
+
+        // Render KPIs
+        document.getElementById("kpi-total-bersih").innerText = formatRp(cleanSum);
+        document.getElementById("kpi-total-pesanan").innerText =
+          cleanOrders.toLocaleString("id-ID");
+        document.getElementById("kpi-total-items").innerText =
+          `dari ${rawCount.toLocaleString("id-ID")} baris item`;
+        document.getElementById("kpi-selisih-nominal").innerText = formatRp(rawSum - cleanSum);
+        document.getElementById("kpi-duplikat-count").innerText =
+          `${rawCount - cleanOrders} baris tereliminasi`;
+        document.getElementById("kpi-total-faktur").innerText = formatRp(totalFaktur);
+
+        // 2. Channel breakdown
+        const channelRes = await conn.query(`
+        SELECT 
+            channel_toko, 
+            COUNT(*) AS cnt, 
+            COALESCE(SUM(penyelesaian_pembayaran), 0) AS total_val
+        FROM view_orders_cleaned
+        GROUP BY channel_toko
+        ORDER BY total_val DESC;
+      `);
+        const channelTbody = document.getElementById("table-channel-body");
+        channelTbody.innerHTML = "";
+        for (const row of channelRes.toArray()) {
+          channelTbody.innerHTML += `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="py-2 px-3 font-medium text-slate-700">${row.channel_toko || "-"}</td>
+            <td class="py-2 px-3 text-right text-slate-600">${Number(row.cnt).toLocaleString("id-ID")}</td>
+            <td class="py-2 px-3 text-right font-semibold text-indigo-600">${formatRp(Number(row.total_val))}</td>
+          </tr>
+        `;
+        }
+
+        // 3. Status breakdown
+        const statusRes = await conn.query(`
+        SELECT 
+            status_pesanan, 
+            COUNT(*) AS cnt, 
+            COALESCE(SUM(penyelesaian_pembayaran), 0) AS total_val
+        FROM view_orders_cleaned
+        GROUP BY status_pesanan
+        ORDER BY total_val DESC;
+      `);
+        const statusTbody = document.getElementById("table-status-body");
+        statusTbody.innerHTML = "";
+        for (const row of statusRes.toArray()) {
+          statusTbody.innerHTML += `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="py-2 px-3 font-medium text-slate-700">${row.status_pesanan || "-"}</td>
+            <td class="py-2 px-3 text-right text-slate-600">${Number(row.cnt).toLocaleString("id-ID")}</td>
+            <td class="py-2 px-3 text-right font-semibold text-emerald-600">${formatRp(Number(row.total_val))}</td>
+          </tr>
+        `;
+        }
+
+        // 4. Fetch orders list
+        const ordersRes = await conn.query(`
+        SELECT 
+            no_mp, 
+            tanggal_pesanan, 
+            status_pesanan, 
+            channel_toko, 
+            total_item, 
+            total_faktur, 
+            penyelesaian_pembayaran
+        FROM view_orders_cleaned
+        ORDER BY tanggal_pesanan DESC;
+      `);
+
+        cleanedOrdersData = ordersRes.toArray().map((r) => ({
+          no_mp: r.no_mp || "",
+          tanggal_pesanan: r.tanggal_pesanan || "",
+          status_pesanan: r.status_pesanan || "",
+          channel_toko: r.channel_toko || "",
+          total_item: Number(r.total_item),
+          total_faktur: Number(r.total_faktur),
+          penyelesaian_pembayaran: Number(r.penyelesaian_pembayaran),
+        }));
+
+        renderOrdersTable();
+      }
+
+      function renderOrdersTable() {
+        const q = document.getElementById("search-input").value.toLowerCase();
+        const tbody = document.getElementById("table-orders-body");
+        tbody.innerHTML = "";
+
+        const filtered = cleanedOrdersData.filter(
+          (d) =>
+            d.no_mp.toLowerCase().includes(q) ||
+            d.channel_toko.toLowerCase().includes(q) ||
+            d.status_pesanan.toLowerCase().includes(q),
+        );
+
+        const displayList = filtered.slice(0, 100);
+        for (const row of displayList) {
+          tbody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="py-2 px-4 font-semibold text-slate-800">${row.no_mp}</td>
+            <td class="py-2 px-4 text-slate-500">${row.tanggal_pesanan}</td>
+            <td class="py-2 px-4"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${row.status_pesanan.toLowerCase().includes("cancel") ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}">${row.status_pesanan}</span></td>
+            <td class="py-2 px-4 text-slate-600">${row.channel_toko}</td>
+            <td class="py-2 px-4 text-center">${row.total_item}</td>
+            <td class="py-2 px-4 text-right text-slate-600">${formatRp(row.total_faktur)}</td>
+            <td class="py-2 px-4 text-right font-bold text-indigo-600">${formatRp(row.penyelesaian_pembayaran)}</td>
+          </tr>
+        `;
+        }
+      }
+
+      document.getElementById("filter-aldila").addEventListener("change", runAnalytics);
+      document.getElementById("filter-isa").addEventListener("change", runAnalytics);
+      document.getElementById("status-filter").addEventListener("change", runAnalytics);
+      document.getElementById("search-input").addEventListener("input", renderOrdersTable);
+
+      // Export CSV
+      document.getElementById("btn-export-csv").addEventListener("click", () => {
+        if (!cleanedOrdersData.length) return;
+        let csv =
+          "No Pesanan MP,Tanggal Pesanan,Status Pesanan,Channel Toko,Total Item,Total Faktur,Penyelesaian Pembayaran\n";
+        cleanedOrdersData.forEach((r) => {
+          csv += `"${r.no_mp}","${r.tanggal_pesanan}","${r.status_pesanan}","${r.channel_toko}",${r.total_item},${r.total_faktur},${r.penyelesaian_pembayaran}\n`;
+        });
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `order_bersih_${Date.now()}.csv`;
+        a.click();
+      });
+    </script>
+  </body>
+</html>

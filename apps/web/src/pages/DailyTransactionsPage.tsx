@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import {
   useFloating,
   autoUpdate,
@@ -53,6 +53,8 @@ import {
 import {
   createTransaction,
   deleteTransaction,
+  bulkDeleteTransactions,
+  bulkUpdateTransactions,
   invalidateAccountingQueries,
   updateTransaction,
 } from "../lib/mutations";
@@ -60,6 +62,14 @@ import { DynamicMetadataForm } from "../components/metadata/DynamicMetadataForm"
 import { NeracaSummaryTable } from "../components/daily-transactions/NeracaSummaryTable";
 import { IsoDateInput } from "../components/daily-transactions/IsoDateInput";
 import { SearchableTransactionTypeSelect } from "../components/daily-transactions/SearchableTransactionTypeSelect";
+import { BulkActionBar } from "../components/daily-transactions/BulkActionBar";
+import { GoogleSheetsSummaryPill } from "../components/daily-transactions/GoogleSheetsSummaryPill";
+import {
+  BulkDeleteModal,
+  BulkDateModal,
+  BulkPicModal,
+  BulkTypeModal,
+} from "../components/daily-transactions/BulkActionModals";
 import {
   useKeyTips,
   KeyTipBadge,
@@ -403,6 +413,14 @@ export default function DailyTransactionsPage() {
   const [mobileModalOpen, setMobileModalOpen] = useState(false);
   const [mobileModalDraft, setMobileModalDraft] = useState<DraftRow | null>(null);
 
+  // Group filter tabs ref for smooth horizontal scrolling
+  const groupTabsRef = useRef<HTMLDivElement>(null);
+  const scrollGroupTabs = (amount: number) => {
+    if (groupTabsRef.current) {
+      groupTabsRef.current.scrollBy({ left: amount, behavior: "smooth" });
+    }
+  };
+
   // Queries
   const accountsQuery = useQuery({ queryKey: queryKeys.accounts, queryFn: getAccounts });
   const accounts: Account[] = accountsQuery.data ?? [];
@@ -412,6 +430,46 @@ export default function DailyTransactionsPage() {
     () => selectedAccountIds.map((id) => accountById.get(id)).filter(Boolean) as Account[],
     [selectedAccountIds, accountById],
   );
+
+  const hasActiveFilters =
+    selectedAccounts.length > 0 ||
+    (filterMode === "custom" && Boolean(startDate || endDate)) ||
+    filterMode === "all" ||
+    selectedGroup !== "all";
+
+  // Dynamic table viewport height calculation to prevent bottom bar from overflowing off-screen
+  const tableWrapperRef = useRef<HTMLDivElement>(null);
+  const [tableBodyHeight, setTableBodyHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (viewMode !== "table") return;
+
+    function updateTableHeight() {
+      if (!tableWrapperRef.current) return;
+      const rect = tableWrapperRef.current.getBoundingClientRect();
+      // 46px accounts for 34px bottom bar, 2px borders, and 10px breathing room to prevent window scroll
+      const available = window.innerHeight - rect.top - 46;
+      setTableBodyHeight(Math.max(200, Math.floor(available)));
+    }
+
+    updateTableHeight();
+
+    window.addEventListener("resize", updateTableHeight);
+
+    const observer = new ResizeObserver(() => {
+      updateTableHeight();
+    });
+
+    const el = tableWrapperRef.current;
+    if (el?.parentElement) {
+      observer.observe(el.parentElement);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateTableHeight);
+      observer.disconnect();
+    };
+  }, [viewMode, hasActiveFilters, showNeracaFilter, user?.role]);
 
   function handleToggleAccount(accountId: string) {
     setSelectedAccountIds((prev) => {
@@ -586,8 +644,146 @@ export default function DailyTransactionsPage() {
     return maps;
   }, [selectedAccounts, transactionsList]);
 
-  // Total columns in table (5 base + up to 2 account balance columns + 1 action)
-  const totalColumns = 6 + selectedAccounts.length;
+  // Total columns in table (1 checkbox + 5 base + up to 2 account balance columns + 1 action)
+  const totalColumns = 7 + selectedAccounts.length;
+
+  // Selected transaction IDs for bulk operations
+  const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(() => new Set());
+  const [lastClickedTxId, setLastClickedTxId] = useState<string | null>(null);
+
+  // Bulk action modals state
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+  const [bulkDateModalOpen, setBulkDateModalOpen] = useState(false);
+  const [bulkPicModalOpen, setBulkPicModalOpen] = useState(false);
+  const [bulkTypeModalOpen, setBulkTypeModalOpen] = useState(false);
+
+  const selectedTransactions = useMemo(() => {
+    if (selectedTxIds.size === 0) return [];
+    return filteredTransactionsList.filter((tx) => selectedTxIds.has(tx.id));
+  }, [selectedTxIds, filteredTransactionsList]);
+
+  const selectedTotalSen = useMemo(() => {
+    return selectedTransactions.reduce((acc, tx) => acc + (tx.amount || 0), 0);
+  }, [selectedTransactions]);
+
+  const summaryStats = useMemo(() => {
+    const isSelected = selectedTransactions.length > 0;
+    const targetList = isSelected ? selectedTransactions : filteredTransactionsList;
+    const count = targetList.length;
+    if (count === 0) {
+      return { isSelected, count: 0, sum: 0, avg: 0, min: 0, max: 0 };
+    }
+    let sum = 0;
+    let min = targetList[0]!.amount || 0;
+    let max = targetList[0]!.amount || 0;
+    for (const tx of targetList) {
+      const amt = tx.amount || 0;
+      sum += amt;
+      if (amt < min) min = amt;
+      if (amt > max) max = amt;
+    }
+    const avg = Math.round(sum / count);
+    return { isSelected, count, sum, avg, min, max };
+  }, [selectedTransactions, filteredTransactionsList]);
+
+  const isAllSelected = useMemo(() => {
+    if (filteredTransactionsList.length === 0) return false;
+    return filteredTransactionsList.every((tx) => selectedTxIds.has(tx.id));
+  }, [filteredTransactionsList, selectedTxIds]);
+
+  const isSomeSelected = useMemo(() => {
+    return selectedTxIds.size > 0 && !isAllSelected;
+  }, [selectedTxIds, isAllSelected]);
+
+  function handleToggleSelectAll() {
+    if (isAllSelected) {
+      setSelectedTxIds(new Set());
+    } else {
+      setSelectedTxIds(new Set(filteredTransactionsList.map((tx) => tx.id)));
+    }
+  }
+
+  function handleClearSelection() {
+    setSelectedTxIds(new Set());
+    setLastClickedTxId(null);
+  }
+
+  function handleToggleRowSelect(id: string, shiftKey = false) {
+    setSelectedTxIds((prev) => {
+      const next = new Set(prev);
+      if (shiftKey && lastClickedTxId && lastClickedTxId !== id) {
+        const lastIndex = filteredTransactionsList.findIndex((t) => t.id === lastClickedTxId);
+        const currIndex = filteredTransactionsList.findIndex((t) => t.id === id);
+        if (lastIndex !== -1 && currIndex !== -1) {
+          const [start, end] =
+            lastIndex < currIndex ? [lastIndex, currIndex] : [currIndex, lastIndex];
+          for (let i = start; i <= end; i++) {
+            const item = filteredTransactionsList[i];
+            if (item) next.add(item.id);
+          }
+          return next;
+        }
+      }
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    setLastClickedTxId(id);
+  }
+
+  function handleExportCsv() {
+    const listToExport =
+      selectedTransactions.length > 0 ? selectedTransactions : filteredTransactionsList;
+    if (listToExport.length === 0) {
+      toast.info("Tidak ada transaksi untuk diekspor");
+      return;
+    }
+
+    const headers = [
+      "Tanggal",
+      "Tipe Transaksi",
+      "Grup",
+      "Akun Debit",
+      "Akun Kredit",
+      "Nominal (Rp)",
+      "PIC",
+      "Metadata",
+    ];
+    const rows = listToExport.map((tx) => {
+      const type = typeById.get(tx.transactionTypeId);
+      const metaStr =
+        tx.metadata && typeof tx.metadata === "object"
+          ? Object.entries(tx.metadata)
+              .map(([k, v]) => `${k}=${v}`)
+              .join("; ")
+          : "";
+      return [
+        tx.transactionDate,
+        `"${(type?.name || tx.transactionTypeName || "").replace(/"/g, '""')}"`,
+        `"${(tx.group || "").replace(/"/g, '""')}"`,
+        `"${(tx.debitAccountCode ? `${tx.debitAccountCode} - ${tx.debitAccountName}` : "").replace(/"/g, '""')}"`,
+        `"${(tx.creditAccountCode ? `${tx.creditAccountCode} - ${tx.creditAccountName}` : "").replace(/"/g, '""')}"`,
+        senToRupiah(tx.amount),
+        `"${(tx.pic || "").replace(/"/g, '""')}"`,
+        `"${metaStr.replace(/"/g, '""')}"`,
+      ].join(",");
+    });
+
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows].join("\r\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `buku_transaksi_${todayIsoDate()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success(`${listToExport.length} transaksi berhasil diekspor ke CSV.`);
+  }
 
   // Mutations
   const createMutation = useMutation({
@@ -637,6 +833,37 @@ export default function DailyTransactionsPage() {
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Gagal menghapus transaksi");
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteTransactions(ids),
+    onSuccess: async (data) => {
+      toast.success(`${data.deletedCount} transaksi berhasil dihapus beserta jurnalnya.`);
+      setSelectedTxIds(new Set());
+      setBulkDeleteModalOpen(false);
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus transaksi masal");
+    },
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: (input: {
+      ids: string[];
+      updates: { transactionDate?: string; pic?: string | null; transactionTypeId?: string };
+    }) => bulkUpdateTransactions(input),
+    onSuccess: async (data) => {
+      toast.success(`${data.updatedCount} transaksi berhasil diperbarui.`);
+      setSelectedTxIds(new Set());
+      setBulkDateModalOpen(false);
+      setBulkPicModalOpen(false);
+      setBulkTypeModalOpen(false);
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal memperbarui transaksi masal");
     },
   });
 
@@ -830,6 +1057,59 @@ export default function DailyTransactionsPage() {
     ),
   });
 
+  const renderGroupPills = () => (
+    <>
+      <button
+        type="button"
+        onClick={() => setSelectedGroup("all")}
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition shrink-0 ${
+          selectedGroup === "all"
+            ? "bg-slate-800 text-white font-semibold shadow-2xs"
+            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+        }`}
+      >
+        <span>Semua</span>
+        <span
+          className={`rounded-full px-1.5 py-0 text-[10px] tabular-nums ${
+            selectedGroup === "all" ? "bg-slate-700 text-white" : "bg-white text-slate-600"
+          }`}
+        >
+          {groupCounts.all ?? 0}
+        </span>
+      </button>
+      {TRANSACTION_GROUPS.map((grp) => {
+        const isSelected = selectedGroup === grp.key;
+        const count = groupCounts[grp.key] ?? 0;
+        return (
+          <button
+            key={grp.key}
+            type="button"
+            onClick={() => setSelectedGroup(grp.key)}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition shrink-0 ${
+              isSelected
+                ? `${grp.badgeClass} font-bold shadow-2xs ring-1 ring-current`
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+            title={grp.description}
+          >
+            <span>{grp.label}</span>
+            <span
+              className={`rounded-full px-1.5 py-0 text-[10px] tabular-nums ${
+                isSelected
+                  ? "bg-white/90 text-slate-900 font-bold"
+                  : count > 0
+                    ? "bg-slate-100 text-slate-700 font-semibold"
+                    : "text-slate-400"
+              }`}
+            >
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+
   return (
     <div className="space-y-1.5 text-xs">
       {/* Assistant RBAC Mode Banner */}
@@ -849,12 +1129,12 @@ export default function DailyTransactionsPage() {
       )}
 
       {/* Filter and Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 rounded border border-slate-200 bg-white p-1 text-xs">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* Filter Periode / Bulan */}
-          <div className="flex flex-wrap items-center gap-1">
+      <div className="rounded-lg border border-slate-200 bg-white p-1.5 shadow-2xs space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          {/* Left: Navigation, Presets & Filter Toggle */}
+          <div className="flex flex-wrap items-center gap-1.5">
             {/* Monthly Stepper & Selector */}
-            <div className="inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5">
+            <div className="inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5 shrink-0">
               <button
                 type="button"
                 onClick={() => handleStepMonth(-1)}
@@ -875,7 +1155,11 @@ export default function DailyTransactionsPage() {
                     }
                   }}
                   className="rounded border-0 bg-transparent px-1 py-0.5 text-xs font-semibold text-slate-800 outline-none hover:bg-white transition cursor-pointer"
-                  title="Pilih bulan"
+                  title={
+                    selectedMonth
+                      ? `Pilih bulan (${formatMonthYearId(selectedMonth)})`
+                      : "Pilih bulan"
+                  }
                 />
               </div>
 
@@ -891,7 +1175,7 @@ export default function DailyTransactionsPage() {
             </div>
 
             {/* Quick Presets */}
-            <div className="inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5">
+            <div className="inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5 shrink-0">
               <button
                 type="button"
                 onClick={handleCurrentMonth}
@@ -907,7 +1191,7 @@ export default function DailyTransactionsPage() {
               <button
                 type="button"
                 onClick={handlePrevMonth}
-                className={`relative rounded px-1.5 py-0.5 text-xs font-medium transition ${
+                className={`relative rounded px-1.5 py-0.5 text-xs font-medium transition hidden sm:inline-block ${
                   filterMode === "month" && selectedMonth === stepMonth(thisMonthKey, -1)
                     ? "bg-white font-semibold text-brand shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
@@ -946,7 +1230,7 @@ export default function DailyTransactionsPage() {
 
             {/* Custom Range (muncul jika mode kustom aktif) */}
             {filterMode === "custom" && (
-              <div className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50/50 px-1 py-0.5 text-xs text-slate-700">
+              <div className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50/50 px-1 py-0.5 text-xs text-slate-700 shrink-0">
                 <input
                   type="date"
                   value={startDate}
@@ -962,37 +1246,97 @@ export default function DailyTransactionsPage() {
                 />
               </div>
             )}
+
+            {/* Filter Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowNeracaFilter((prev) => !prev)}
+              className={`relative inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-semibold transition shrink-0 ${
+                showNeracaFilter
+                  ? "border-brand bg-blue-50 text-brand"
+                  : selectedAccounts.length > 0
+                    ? "border-blue-300 bg-blue-50/70 text-brand"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+              title="Filter akun dari Saldo Akhir Neraca (Maksimal 2 akun)"
+            >
+              <Filter
+                size={12}
+                className={
+                  selectedAccounts.length > 0 || showNeracaFilter ? "text-brand" : "text-slate-500"
+                }
+              />
+              <span>
+                Filter Akun {selectedAccounts.length > 0 ? `(${selectedAccounts.length}/2)` : ""}
+              </span>
+              {showNeracaFilter ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              <KeyTipBadge keyChar="F" visible={isKeyTipsActive} />
+            </button>
           </div>
 
-          {/* Filter Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setShowNeracaFilter((prev) => !prev)}
-            className={`relative inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-semibold transition ${
-              showNeracaFilter
-                ? "border-brand bg-blue-50 text-brand"
-                : selectedAccounts.length > 0
-                  ? "border-blue-300 bg-blue-50/70 text-brand"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-            title="Filter akun dari Saldo Akhir Neraca (Maksimal 2 akun)"
-          >
-            <Filter
-              size={12}
-              className={
-                selectedAccounts.length > 0 || showNeracaFilter ? "text-brand" : "text-slate-500"
-              }
-            />
-            <span>
-              Filter Akun {selectedAccounts.length > 0 ? `(${selectedAccounts.length}/2)` : ""}
+          {/* Right: Actions, View Switcher & Shortcuts */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            <span className="text-[11px] text-slate-400 tabular-nums hidden lg:inline mr-1">
+              {filteredTransactionsList.length} transaksi
             </span>
-            {showNeracaFilter ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            <KeyTipBadge keyChar="F" visible={isKeyTipsActive} />
-          </button>
 
-          {/* Summary Filter Aktif */}
-          {(selectedAccounts.length > 0 || startDate || endDate || selectedGroup !== "all") && (
-            <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-200 pl-2">
+            {/* View Mode Toggle */}
+            <div className="relative inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode("cards")}
+                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold transition ${
+                  viewMode === "cards"
+                    ? "bg-white text-brand shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                title="Tampilan Kartu (Ramah Mobile)"
+              >
+                Kartu
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("table")}
+                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold transition ${
+                  viewMode === "table"
+                    ? "bg-white text-brand shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                title="Tampilan Tabel Spreadsheet"
+              >
+                Tabel
+              </button>
+              <KeyTipBadge keyChar="V" visible={isKeyTipsActive} />
+            </div>
+
+            {/* Keyboard Shortcuts Help Button */}
+            <button
+              type="button"
+              onClick={() => setIsHelpOpen(true)}
+              className="relative inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-brand transition shrink-0"
+              title="Bantuan Pintasan Keyboard (Alt / ?)"
+              aria-label="Bantuan Pintasan Keyboard"
+            >
+              <Keyboard size={13} />
+              <span className="hidden sm:inline">Pintasan</span>
+              <KeyTipBadge keyChar="?" visible={isKeyTipsActive} />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleAddNew}
+              className="relative inline-flex items-center gap-1 rounded bg-brand px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition shrink-0 shadow-xs"
+            >
+              <Plus size={13} /> Baris Baru
+              <KeyTipBadge keyChar="N" visible={isKeyTipsActive} />
+            </button>
+          </div>
+        </div>
+
+        {/* Active Filters Row (only shown when filters actively narrow transactions) */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center justify-between gap-1.5 border-t border-slate-100 pt-1.5 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                 Filter:
               </span>
@@ -1021,20 +1365,34 @@ export default function DailyTransactionsPage() {
                 </div>
               ))}
 
-              {/* Active Date Filter Chip */}
-              {(startDate || endDate) && (
+              {/* Active Date Filter Chip (only in custom mode) */}
+              {filterMode === "custom" && (startDate || endDate) && (
                 <div className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-700">
-                  <span className="font-semibold text-slate-500">Periode:</span>
+                  <span className="font-semibold text-slate-500">Rentang:</span>
                   <span className="tabular-nums font-medium">
-                    {filterMode === "month" && selectedMonth
-                      ? formatMonthYearId(selectedMonth)
-                      : `${startDate || "Awal"} s/d ${endDate || "Kini"}`}
+                    {`${startDate || "Awal"} s/d ${endDate || "Kini"}`}
                   </span>
                   <button
                     type="button"
-                    onClick={handleAllPeriod}
+                    onClick={handleCurrentMonth}
                     className="ml-0.5 rounded text-slate-500 hover:text-slate-800 transition"
-                    title="Hapus filter tanggal"
+                    title="Kembali ke bulan ini"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
+
+              {/* Active All Period Chip */}
+              {filterMode === "all" && (
+                <div className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-700">
+                  <span className="font-semibold text-slate-500">Periode:</span>
+                  <span className="font-medium">Semua Periode</span>
+                  <button
+                    type="button"
+                    onClick={handleCurrentMonth}
+                    className="ml-0.5 rounded text-slate-500 hover:text-slate-800 transition"
+                    title="Kembali ke bulan ini"
                   >
                     <X size={11} />
                   </button>
@@ -1057,139 +1415,27 @@ export default function DailyTransactionsPage() {
                 </div>
               )}
 
-              {/* Matching Transactions Count Badge */}
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 tabular-nums">
-                {filteredTransactionsList.length} baris
-              </span>
-
-              {/* Reset All Filters if multiple are active */}
-              {(selectedAccounts.length > 0 ||
-                Boolean(startDate || endDate) ||
-                selectedGroup !== "all") && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedAccountIds([]);
-                    setSelectedGroup("all");
-                    handleAllPeriod();
-                  }}
-                  className="text-[10px] font-semibold text-slate-400 hover:text-red-600 transition underline"
-                  title="Reset semua filter"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-          {/* View Mode Toggle */}
-          <div className="relative inline-flex items-center rounded border border-slate-200 bg-slate-50 p-0.5">
-            <button
-              type="button"
-              onClick={() => setViewMode("cards")}
-              className={`rounded px-1.5 py-0.5 text-[11px] font-semibold transition ${
-                viewMode === "cards"
-                  ? "bg-white text-brand shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-              title="Tampilan Kartu (Ramah Mobile)"
-            >
-              Kartu
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("table")}
-              className={`rounded px-1.5 py-0.5 text-[11px] font-semibold transition ${
-                viewMode === "table"
-                  ? "bg-white text-brand shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-              title="Tampilan Tabel Spreadsheet"
-            >
-              Tabel
-            </button>
-            <KeyTipBadge keyChar="V" visible={isKeyTipsActive} />
-          </div>
-
-          {/* Keyboard Shortcuts Help Button */}
-          <button
-            type="button"
-            onClick={() => setIsHelpOpen(true)}
-            className="relative inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-brand transition shrink-0"
-            title="Bantuan Pintasan Keyboard (Alt / ?)"
-            aria-label="Bantuan Pintasan Keyboard"
-          >
-            <Keyboard size={13} />
-            <span className="hidden sm:inline">Pintasan</span>
-            <KeyTipBadge keyChar="?" visible={isKeyTipsActive} />
-          </button>
-
-          <button
-            type="button"
-            onClick={handleAddNew}
-            className="relative inline-flex items-center gap-1 rounded bg-brand px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition shrink-0"
-          >
-            <Plus size={13} /> Baris Baru
-            <KeyTipBadge keyChar="N" visible={isKeyTipsActive} />
-          </button>
-        </div>
-      </div>
-
-      {/* Transaction Group Filter Pills */}
-      <div className="flex items-center gap-1 overflow-x-auto max-w-full rounded border border-slate-200 bg-white p-1 text-xs">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-0.5 ml-1 shrink-0">
-          Grup:
-        </span>
-        <button
-          type="button"
-          onClick={() => setSelectedGroup("all")}
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition shrink-0 ${
-            selectedGroup === "all"
-              ? "bg-slate-800 text-white font-semibold shadow-2xs"
-              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-          }`}
-        >
-          <span>Semua</span>
-          <span
-            className={`rounded-full px-1.5 py-0 text-[10px] tabular-nums ${
-              selectedGroup === "all" ? "bg-slate-700 text-white" : "bg-white text-slate-600"
-            }`}
-          >
-            {groupCounts.all ?? 0}
-          </span>
-        </button>
-        {TRANSACTION_GROUPS.map((grp) => {
-          const isSelected = selectedGroup === grp.key;
-          const count = groupCounts[grp.key] ?? 0;
-          return (
-            <button
-              key={grp.key}
-              type="button"
-              onClick={() => setSelectedGroup(grp.key)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition shrink-0 ${
-                isSelected
-                  ? `${grp.badgeClass} font-bold shadow-2xs ring-1 ring-current`
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-              title={grp.description}
-            >
-              <span>{grp.label}</span>
-              <span
-                className={`rounded-full px-1.5 py-0 text-[10px] tabular-nums ${
-                  isSelected
-                    ? "bg-white/90 text-slate-900 font-bold"
-                    : count > 0
-                      ? "bg-slate-100 text-slate-700 font-semibold"
-                      : "text-slate-400"
-                }`}
+              {/* Reset All Filters Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAccountIds([]);
+                  setSelectedGroup("all");
+                  handleCurrentMonth();
+                }}
+                className="text-[10px] font-semibold text-slate-400 hover:text-red-600 transition underline cursor-pointer"
+                title="Reset semua filter"
               >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+                Reset
+              </button>
+            </div>
+
+            {/* Matching Transactions Count Badge */}
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 tabular-nums ml-auto shrink-0">
+              {filteredTransactionsList.length} baris
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Saldo Akhir Neraca Table (only appears when filter button is clicked) */}
@@ -1208,6 +1454,13 @@ export default function DailyTransactionsPage() {
       {/* Mobile Card View */}
       {viewMode === "cards" && (
         <div className="space-y-2">
+          {/* Mobile Group Filter Tabs */}
+          <div className="flex items-center gap-1 overflow-x-auto max-w-full rounded border border-slate-200 bg-white p-1 text-xs no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-0.5 ml-1 shrink-0">
+              Grup:
+            </span>
+            {renderGroupPills()}
+          </div>
           {draftRows.length > 0 && (
             <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2 text-xs space-y-2">
               <div className="flex items-center justify-between">
@@ -1292,169 +1545,250 @@ export default function DailyTransactionsPage() {
               </div>
             </div>
           ) : (
-            filteredTransactionsList.map((tx) => {
-              const selectedType = typeById.get(tx.transactionTypeId);
-              const schema = selectedType?.metadataSchema || [];
-              const txGroup =
-                tx.group ||
-                inferTransactionGroup(
-                  accountById.get(tx.debitAccountId) ?? {
-                    code: tx.debitAccountCode,
-                    name: tx.debitAccountName,
-                  },
-                  accountById.get(tx.creditAccountId) ?? {
-                    code: tx.creditAccountCode,
-                    name: tx.creditAccountName,
-                  },
-                );
-              const gConf = TRANSACTION_GROUPS.find((g) => g.key === txGroup);
-
-              return (
-                <div
-                  key={tx.id}
-                  className="rounded-lg border border-slate-200 bg-white p-3 shadow-2xs space-y-2 transition hover:border-slate-300"
+            <>
+              <div className="flex items-center justify-between pb-1 px-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAll}
+                  className="inline-flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium py-1"
                 >
-                  {/* Card Top: Date, PIC, and Group Badge */}
-                  <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-bold text-slate-800 text-xs tabular-nums">
-                        {tx.transactionDate}
-                      </span>
-                      {tx.pic && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-mono font-semibold text-slate-700">
-                          {tx.pic}
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeSelected;
+                    }}
+                    onChange={handleToggleSelectAll}
+                    className="rounded border-slate-300 text-brand focus:ring-brand/20 cursor-pointer h-3.5 w-3.5 pointer-events-none"
+                  />
+                  <span>
+                    {isAllSelected
+                      ? "Batalkan Pilih Semua"
+                      : `Pilih Semua (${filteredTransactionsList.length})`}
+                  </span>
+                </button>
+                {selectedTxIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearSelection}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+                  >
+                    Batal ({selectedTxIds.size})
+                  </button>
+                )}
+              </div>
+
+              {filteredTransactionsList.map((tx) => {
+                const selectedType = typeById.get(tx.transactionTypeId);
+                const schema = selectedType?.metadataSchema || [];
+                const txGroup =
+                  tx.group ||
+                  inferTransactionGroup(
+                    accountById.get(tx.debitAccountId) ?? {
+                      code: tx.debitAccountCode,
+                      name: tx.debitAccountName,
+                    },
+                    accountById.get(tx.creditAccountId) ?? {
+                      code: tx.creditAccountCode,
+                      name: tx.creditAccountName,
+                    },
+                  );
+                const gConf = TRANSACTION_GROUPS.find((g) => g.key === txGroup);
+
+                return (
+                  <div
+                    key={tx.id}
+                    className={`rounded-lg border p-3 shadow-2xs space-y-2 transition ${
+                      selectedTxIds.has(tx.id)
+                        ? "border-brand/50 bg-blue-50/50"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    {/* Card Top: Checkbox, Date, PIC, and Group Badge */}
+                    <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          aria-label={`Pilih transaksi ${tx.id}`}
+                          checked={selectedTxIds.has(tx.id)}
+                          onChange={() => handleToggleRowSelect(tx.id)}
+                          className="rounded border-slate-300 text-brand focus:ring-brand/20 cursor-pointer h-4 w-4"
+                        />
+                        <span className="font-bold text-slate-800 text-xs tabular-nums">
+                          {tx.transactionDate}
+                        </span>
+                        {tx.pic && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-mono font-semibold text-slate-700">
+                            {tx.pic}
+                          </span>
+                        )}
+                      </div>
+                      {gConf && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0 text-[10px] font-semibold border shrink-0 ${gConf.badgeClass}`}
+                        >
+                          {gConf.badgeLabel}
                         </span>
                       )}
                     </div>
-                    {gConf && (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0 text-[10px] font-semibold border shrink-0 ${gConf.badgeClass}`}
-                      >
-                        {gConf.badgeLabel}
-                      </span>
-                    )}
-                  </div>
 
-                  {/* Card Main: Transaction Type & Amount */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1">
-                        <p className="font-bold text-slate-900 text-xs truncate">
-                          {tx.transactionTypeName || "Tipe Transaksi"}
+                    {/* Card Main: Transaction Type & Amount */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1">
+                          <p className="font-bold text-slate-900 text-xs truncate">
+                            {tx.transactionTypeName || "Tipe Transaksi"}
+                          </p>
+                          <TransactionTypeInfoTooltip
+                            debitCode={tx.debitAccountCode}
+                            debitName={tx.debitAccountName}
+                            creditCode={tx.creditAccountCode}
+                            creditName={tx.creditAccountName}
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          {tx.debitAccountCode} &rarr; {tx.creditAccountCode}
                         </p>
-                        <TransactionTypeInfoTooltip
-                          debitCode={tx.debitAccountCode}
-                          debitName={tx.debitAccountName}
-                          creditCode={tx.creditAccountCode}
-                          creditName={tx.creditAccountName}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-bold text-slate-900 font-mono tabular-nums">
+                          Rp {formatSen(tx.amount)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Metadata Tags if any */}
+                    {tx.metadata && Object.keys(tx.metadata).length > 0 && (
+                      <div className="pt-0.5">
+                        <MetadataCellDisplay
+                          metadata={tx.metadata}
+                          schema={schema}
+                          isEditing={false}
+                          onOpenEditor={() => {}}
                         />
                       </div>
-                      <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                        {tx.debitAccountCode} &rarr; {tx.creditAccountCode}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs font-bold text-slate-900 font-mono tabular-nums">
-                        Rp {formatSen(tx.amount)}
-                      </p>
+                    )}
+
+                    {/* Running Balances for filtered accounts if any */}
+                    {selectedAccounts.length > 0 && (
+                      <div className="rounded bg-blue-50/60 border border-blue-100 p-2 space-y-1 text-xs">
+                        {selectedAccounts.map((acc) => {
+                          const item = accountRunningMaps.get(acc.id)?.get(tx.id);
+                          const balance = item?.balance ?? 0;
+                          const mutation = item?.mutation ?? 0;
+                          return (
+                            <div
+                              key={acc.id}
+                              className="flex items-center justify-between font-mono text-[11px]"
+                            >
+                              <span className="text-slate-600 truncate">
+                                {acc.code} · {acc.name}:
+                              </span>
+                              <span className="font-bold text-slate-900 ml-2 shrink-0">
+                                Rp {formatSen(balance)}{" "}
+                                {mutation !== 0 && (
+                                  <span
+                                    className={mutation > 0 ? "text-emerald-600" : "text-red-500"}
+                                  >
+                                    (
+                                    {mutation > 0 ? `+${formatSen(mutation)}` : formatSen(mutation)}
+                                    )
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Card Actions */}
+                    <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => openMobileEditTransaction(tx)}
+                        className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+                      >
+                        <Pencil size={11} className="text-slate-500" />
+                        <span>Ubah</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm("Hapus transaksi ini? Jurnal terkait juga akan dihapus.")) {
+                            deleteMutation.mutate(tx.id);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 transition"
+                      >
+                        <Trash2 size={11} className="text-rose-500" />
+                        <span>Hapus</span>
+                      </button>
                     </div>
                   </div>
-
-                  {/* Metadata Tags if any */}
-                  {tx.metadata && Object.keys(tx.metadata).length > 0 && (
-                    <div className="pt-0.5">
-                      <MetadataCellDisplay
-                        metadata={tx.metadata}
-                        schema={schema}
-                        isEditing={false}
-                        onOpenEditor={() => {}}
-                      />
-                    </div>
-                  )}
-
-                  {/* Running Balances for filtered accounts if any */}
-                  {selectedAccounts.length > 0 && (
-                    <div className="rounded bg-blue-50/60 border border-blue-100 p-2 space-y-1 text-xs">
-                      {selectedAccounts.map((acc) => {
-                        const item = accountRunningMaps.get(acc.id)?.get(tx.id);
-                        const balance = item?.balance ?? 0;
-                        const mutation = item?.mutation ?? 0;
-                        return (
-                          <div
-                            key={acc.id}
-                            className="flex items-center justify-between font-mono text-[11px]"
-                          >
-                            <span className="text-slate-600 truncate">
-                              {acc.code} · {acc.name}:
-                            </span>
-                            <span className="font-bold text-slate-900 ml-2 shrink-0">
-                              Rp {formatSen(balance)}{" "}
-                              {mutation !== 0 && (
-                                <span
-                                  className={mutation > 0 ? "text-emerald-600" : "text-red-500"}
-                                >
-                                  ({mutation > 0 ? `+${formatSen(mutation)}` : formatSen(mutation)})
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Card Actions */}
-                  <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => openMobileEditTransaction(tx)}
-                      className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
-                    >
-                      <Pencil size={11} className="text-slate-500" />
-                      <span>Ubah</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm("Hapus transaksi ini? Jurnal terkait juga akan dihapus.")) {
-                          deleteMutation.mutate(tx.id);
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 transition"
-                    >
-                      <Trash2 size={11} className="text-rose-500" />
-                      <span>Hapus</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </>
           )}
         </div>
       )}
 
       {/* Spreadsheet Table (Desktop view default, or toggled) */}
       {viewMode === "table" && (
-        <div className="rounded border border-slate-200 bg-white">
-          <div className="max-w-full overflow-x-auto">
+        <div
+          ref={tableWrapperRef}
+          className="rounded border border-slate-200 bg-white flex flex-col shadow-2xs overflow-hidden"
+        >
+          <div
+            style={tableBodyHeight ? { height: `${tableBodyHeight}px` } : undefined}
+            className={`max-w-full overflow-auto ${
+              !tableBodyHeight
+                ? showNeracaFilter
+                  ? "h-[calc(100vh-360px)] min-h-[220px]"
+                  : hasActiveFilters
+                    ? "h-[calc(100vh-172px)] min-h-[250px]"
+                    : user?.role === "asisten"
+                      ? "h-[calc(100vh-172px)] min-h-[300px]"
+                      : "h-[calc(100vh-136px)] min-h-[300px]"
+                : ""
+            }`}
+          >
             <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-700">
+              <thead className="sticky top-0 z-20 border-b border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-700 shadow-2xs">
                 <tr>
-                  <th className="px-2 py-1 w-28 border-r border-slate-200">Tanggal</th>
-                  <th className="px-2 py-1 min-w-[200px] border-r border-slate-200">
+                  <th className="sticky top-0 z-20 px-2 py-1 w-8 text-center border-r border-slate-200 bg-slate-100">
+                    <input
+                      type="checkbox"
+                      aria-label="Pilih semua transaksi"
+                      checked={isAllSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = isSomeSelected;
+                      }}
+                      onChange={handleToggleSelectAll}
+                      className="rounded border-slate-300 text-brand focus:ring-brand/20 cursor-pointer h-3.5 w-3.5"
+                    />
+                  </th>
+                  <th className="sticky top-0 z-20 px-2 py-1 w-28 border-r border-slate-200 bg-slate-100">
+                    Tanggal
+                  </th>
+                  <th className="sticky top-0 z-20 px-2 py-1 min-w-[200px] border-r border-slate-200 bg-slate-100">
                     Tipe Transaksi
                   </th>
-                  <th className="px-2 py-1 w-32 text-right border-r border-slate-200">
+                  <th className="sticky top-0 z-20 px-2 py-1 w-32 text-right border-r border-slate-200 bg-slate-100">
                     Nominal (Rp)
                   </th>
-                  <th className="px-2 py-1 w-16 text-center border-r border-slate-200">PIC</th>
-                  <th className="px-2 py-1 min-w-[160px] border-r border-slate-200">Metadata</th>
+                  <th className="sticky top-0 z-20 px-2 py-1 w-16 text-center border-r border-slate-200 bg-slate-100">
+                    PIC
+                  </th>
+                  <th className="sticky top-0 z-20 px-2 py-1 min-w-[160px] border-r border-slate-200 bg-slate-100">
+                    Metadata
+                  </th>
 
                   {/* Saldo Kas Column(s): visible for each active filter account (max 2) */}
                   {selectedAccounts.map((acc, idx) => (
                     <th
                       key={acc.id}
-                      className="px-2 py-1 min-w-[130px] text-right border-r border-slate-200 bg-blue-100/70 font-mono text-slate-800"
+                      className="sticky top-0 z-20 px-2 py-1 min-w-[130px] text-right border-r border-slate-200 bg-blue-100 font-mono text-slate-800"
                       title={`Saldo ${acc.code} · ${acc.name}`}
                     >
                       <div className="text-[10px] font-bold text-brand uppercase tracking-wider font-sans leading-none">
@@ -1466,7 +1800,9 @@ export default function DailyTransactionsPage() {
                     </th>
                   ))}
 
-                  <th className="px-2 py-1 w-16 text-center sticky right-0 bg-slate-100">Aksi</th>
+                  <th className="sticky top-0 right-0 z-30 px-2 py-1 w-16 text-center bg-slate-100 border-l border-slate-200">
+                    Aksi
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1493,6 +1829,10 @@ export default function DailyTransactionsPage() {
                             : "bg-blue-50/50 border-blue-100"
                         }`}
                       >
+                        {/* Checkbox Placeholder */}
+                        <td className="px-2 py-1 border-r border-slate-200 text-center text-slate-300">
+                          -
+                        </td>
                         {/* Date */}
                         <td className="px-2 py-1 border-r border-slate-200">
                           <IsoDateInput
@@ -1739,11 +2079,27 @@ export default function DailyTransactionsPage() {
                           className={`transition ${
                             isEditing
                               ? "bg-amber-100/70"
-                              : txIdx % 2 === 0
-                                ? "bg-white hover:bg-blue-50/40"
-                                : "bg-slate-50/70 hover:bg-blue-50/40"
+                              : selectedTxIds.has(tx.id)
+                                ? "bg-blue-50/80 hover:bg-blue-100/60"
+                                : txIdx % 2 === 0
+                                  ? "bg-white hover:bg-blue-50/40"
+                                  : "bg-slate-50/70 hover:bg-blue-50/40"
                           }`}
                         >
+                          {/* Checkbox */}
+                          <td className="px-2 py-1 border-r border-slate-200 text-center">
+                            <input
+                              type="checkbox"
+                              aria-label={`Pilih transaksi ${tx.id}`}
+                              checked={selectedTxIds.has(tx.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const nativeEvent = e.nativeEvent as MouseEvent;
+                                handleToggleRowSelect(tx.id, nativeEvent.shiftKey);
+                              }}
+                              className="rounded border-slate-300 text-brand focus:ring-brand/20 cursor-pointer h-3.5 w-3.5"
+                            />
+                          </td>
                           {/* Tanggal */}
                           <td className="px-2 py-1 border-r border-slate-200 tabular-nums">
                             {isEditing ? (
@@ -2002,6 +2358,51 @@ export default function DailyTransactionsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Google Sheets-style Bottom Status & Group Bar */}
+          <div className="flex flex-nowrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-2 h-[34px] min-h-[34px] text-xs select-none overflow-hidden shrink-0 shadow-2xs">
+            {/* Left: Group Filter Tabs with Scroll Controls (Scrollbar hidden) */}
+            <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 pl-0.5 mr-0.5">
+                Grup:
+              </span>
+
+              <button
+                type="button"
+                onClick={() => scrollGroupTabs(-150)}
+                className="hidden sm:inline-flex items-center justify-center h-6 w-5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition shrink-0"
+                title="Geser tab grup ke kiri"
+                aria-label="Geser tab grup ke kiri"
+              >
+                <ChevronLeft size={13} />
+              </button>
+
+              <div
+                ref={groupTabsRef}
+                onWheel={(e) => {
+                  if (e.deltaY !== 0) {
+                    e.currentTarget.scrollLeft += e.deltaY;
+                  }
+                }}
+                className="flex items-center gap-1 overflow-x-auto min-w-0 py-0.5 no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {renderGroupPills()}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => scrollGroupTabs(150)}
+                className="hidden sm:inline-flex items-center justify-center h-6 w-5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition shrink-0"
+                title="Geser tab grup ke kanan"
+                aria-label="Geser tab grup ke kanan"
+              >
+                <ChevronRight size={13} />
+              </button>
+            </div>
+
+            {/* Right: Google Sheets Summary Pill with Dropdown Popover */}
+            <GoogleSheetsSummaryPill summaryStats={summaryStats} />
+          </div>
         </div>
       )}
 
@@ -2205,6 +2606,69 @@ export default function DailyTransactionsPage() {
           </div>
         </div>
       )}
+
+      {/* Bulk Action Toolbar */}
+      <BulkActionBar
+        selectedCount={selectedTxIds.size}
+        totalAmountSen={selectedTotalSen}
+        onClearSelection={handleClearSelection}
+        onOpenBulkDelete={() => setBulkDeleteModalOpen(true)}
+        onOpenBulkDate={() => setBulkDateModalOpen(true)}
+        onOpenBulkPic={() => setBulkPicModalOpen(true)}
+        onOpenBulkType={() => setBulkTypeModalOpen(true)}
+        onExportCsv={handleExportCsv}
+      />
+
+      {/* Bulk Action Modals */}
+      <BulkDeleteModal
+        isOpen={bulkDeleteModalOpen}
+        onClose={() => setBulkDeleteModalOpen(false)}
+        count={selectedTxIds.size}
+        totalAmountSen={selectedTotalSen}
+        isPending={bulkDeleteMutation.isPending}
+        onConfirm={() => bulkDeleteMutation.mutate(Array.from(selectedTxIds))}
+      />
+
+      <BulkDateModal
+        isOpen={bulkDateModalOpen}
+        onClose={() => setBulkDateModalOpen(false)}
+        count={selectedTxIds.size}
+        isPending={bulkUpdateMutation.isPending}
+        onConfirm={(targetDate) =>
+          bulkUpdateMutation.mutate({
+            ids: Array.from(selectedTxIds),
+            updates: { transactionDate: targetDate },
+          })
+        }
+      />
+
+      <BulkPicModal
+        isOpen={bulkPicModalOpen}
+        onClose={() => setBulkPicModalOpen(false)}
+        count={selectedTxIds.size}
+        isPending={bulkUpdateMutation.isPending}
+        onConfirm={(targetPic) =>
+          bulkUpdateMutation.mutate({
+            ids: Array.from(selectedTxIds),
+            updates: { pic: targetPic },
+          })
+        }
+      />
+
+      <BulkTypeModal
+        isOpen={bulkTypeModalOpen}
+        onClose={() => setBulkTypeModalOpen(false)}
+        count={selectedTxIds.size}
+        transactionTypes={transactionTypes}
+        accountById={accountById}
+        isPending={bulkUpdateMutation.isPending}
+        onConfirm={(typeId) =>
+          bulkUpdateMutation.mutate({
+            ids: Array.from(selectedTxIds),
+            updates: { transactionTypeId: typeId },
+          })
+        }
+      />
 
       {/* Keyboard Shortcuts Cheat-sheet Modal */}
       <KeyboardShortcutsModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />

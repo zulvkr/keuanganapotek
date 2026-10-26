@@ -328,6 +328,76 @@ export function getOpenApiSpec(baseUrl = ""): Record<string, unknown> {
           },
         },
       },
+      "/transactions/bulk-delete": {
+        post: {
+          summary: "Hapus Masal Transaksi",
+          description:
+            "Menghapus beberapa transaksi terpilih sekaligus secara atomik beserta jurnal terkait.",
+          tags: ["Transaksi"],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ids: {
+                      type: "array",
+                      items: { type: "string" },
+                      description: "Daftar ID transaksi yang akan dihapus",
+                    },
+                  },
+                  required: ["ids"],
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Transaksi berhasil dihapus secara masal" },
+            "400": { $ref: "#/components/responses/BadRequest" },
+            "403": { $ref: "#/components/responses/Forbidden" },
+          },
+        },
+      },
+      "/transactions/bulk-update": {
+        post: {
+          summary: "Ubah Masal Transaksi",
+          description:
+            "Memperbarui tanggal, PIC, atau tipe transaksi untuk beberapa transaksi terpilih sekaligus secara atomik.",
+          tags: ["Transaksi"],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ids: {
+                      type: "array",
+                      items: { type: "string" },
+                      description: "Daftar ID transaksi yang akan diubah",
+                    },
+                    updates: {
+                      type: "object",
+                      properties: {
+                        transactionDate: { type: "string", example: "2026-08-20" },
+                        pic: { type: "string", example: "KSR-1" },
+                        transactionTypeId: { type: "string" },
+                      },
+                    },
+                  },
+                  required: ["ids", "updates"],
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Transaksi berhasil diperbarui secara masal" },
+            "400": { $ref: "#/components/responses/BadRequest" },
+            "403": { $ref: "#/components/responses/Forbidden" },
+          },
+        },
+      },
       "/transaction-types": {
         get: {
           summary: "Daftar Master Tipe Transaksi",

@@ -801,6 +801,139 @@ export function createTransaction(
   });
 }
 
+function updateTransactionInternal(
+  tx: Executor,
+  id: string,
+  input: {
+    transactionDate?: string;
+    transactionTypeId?: string;
+    amount?: string | number;
+    pic?: string | null;
+    metadata?: Record<string, any> | null;
+  },
+  allowedAccountCodes?: string[] | Set<string>,
+): TransactionRecord {
+  const existing = tx.select().from(transactions).where(eq(transactions.id, id)).get();
+  if (!existing) throw new Error("Transaksi tidak ditemukan");
+
+  const allowedSet =
+    allowedAccountCodes instanceof Set
+      ? allowedAccountCodes
+      : allowedAccountCodes
+        ? new Set(allowedAccountCodes)
+        : undefined;
+
+  if (allowedSet) {
+    const existingDebit = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, existing.debitAccountId))
+      .get();
+    const existingCredit = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, existing.creditAccountId))
+      .get();
+    if (
+      !existingDebit ||
+      !existingCredit ||
+      !allowedSet.has(existingDebit.code) ||
+      !allowedSet.has(existingCredit.code)
+    ) {
+      throw new Error("Akses ditolak: Anda tidak memiliki izin untuk transaksi ini");
+    }
+  }
+
+  const targetDate = input.transactionDate ?? existing.transactionDate;
+  const typeId = input.transactionTypeId ?? existing.transactionTypeId;
+  const type = tx.select().from(transactionTypes).where(eq(transactionTypes.id, typeId)).get();
+  if (!type) throw new Error("Tipe transaksi tidak ditemukan");
+
+  if (allowedSet) {
+    const targetDebit = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, type.debitAccountId))
+      .get();
+    const targetCredit = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, type.creditAccountId))
+      .get();
+    if (
+      !targetDebit ||
+      !targetCredit ||
+      !allowedSet.has(targetDebit.code) ||
+      !allowedSet.has(targetCredit.code)
+    ) {
+      throw new Error(
+        "Akses ditolak: Anda tidak memiliki izin untuk akun transaksi ini (CoA dibatasi)",
+      );
+    }
+  }
+
+  const amountSen = input.amount !== undefined ? amountToSen(input.amount) : existing.amount;
+  if (input.metadata !== undefined && input.metadata !== null) {
+    const directSchema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
+    const schema =
+      type.group === "tidak_terkategori"
+        ? directSchema
+        : getEffectiveGroupSchema(type.group as TransactionGroup, getCustomGroupSchemas(tx));
+    const enforceRequired = amountSen > 0 || Object.keys(input.metadata).length > 0;
+    validateTransactionMetadata(schema, input.metadata, enforceRequired);
+  }
+
+  const pic = input.pic !== undefined ? input.pic?.trim() || null : existing.pic;
+  const now = nowIsoInstant();
+
+  const journalId = syncTransactionJournal(
+    tx,
+    {
+      id,
+      transactionDate: targetDate,
+      amount: amountSen,
+      debitAccountId: type.debitAccountId,
+      creditAccountId: type.creditAccountId,
+      pic,
+      journalId: existing.journalId,
+    },
+    type.name,
+  );
+
+  const updated = {
+    transactionDate: targetDate,
+    transactionTypeId: typeId,
+    amount: amountSen,
+    debitAccountId: type.debitAccountId,
+    creditAccountId: type.creditAccountId,
+    pic,
+    metadata:
+      input.metadata !== undefined ? JSON.stringify(input.metadata ?? {}) : existing.metadata,
+    journalId,
+    updatedAt: now,
+  };
+
+  tx.update(transactions).set(updated).where(eq(transactions.id, id)).run();
+  recordAudit(tx, {
+    entityType: "TRANSACTION",
+    entityId: id,
+    action: "UPDATE",
+    actor: "system",
+    before: existing,
+    after: updated,
+  });
+
+  return {
+    id,
+    ...updated,
+    createdAt: existing.createdAt,
+    metadata:
+      input.metadata !== undefined
+        ? (input.metadata ?? {})
+        : (JSON.parse(existing.metadata || "{}") as Record<string, any>),
+  };
+}
+
 export function updateTransaction(
   db: Db,
   id: string,
@@ -814,125 +947,74 @@ export function updateTransaction(
   allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
   return db.transaction((tx) => {
-    const existing = tx.select().from(transactions).where(eq(transactions.id, id)).get();
-    if (!existing) throw new Error("Transaksi tidak ditemukan");
+    return updateTransactionInternal(tx, id, input, allowedAccountCodes);
+  });
+}
 
+export function bulkUpdateTransactions(
+  db: Db,
+  input: {
+    ids: string[];
+    updates: {
+      transactionDate?: string;
+      pic?: string | null;
+      transactionTypeId?: string;
+    };
+  },
+  allowedAccountCodes?: string[] | Set<string>,
+): { updatedCount: number } {
+  return db.transaction((tx) => {
+    let updatedCount = 0;
+    for (const id of input.ids) {
+      updateTransactionInternal(tx, id, input.updates, allowedAccountCodes);
+      updatedCount++;
+    }
+    return { updatedCount };
+  });
+}
+
+function deleteTransactionInternal(
+  tx: Executor,
+  id: string,
+  allowedAccountCodes?: string[] | Set<string>,
+): void {
+  const existing = tx.select().from(transactions).where(eq(transactions.id, id)).get();
+  if (!existing) throw new Error("Transaksi tidak ditemukan");
+
+  if (allowedAccountCodes) {
     const allowedSet =
-      allowedAccountCodes instanceof Set
-        ? allowedAccountCodes
-        : allowedAccountCodes
-          ? new Set(allowedAccountCodes)
-          : undefined;
-
-    if (allowedSet) {
-      const existingDebit = tx
-        .select()
-        .from(accounts)
-        .where(eq(accounts.id, existing.debitAccountId))
-        .get();
-      const existingCredit = tx
-        .select()
-        .from(accounts)
-        .where(eq(accounts.id, existing.creditAccountId))
-        .get();
-      if (
-        !existingDebit ||
-        !existingCredit ||
-        !allowedSet.has(existingDebit.code) ||
-        !allowedSet.has(existingCredit.code)
-      ) {
-        throw new Error("Akses ditolak: Anda tidak memiliki izin untuk transaksi ini");
-      }
+      allowedAccountCodes instanceof Set ? allowedAccountCodes : new Set(allowedAccountCodes);
+    const existingDebit = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, existing.debitAccountId))
+      .get();
+    const existingCredit = tx
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, existing.creditAccountId))
+      .get();
+    if (
+      !existingDebit ||
+      !existingCredit ||
+      !allowedSet.has(existingDebit.code) ||
+      !allowedSet.has(existingCredit.code)
+    ) {
+      throw new Error("Akses ditolak: Anda tidak memiliki izin untuk transaksi ini");
     }
+  }
 
-    const targetDate = input.transactionDate ?? existing.transactionDate;
-    const typeId = input.transactionTypeId ?? existing.transactionTypeId;
-    const type = tx.select().from(transactionTypes).where(eq(transactionTypes.id, typeId)).get();
-    if (!type) throw new Error("Tipe transaksi tidak ditemukan");
+  if (existing.journalId) {
+    tx.delete(journals).where(eq(journals.id, existing.journalId)).run();
+  }
 
-    if (allowedSet) {
-      const targetDebit = tx
-        .select()
-        .from(accounts)
-        .where(eq(accounts.id, type.debitAccountId))
-        .get();
-      const targetCredit = tx
-        .select()
-        .from(accounts)
-        .where(eq(accounts.id, type.creditAccountId))
-        .get();
-      if (
-        !targetDebit ||
-        !targetCredit ||
-        !allowedSet.has(targetDebit.code) ||
-        !allowedSet.has(targetCredit.code)
-      ) {
-        throw new Error(
-          "Akses ditolak: Anda tidak memiliki izin untuk akun transaksi ini (CoA dibatasi)",
-        );
-      }
-    }
-
-    const amountSen = input.amount !== undefined ? amountToSen(input.amount) : existing.amount;
-    if (input.metadata !== undefined && input.metadata !== null) {
-      const directSchema = JSON.parse(type.metadataSchema || "[]") as MetadataFieldDefinition[];
-      const schema =
-        type.group === "tidak_terkategori"
-          ? directSchema
-          : getEffectiveGroupSchema(type.group as TransactionGroup, getCustomGroupSchemas(tx));
-      const enforceRequired = amountSen > 0 || Object.keys(input.metadata).length > 0;
-      validateTransactionMetadata(schema, input.metadata, enforceRequired);
-    }
-
-    const pic = input.pic !== undefined ? input.pic?.trim() || null : existing.pic;
-    const now = nowIsoInstant();
-
-    const journalId = syncTransactionJournal(
-      tx,
-      {
-        id,
-        transactionDate: targetDate,
-        amount: amountSen,
-        debitAccountId: type.debitAccountId,
-        creditAccountId: type.creditAccountId,
-        pic,
-        journalId: existing.journalId,
-      },
-      type.name,
-    );
-
-    const updated = {
-      transactionDate: targetDate,
-      transactionTypeId: typeId,
-      amount: amountSen,
-      debitAccountId: type.debitAccountId,
-      creditAccountId: type.creditAccountId,
-      pic,
-      metadata:
-        input.metadata !== undefined ? JSON.stringify(input.metadata ?? {}) : existing.metadata,
-      journalId,
-      updatedAt: now,
-    };
-
-    tx.update(transactions).set(updated).where(eq(transactions.id, id)).run();
-    recordAudit(tx, {
-      entityType: "TRANSACTION",
-      entityId: id,
-      action: "UPDATE",
-      actor: "system",
-      before: existing,
-      after: updated,
-    });
-
-    return {
-      id,
-      ...updated,
-      createdAt: existing.createdAt,
-      metadata:
-        input.metadata !== undefined
-          ? (input.metadata ?? {})
-          : (JSON.parse(existing.metadata || "{}") as Record<string, any>),
-    };
+  tx.delete(transactions).where(eq(transactions.id, id)).run();
+  recordAudit(tx, {
+    entityType: "TRANSACTION",
+    entityId: id,
+    action: "DELETE",
+    actor: "system",
+    before: existing,
   });
 }
 
@@ -942,44 +1024,22 @@ export function deleteTransaction(
   allowedAccountCodes?: string[] | Set<string>,
 ): void {
   db.transaction((tx) => {
-    const existing = tx.select().from(transactions).where(eq(transactions.id, id)).get();
-    if (!existing) throw new Error("Transaksi tidak ditemukan");
+    deleteTransactionInternal(tx, id, allowedAccountCodes);
+  });
+}
 
-    if (allowedAccountCodes) {
-      const allowedSet =
-        allowedAccountCodes instanceof Set ? allowedAccountCodes : new Set(allowedAccountCodes);
-      const existingDebit = tx
-        .select()
-        .from(accounts)
-        .where(eq(accounts.id, existing.debitAccountId))
-        .get();
-      const existingCredit = tx
-        .select()
-        .from(accounts)
-        .where(eq(accounts.id, existing.creditAccountId))
-        .get();
-      if (
-        !existingDebit ||
-        !existingCredit ||
-        !allowedSet.has(existingDebit.code) ||
-        !allowedSet.has(existingCredit.code)
-      ) {
-        throw new Error("Akses ditolak: Anda tidak memiliki izin untuk transaksi ini");
-      }
+export function bulkDeleteTransactions(
+  db: Db,
+  ids: string[],
+  allowedAccountCodes?: string[] | Set<string>,
+): { deletedCount: number } {
+  return db.transaction((tx) => {
+    let deletedCount = 0;
+    for (const id of ids) {
+      deleteTransactionInternal(tx, id, allowedAccountCodes);
+      deletedCount++;
     }
-
-    if (existing.journalId) {
-      tx.delete(journals).where(eq(journals.id, existing.journalId)).run();
-    }
-
-    tx.delete(transactions).where(eq(transactions.id, id)).run();
-    recordAudit(tx, {
-      entityType: "TRANSACTION",
-      entityId: id,
-      action: "DELETE",
-      actor: "system",
-      before: existing,
-    });
+    return { deletedCount };
   });
 }
 

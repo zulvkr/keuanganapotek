@@ -5,6 +5,8 @@ import {
   MetadataFieldSchema,
   TransactionTypeSchema,
   TransactionEntrySchema,
+  BulkDeleteTransactionsSchema,
+  BulkUpdateTransactionsSchema,
 } from "../index.js";
 
 describe("shared validation schemas", () => {
@@ -117,6 +119,48 @@ describe("shared validation schemas", () => {
         transactionDate: "invalid-date",
         transactionTypeId: "type-1",
         amount: "150000",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates bulk transaction operation schemas", () => {
+    expect(BulkDeleteTransactionsSchema.safeParse({ ids: ["tx-1", "tx-2"] }).success).toBe(true);
+    expect(BulkDeleteTransactionsSchema.safeParse({ ids: [] }).success).toBe(false);
+
+    expect(
+      BulkUpdateTransactionsSchema.safeParse({
+        ids: ["tx-1"],
+        updates: { transactionDate: "2026-08-21" },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      BulkUpdateTransactionsSchema.safeParse({
+        ids: ["tx-1"],
+        updates: { pic: "KSR-1" },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      BulkUpdateTransactionsSchema.safeParse({
+        ids: ["tx-1"],
+        updates: { transactionTypeId: "type-2" },
+      }).success,
+    ).toBe(true);
+
+    // Rejects empty updates object
+    expect(
+      BulkUpdateTransactionsSchema.safeParse({
+        ids: ["tx-1"],
+        updates: {},
+      }).success,
+    ).toBe(false);
+
+    // Rejects empty ids array
+    expect(
+      BulkUpdateTransactionsSchema.safeParse({
+        ids: [],
+        updates: { pic: "KSR-1" },
       }).success,
     ).toBe(false);
   });

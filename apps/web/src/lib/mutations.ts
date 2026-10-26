@@ -118,6 +118,29 @@ export function deleteTransaction(id: string) {
   });
 }
 
+export function bulkDeleteTransactions(ids: string[]) {
+  return requestJson<{ deletedCount: number }>("/api/transactions/bulk-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export function bulkUpdateTransactions(input: {
+  ids: string[];
+  updates: {
+    transactionDate?: string;
+    pic?: string | null;
+    transactionTypeId?: string;
+  };
+}) {
+  return requestJson<{ updatedCount: number }>("/api/transactions/bulk-update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
 export function autoBalanceOpeningBalances(input: {
   cutoffDate: string;
   lines: Array<{ accountId: string; debitAmount: string; creditAmount: string; notes?: string }>;

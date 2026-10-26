@@ -190,6 +190,27 @@ export const TransactionEntrySchema = z.object({
   metadata: z.record(z.string(), z.any()).nullish(),
 });
 
+export const BulkDeleteTransactionsSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "Minimal pilih satu transaksi"),
+});
+
+export const BulkUpdateTransactionsSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "Minimal pilih satu transaksi"),
+  updates: z
+    .object({
+      transactionDate: IsoDateSchema.optional(),
+      pic: z.string().trim().max(10).nullable().optional(),
+      transactionTypeId: z.string().min(1).optional(),
+    })
+    .refine(
+      (data) =>
+        data.transactionDate !== undefined ||
+        data.pic !== undefined ||
+        data.transactionTypeId !== undefined,
+      { message: "Setidaknya satu field harus diubah" },
+    ),
+});
+
 export const ReportPeriodSchema = z
   .object({
     startDate: IsoDateSchema,
@@ -277,6 +298,8 @@ export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 export type MetadataField = z.infer<typeof MetadataFieldSchema>;
 export type TransactionTypeInput = z.infer<typeof TransactionTypeSchema>;
 export type TransactionEntryInput = z.infer<typeof TransactionEntrySchema>;
+export type BulkDeleteTransactionsInput = z.infer<typeof BulkDeleteTransactionsSchema>;
+export type BulkUpdateTransactionsInput = z.infer<typeof BulkUpdateTransactionsSchema>;
 export type OpeningBalanceLine = z.infer<typeof OpeningBalanceLineSchema>;
 export type SaveOpeningBalances = z.infer<typeof SaveOpeningBalancesSchema>;
 export type MoveOpeningBalance = z.infer<typeof MoveOpeningBalanceSchema>;

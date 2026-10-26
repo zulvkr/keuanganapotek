@@ -20,7 +20,8 @@
     "test": "pnpm -r --if-present run test",
     "test:coverage": "pnpm -r --if-present run test:coverage",
     "typecheck": "pnpm -r --if-present run typecheck",
-    "check": "pnpm run fmt:check && pnpm run lint && pnpm run typecheck"
+    "check": "pnpm run fmt:check && pnpm run lint && pnpm run typecheck",
+    "deploy:kalkulator": "pnpm dlx wrangler pages deploy dist-cf --project-name kalkulator-pesanan --commit-dirty=true"
   },
   "devDependencies": {
     "oxfmt": "^0.67.0",
