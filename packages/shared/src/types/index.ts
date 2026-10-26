@@ -32,6 +32,7 @@ export type TransactionRecord = {
   pic?: string | null;
   metadata: Record<string, any>;
   journalId?: string | null;
+  sortOrder?: number;
   createdAt: string;
   updatedAt: string;
 };

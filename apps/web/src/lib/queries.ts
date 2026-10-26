@@ -206,6 +206,7 @@ export type SaveTransactionInput = {
   amount: string | number;
   pic?: string;
   metadata?: Record<string, any>;
+  sortOrder?: number;
 };
 
 export function getAccounts() {

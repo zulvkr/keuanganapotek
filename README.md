@@ -46,6 +46,7 @@ KeuanganApotek/
    - Pencatatan transaksi harian operasional apotek secara cepat berdasarkan template Master Transaksi.
    - Formulir metadata dinamis (_Dynamic Metadata Form_) yang otomatis menyesuaikan field kustom per jenis transaksi.
    - Otomatisasi pembentukan jurnal ganda (_double-entry_) dan ringkasan Neraca harian.
+   - Toolbar terpadu berdesain _single-row_ bebas _layout shift_ dengan tombol _Reset Filter & Sort_ inline (tanpa _extra row_ dinamis).
 
 2. **Laporan Keuangan Dinamis & Drill-Down (`/laporan-keuangan`)**
    - Laporan Laba Rugi Komparatif (dengan analisis pertumbuhan/varians), Neraca (_Balance Sheet_), dan Neraca Saldo (_Trial Balance_).

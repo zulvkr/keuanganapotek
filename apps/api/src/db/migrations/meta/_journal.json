@@ -43,6 +43,13 @@
       "when": 1792500000000,
       "tag": "0005_rename_transactions_memo_to_pic",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792600000000,
+      "tag": "0006_add_transactions_sort_order",
+      "breakpoints": true
     }
   ]
 }

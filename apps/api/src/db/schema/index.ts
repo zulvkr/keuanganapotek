@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -155,11 +156,13 @@ export const transactions = sqliteTable(
     pic: text("pic"),
     metadata: text("metadata").notNull().default("{}"),
     journalId: text("journal_id").references(() => journals.id, { onDelete: "set null" }),
+    sortOrder: real("sort_order").notNull().default(0),
     createdAt: text("created_at").notNull().default("(datetime('now'))"),
     updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
   },
   (table) => ({
     dateIndex: index("idx_transactions_date").on(table.transactionDate),
+    dateSortIndex: index("idx_transactions_date_sort").on(table.transactionDate, table.sortOrder),
     typeIndex: index("idx_transactions_type").on(table.transactionTypeId),
     idempotencyKeyIndex: uniqueIndex("idx_transactions_idempotency_key").on(table.idempotencyKey),
   }),

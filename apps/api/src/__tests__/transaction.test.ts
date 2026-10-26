@@ -923,4 +923,69 @@ describe("Transaction Types and Daily Transactions Engine", () => {
       .get();
     expect(journalAfterDelete).toBeUndefined();
   });
+
+  it("supports inserting transactions between rows using fractional sortOrder and maintains book sequence", async () => {
+    const { client, api } = setup();
+    const types = client.db.select().from(transactionTypes).all();
+    const type1 = types.find((t) => t.code === "TRX-01")!;
+
+    // 1. Create first transaction (row A)
+    const resA = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-15",
+        transactionTypeId: type1.id,
+        amount: "100.000",
+        pic: "Kasir A",
+        sortOrder: 1000,
+      }),
+    });
+    expect(resA.status).toBe(201);
+    const txA = ((await resA.json()) as any).data;
+    expect(txA.sortOrder).toBe(1000);
+
+    // 2. Create second transaction (row B)
+    const resB = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-15",
+        transactionTypeId: type1.id,
+        amount: "200.000",
+        pic: "Kasir B",
+        sortOrder: 2000,
+      }),
+    });
+    expect(resB.status).toBe(201);
+    const txB = ((await resB.json()) as any).data;
+    expect(txB.sortOrder).toBe(2000);
+
+    // 3. Insert transaction between row A and row B (fractional sortOrder = 1500)
+    const resMiddle = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transactionDate: "2026-10-15",
+        transactionTypeId: type1.id,
+        amount: "150.000",
+        pic: "Kasir C",
+        sortOrder: (txA.sortOrder + txB.sortOrder) / 2, // 1500
+      }),
+    });
+    expect(resMiddle.status).toBe(201);
+    const txMiddle = ((await resMiddle.json()) as any).data;
+    expect(txMiddle.sortOrder).toBe(1500);
+
+    // 4. Fetch transactions list and verify order: txA -> txMiddle -> txB
+    const listRes = await api.request(
+      "http://localhost/api/transactions?startDate=2026-10-15&endDate=2026-10-15",
+    );
+    expect(listRes.status).toBe(200);
+    const listJson = ((await listRes.json()) as any).data;
+    expect(listJson.length).toBe(3);
+    expect(listJson[0].id).toBe(txA.id);
+    expect(listJson[1].id).toBe(txMiddle.id);
+    expect(listJson[2].id).toBe(txB.id);
+  });
 });

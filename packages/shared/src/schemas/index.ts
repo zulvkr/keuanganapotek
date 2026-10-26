@@ -188,6 +188,7 @@ export const TransactionEntrySchema = z.object({
   amount: NonNegativeMoneySchema.default("0"),
   pic: z.string().trim().max(10).optional(),
   metadata: z.record(z.string(), z.any()).nullish(),
+  sortOrder: z.number().finite().optional(),
 });
 
 export const BulkDeleteTransactionsSchema = z.object({

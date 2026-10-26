@@ -689,6 +689,7 @@ export function createTransaction(
     pic?: string;
     metadata?: Record<string, any> | null;
     idempotencyKey?: string;
+    sortOrder?: number;
   },
   allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
@@ -756,6 +757,18 @@ export function createTransaction(
 
     const now = nowIsoInstant();
 
+    let sortOrder = input.sortOrder;
+    if (sortOrder === undefined || !Number.isFinite(sortOrder)) {
+      const lastTx = tx
+        .select({ sortOrder: transactions.sortOrder })
+        .from(transactions)
+        .where(eq(transactions.transactionDate, input.transactionDate))
+        .orderBy(desc(transactions.sortOrder))
+        .limit(1)
+        .get();
+      sortOrder = lastTx ? lastTx.sortOrder + 1000 : 1000;
+    }
+
     const journalId = syncTransactionJournal(
       tx,
       {
@@ -781,6 +794,7 @@ export function createTransaction(
       pic: input.pic?.trim() || null,
       metadata: JSON.stringify(metadataObj),
       journalId,
+      sortOrder,
       createdAt: now,
       updatedAt: now,
     };
@@ -810,6 +824,7 @@ function updateTransactionInternal(
     amount?: string | number;
     pic?: string | null;
     metadata?: Record<string, any> | null;
+    sortOrder?: number;
   },
   allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
@@ -910,6 +925,10 @@ function updateTransactionInternal(
     metadata:
       input.metadata !== undefined ? JSON.stringify(input.metadata ?? {}) : existing.metadata,
     journalId,
+    sortOrder:
+      input.sortOrder !== undefined && Number.isFinite(input.sortOrder)
+        ? input.sortOrder
+        : existing.sortOrder,
     updatedAt: now,
   };
 
@@ -943,6 +962,7 @@ export function updateTransaction(
     amount?: string | number;
     pic?: string | null;
     metadata?: Record<string, any> | null;
+    sortOrder?: number;
   },
   allowedAccountCodes?: string[] | Set<string>,
 ): TransactionRecord {
@@ -1125,13 +1145,19 @@ export function listTransactions(
       pic: transactions.pic,
       metadata: transactions.metadata,
       journalId: transactions.journalId,
+      sortOrder: transactions.sortOrder,
       createdAt: transactions.createdAt,
       updatedAt: transactions.updatedAt,
       transactionTypeName: transactionTypes.name,
     })
     .from(transactions)
     .leftJoin(transactionTypes, eq(transactionTypes.id, transactions.transactionTypeId))
-    .orderBy(asc(transactions.transactionDate), asc(transactions.createdAt), asc(transactions.id))
+    .orderBy(
+      asc(transactions.transactionDate),
+      asc(transactions.sortOrder),
+      asc(transactions.createdAt),
+      asc(transactions.id),
+    )
     .all();
 
   // If allowedSet is provided, filter out transactions where debit or credit account is restricted
@@ -1183,6 +1209,7 @@ export function listTransactions(
       pic: row.pic,
       metadata: JSON.parse(row.metadata || "{}") as Record<string, any>,
       journalId: row.journalId,
+      sortOrder: row.sortOrder,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       runningBalances: { ...running },
