@@ -305,4 +305,41 @@ describe("Phase 1 database and opening balance flow", () => {
         .get(),
     ).toEqual({ entryDate: "2026-03-01", sourceId: "2026-03-01" });
   });
+
+  it("preserves user-created custom accounts and retains deactivated status across seedAccounts calls", () => {
+    const { client } = setup();
+
+    // 1. User inserts a custom CoA
+    client.db
+      .insert(accounts)
+      .values({
+        id: "coa-custom-6115",
+        code: "6115",
+        name: "Beban Pelatihan Karyawan Baru",
+        parentId: "coa-6100",
+        classification: "BEBAN_OPERASIONAL",
+        normalBalance: "DEBIT",
+        level: 3,
+        isGroup: false,
+        isActive: true,
+      })
+      .run();
+
+    // 2. User explicitly deactivates a standard account (e.g., Grab Merchant 1106)
+    client.db.update(accounts).set({ isActive: false }).where(eq(accounts.code, "1106")).run();
+
+    // 3. Redeploy triggers re-seed
+    seedAccounts(client);
+
+    // 4. Custom account must still be present and active
+    const custom = client.db.select().from(accounts).where(eq(accounts.code, "6115")).get();
+    expect(custom).toBeDefined();
+    expect(custom?.isActive).toBe(true);
+    expect(custom?.parentId).toBe("coa-6100");
+
+    // 5. Deactivated standard account must remain inactive
+    const deactivated = client.db.select().from(accounts).where(eq(accounts.code, "1106")).get();
+    expect(deactivated).toBeDefined();
+    expect(deactivated?.isActive).toBe(false);
+  });
 });

@@ -1,5 +1,5 @@
 import { type TransactionType, todayIsoDate } from "@keuangan-apotek/shared";
-import { Check, X } from "lucide-react";
+import { Check, Tag, X } from "lucide-react";
 import type { Account } from "../../lib/queries";
 import { toast } from "../../lib/toast";
 import { DynamicMetadataForm } from "../metadata/DynamicMetadataForm";
@@ -88,15 +88,28 @@ export function TransactionMobileModal({
             <SearchableTransactionTypeSelect
               value={draft.transactionTypeId}
               onChange={(newTypeId) => {
-                onChangeDraft((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        transactionTypeId: newTypeId,
-                        metadata: prev.isNew ? {} : prev.metadata,
+                const newType = typeById.get(newTypeId);
+                onChangeDraft((prev) => {
+                  if (!prev) return null;
+                  const newMeta: Record<string, any> = {};
+                  if (newType?.metadataSchema) {
+                    for (const f of newType.metadataSchema) {
+                      if (f.type === "boolean") {
+                        newMeta[f.key] =
+                          prev.metadata?.[f.key] !== undefined
+                            ? Boolean(prev.metadata[f.key])
+                            : false;
+                      } else if (!prev.isNew && prev.metadata?.[f.key] !== undefined) {
+                        newMeta[f.key] = prev.metadata[f.key];
                       }
-                    : null,
-                );
+                    }
+                  }
+                  return {
+                    ...prev,
+                    transactionTypeId: newTypeId,
+                    metadata: newMeta,
+                  };
+                });
               }}
               transactionTypes={transactionTypes}
               accountById={accountById}
@@ -161,17 +174,17 @@ export function TransactionMobileModal({
           {/* Metadata Section if schema exists */}
           {schema.length > 0 && (
             <div className="pt-2 border-t border-slate-100">
-              <label className="block font-semibold text-slate-700 mb-1.5">
-                Metadata Tambahan ({schema.length} atribut)
+              <label className="block font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Tag size={13} className="text-brand" />
+                <span>Metadata Tambahan ({schema.length} atribut)</span>
               </label>
               <DynamicMetadataForm
                 schema={schema}
-                initialValues={draft.metadata}
-                layout="vertical"
-                onSave={(newMeta) => {
+                values={draft.metadata}
+                onChange={(newMeta) => {
                   onChangeDraft((prev) => (prev ? { ...prev, metadata: newMeta } : null));
-                  toast.success("Metadata diperbarui.");
                 }}
+                layout="vertical"
               />
             </div>
           )}
@@ -189,7 +202,23 @@ export function TransactionMobileModal({
           <button
             type="button"
             disabled={isSubmitting || !draft.transactionTypeId}
-            onClick={() => onSubmit(draft)}
+            onClick={() => {
+              for (const field of schema) {
+                if (field.required) {
+                  const val = draft.metadata?.[field.key];
+                  if (
+                    val === undefined ||
+                    val === null ||
+                    val === "" ||
+                    (Array.isArray(val) && val.length === 0)
+                  ) {
+                    toast.error(`Metadata wajib belum diisi: ${field.label}`);
+                    return;
+                  }
+                }
+              }
+              onSubmit(draft);
+            }}
             className="h-8 px-3.5 inline-flex items-center gap-1.5 rounded bg-brand text-xs font-semibold text-white hover:bg-blue-700 transition disabled:opacity-50"
           >
             <Check size={13} />

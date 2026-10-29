@@ -4,27 +4,43 @@ import type { MetadataFieldDefinition } from "@keuangan-apotek/shared";
 
 type Props = {
   schema: MetadataFieldDefinition[];
-  initialValues: Record<string, any>;
-  onSave: (values: Record<string, any>) => void;
+  values?: Record<string, any>;
+  onChange?: (values: Record<string, any>) => void;
+  initialValues?: Record<string, any>;
+  onSave?: (values: Record<string, any>) => void;
   onCancel?: () => void;
+  onKeyDown?: (e: KeyboardEvent<any>, isLastField: boolean) => void;
   title?: string;
   className?: string;
   layout?: "horizontal" | "vertical";
+  showActionButtons?: boolean;
 };
 
 export function DynamicMetadataForm({
   schema,
+  values,
+  onChange,
   initialValues,
   onSave,
   onCancel,
+  onKeyDown,
   className,
   layout = "horizontal",
+  showActionButtons,
 }: Props) {
   const [formValues, setFormValues] = useState<Record<string, any>>({ ...initialValues });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const isControlled = Boolean(onChange);
+  const currentValues = isControlled ? values || {} : formValues;
+  const shouldShowActions = showActionButtons ?? Boolean(onSave && !onChange);
+
   function handleChange(key: string, value: any) {
-    setFormValues((prev) => ({ ...prev, [key]: value }));
+    if (isControlled) {
+      onChange?.({ ...currentValues, [key]: value });
+    } else {
+      setFormValues((prev) => ({ ...prev, [key]: value }));
+    }
     if (errors[key]) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -38,7 +54,7 @@ export function DynamicMetadataForm({
     const nextErrors: Record<string, string> = {};
     for (const field of schema) {
       if (field.required) {
-        const val = formValues[field.key];
+        const val = currentValues[field.key];
         if (
           val === undefined ||
           val === null ||
@@ -55,16 +71,21 @@ export function DynamicMetadataForm({
       return;
     }
 
-    onSave(formValues);
+    onSave?.(currentValues);
   }
 
-  function handleKeyDown(e: KeyboardEvent<any>) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSave();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      onCancel?.();
+  function handleFieldKeyDown(e: KeyboardEvent<any>, index: number) {
+    const isLastField = index === schema.length - 1;
+    if (onKeyDown) {
+      onKeyDown(e, isLastField);
+    } else {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSave();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel?.();
+      }
     }
   }
 
@@ -99,9 +120,12 @@ export function DynamicMetadataForm({
           }
         }}
       >
-        {schema.map((field) => {
+        {schema.map((field, idx) => {
           const error = errors[field.key];
-          const val = formValues[field.key] ?? "";
+          const val =
+            field.type === "boolean"
+              ? Boolean(currentValues[field.key])
+              : (currentValues[field.key] ?? "");
 
           return (
             <div key={field.key} className="space-y-1">
@@ -116,6 +140,7 @@ export function DynamicMetadataForm({
                 <select
                   value={val}
                   onChange={(e) => handleChange(field.key, e.target.value)}
+                  onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                   className={`h-9 w-full rounded border bg-white px-2.5 text-xs outline-none focus:border-brand ${
                     error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                   }`}
@@ -166,6 +191,15 @@ export function DynamicMetadataForm({
                     className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-0"
                   />
                   <span>{field.label}</span>
+                  <span
+                    className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
+                      val
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                        : "bg-red-50 text-red-800 border-red-300"
+                    }`}
+                  >
+                    {val ? "Ya" : "Tidak"}
+                  </span>
                 </label>
               ) : field.type === "number" ? (
                 <input
@@ -174,6 +208,7 @@ export function DynamicMetadataForm({
                   value={val}
                   placeholder={field.placeholder || "0"}
                   onChange={(e) => handleChange(field.key, e.target.value)}
+                  onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                   className={`h-9 w-full rounded border bg-white px-2.5 text-xs tabular-nums outline-none focus:border-brand ${
                     error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                   }`}
@@ -186,6 +221,7 @@ export function DynamicMetadataForm({
                     value={val}
                     placeholder={field.placeholder || "0"}
                     onChange={(e) => handleChange(field.key, e.target.value)}
+                    onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                     className={`h-9 w-full pl-8 pr-2.5 rounded border bg-white text-xs tabular-nums outline-none focus:border-brand ${
                       error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                     }`}
@@ -196,6 +232,7 @@ export function DynamicMetadataForm({
                   type="date"
                   value={val}
                   onChange={(e) => handleChange(field.key, e.target.value)}
+                  onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                   className={`h-9 w-full rounded border bg-white px-2.5 text-xs tabular-nums outline-none focus:border-brand ${
                     error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                   }`}
@@ -206,6 +243,7 @@ export function DynamicMetadataForm({
                   value={val}
                   placeholder={field.placeholder || `Masukkan ${field.label.toLowerCase()}`}
                   onChange={(e) => handleChange(field.key, e.target.value)}
+                  onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                   className={`h-9 w-full rounded border bg-white px-2.5 text-xs outline-none focus:border-brand ${
                     error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                   }`}
@@ -216,24 +254,26 @@ export function DynamicMetadataForm({
           );
         })}
 
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-          {onCancel && (
+        {shouldShowActions && (
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="h-8 rounded border border-slate-300 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50 transition"
+              >
+                Batal
+              </button>
+            )}
             <button
               type="button"
-              onClick={onCancel}
-              className="h-8 rounded border border-slate-300 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50 transition"
+              onClick={handleSave}
+              className="h-8 inline-flex items-center gap-1.5 rounded bg-brand px-3 text-xs font-semibold text-white hover:bg-blue-700 transition"
             >
-              Batal
+              <Check size={14} /> Terapkan Metadata
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleSave}
-            className="h-8 inline-flex items-center gap-1.5 rounded bg-brand px-3 text-xs font-semibold text-white hover:bg-blue-700 transition"
-          >
-            <Check size={14} /> Terapkan Metadata
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -252,9 +292,12 @@ export function DynamicMetadataForm({
       }}
     >
       {/* 1-line horizontal input fields */}
-      {schema.map((field) => {
+      {schema.map((field, idx) => {
         const error = errors[field.key];
-        const val = formValues[field.key] ?? "";
+        const val =
+          field.type === "boolean"
+            ? Boolean(currentValues[field.key])
+            : (currentValues[field.key] ?? "");
 
         return (
           <div
@@ -273,7 +316,7 @@ export function DynamicMetadataForm({
               <select
                 value={val}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                 className={`h-6 w-32 rounded border bg-white px-1.5 py-0 text-xs outline-none focus:border-brand ${
                   error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                 }`}
@@ -316,7 +359,7 @@ export function DynamicMetadataForm({
                 })}
               </div>
             ) : field.type === "boolean" ? (
-              <label className="h-6 flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+              <label className="h-6 flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={Boolean(val)}
@@ -324,6 +367,15 @@ export function DynamicMetadataForm({
                   className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-0"
                 />
                 <span>{field.label}</span>
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
+                    val
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                      : "bg-red-50 text-red-800 border-red-300"
+                  }`}
+                >
+                  {val ? "Ya" : "Tidak"}
+                </span>
               </label>
             ) : field.type === "number" ? (
               <input
@@ -332,7 +384,7 @@ export function DynamicMetadataForm({
                 value={val}
                 placeholder={field.placeholder || "0"}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                 className={`h-6 w-24 text-right rounded border bg-white px-1.5 py-0 text-xs tabular-nums outline-none focus:border-brand ${
                   error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                 }`}
@@ -345,7 +397,7 @@ export function DynamicMetadataForm({
                   value={val}
                   placeholder={field.placeholder || "0"}
                   onChange={(e) => handleChange(field.key, e.target.value)}
-                  onKeyDown={handleKeyDown}
+                  onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                   className={`h-6 w-28 pl-6 pr-1.5 text-right rounded border bg-white py-0 text-xs tabular-nums outline-none focus:border-brand ${
                     error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                   }`}
@@ -356,7 +408,7 @@ export function DynamicMetadataForm({
                 type="date"
                 value={val}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                 className={`h-6 w-32 rounded border bg-white px-1 py-0 text-xs tabular-nums outline-none focus:border-brand ${
                   error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                 }`}
@@ -367,7 +419,7 @@ export function DynamicMetadataForm({
                 value={val}
                 placeholder={field.placeholder || `Masukkan ${field.label.toLowerCase()}`}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => handleFieldKeyDown(e, idx)}
                 className={`h-6 ${field.type === "textarea" ? "w-44" : "w-32"} rounded border bg-white px-1.5 py-0 text-xs outline-none focus:border-brand ${
                   error ? "border-red-400 bg-red-50/40" : "border-slate-300"
                 }`}
@@ -377,25 +429,27 @@ export function DynamicMetadataForm({
         );
       })}
 
-      {/* Action buttons at the end of the horizontal row */}
-      <div className="flex items-center gap-1.5 ml-auto shrink-0 pl-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          className="h-6 inline-flex items-center gap-1 rounded bg-brand px-2.5 py-0 text-xs font-semibold text-white hover:bg-blue-700 transition"
-        >
-          <Check size={12} /> Terapkan Metadata
-        </button>
-        {onCancel && (
+      {/* Action buttons only if explicitly enabled */}
+      {shouldShowActions && (
+        <div className="flex items-center gap-1.5 ml-auto shrink-0 pl-2">
           <button
             type="button"
-            onClick={onCancel}
-            className="h-6 rounded border border-slate-300 bg-white px-2 py-0 text-xs text-slate-600 hover:bg-slate-50 transition"
+            onClick={handleSave}
+            className="h-6 inline-flex items-center gap-1 rounded bg-brand px-2.5 py-0 text-xs font-semibold text-white hover:bg-blue-700 transition"
           >
-            Batal
+            <Check size={12} /> Terapkan Metadata
           </button>
-        )}
-      </div>
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="h-6 rounded border border-slate-300 bg-white px-2 py-0 text-xs text-slate-600 hover:bg-slate-50 transition"
+            >
+              Batal
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

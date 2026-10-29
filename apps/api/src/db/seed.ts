@@ -469,13 +469,13 @@ export const pharmacyAccounts: SeedAccount[] = [
 
 export function seedAccounts(client: ReturnType<typeof createSqliteClient>): number {
   const ids = new Map(pharmacyAccounts.map((account) => [account.code, `coa-${account.code}`]));
-  const validCodes = new Set(pharmacyAccounts.map((a) => a.code));
+  const deprecatedCodes = new Set(["1104", "1105"]);
 
   client.db.transaction((tx) => {
-    // 1. Clean up or deactivate old legacy accounts not in current master list
+    // 1. Clean up or deactivate specific deprecated legacy accounts only (never touch custom accounts created by users)
     const existing = tx.select({ id: accounts.id, code: accounts.code }).from(accounts).all();
     for (const row of existing) {
-      if (!validCodes.has(row.code)) {
+      if (deprecatedCodes.has(row.code)) {
         try {
           tx.delete(accounts).where(eq(accounts.id, row.id)).run();
         } catch {
@@ -513,7 +513,6 @@ export function seedAccounts(client: ReturnType<typeof createSqliteClient>): num
             normalBalance: account.normalBalance,
             level: account.level,
             isGroup: account.isGroup,
-            isActive: true,
           },
         })
         .run();
@@ -981,15 +980,15 @@ export const standardTransactionTypes: SeedTransactionType[] = [
 ];
 
 export function seedTransactionTypes(client: ReturnType<typeof createSqliteClient>): number {
-  const validCodes = new Set(standardTransactionTypes.map((t) => t.code));
+  const deprecatedCodes = new Set(["TRX-03", "TRX-07"]);
   client.db.transaction((tx) => {
-    // 1. Clean up or deactivate old legacy transaction types
+    // 1. Clean up or deactivate specific deprecated legacy transaction types only (never touch custom types created by users)
     const existing = tx
       .select({ id: transactionTypes.id, code: transactionTypes.code })
       .from(transactionTypes)
       .all();
     for (const row of existing) {
-      if (!validCodes.has(row.code)) {
+      if (deprecatedCodes.has(row.code)) {
         try {
           tx.delete(transactionTypes).where(eq(transactionTypes.id, row.id)).run();
         } catch {
@@ -1028,7 +1027,6 @@ export function seedTransactionTypes(client: ReturnType<typeof createSqliteClien
             creditAccountId,
             description: type.description,
             metadataSchema: JSON.stringify(type.metadataSchema || []),
-            isActive: true,
           },
         })
         .run();

@@ -7,11 +7,20 @@ import { seedAccounts, seedOpeningBalances, seedTransactionTypes, seedUsers } fr
 
 const client = createSqliteClient();
 runMigrations(client.sqlite);
-seedAccounts(client);
-seedTransactionTypes(client);
-if (!getOpeningBalanceCutoff(client.db)) {
-  await seedOpeningBalances(client);
+
+const shouldSeedCoa =
+  process.env.SEED_DEFAULT_COA === "true" ||
+  process.env.SEED_DEFAULT_ACCOUNTS === "true" ||
+  process.env.NODE_ENV === "test";
+
+if (shouldSeedCoa) {
+  seedAccounts(client);
+  seedTransactionTypes(client);
+  if (!getOpeningBalanceCutoff(client.db)) {
+    await seedOpeningBalances(client);
+  }
 }
+
 if (process.env.SEED_DEFAULT_USERS === "true") {
   seedUsers(client);
 }

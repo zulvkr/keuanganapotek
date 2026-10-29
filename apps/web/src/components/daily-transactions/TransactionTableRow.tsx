@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Tag,
   Trash2,
 } from "lucide-react";
 import type { Account } from "../../lib/queries";
@@ -129,9 +130,19 @@ export function TransactionTableRow({
               <SearchableTransactionTypeSelect
                 value={currentDraft!.transactionTypeId}
                 onChange={(newTypeId) => {
-                  onChangeDraft((prev) =>
-                    prev ? { ...prev, transactionTypeId: newTypeId } : null,
-                  );
+                  const newType = typeById.get(newTypeId);
+                  onChangeDraft((prev) => {
+                    if (!prev) return null;
+                    const nextMeta = { ...prev.metadata };
+                    if (newType?.metadataSchema) {
+                      for (const f of newType.metadataSchema) {
+                        if (f.type === "boolean" && nextMeta[f.key] === undefined) {
+                          nextMeta[f.key] = false;
+                        }
+                      }
+                    }
+                    return { ...prev, transactionTypeId: newTypeId, metadata: nextMeta };
+                  });
                 }}
                 transactionTypes={transactionTypes}
                 accountById={accountById}
@@ -320,18 +331,23 @@ export function TransactionTableRow({
       </tr>
 
       {/* Expandable Inline Sub-row for Existing Transaction Metadata */}
-      {isEditing && isMetadataOpen && (
-        <tr key={`${tx.id}-metadata`} className="bg-amber-50/40 border-b border-amber-200">
-          <td colSpan={totalColumns} className="px-2 py-1 bg-amber-50/20 border-b border-amber-100">
-            <DynamicMetadataForm
-              schema={schema}
-              initialValues={currentDraft ? currentDraft.metadata : tx.metadata}
-              onSave={(newMeta) => {
-                onChangeDraft((prev) => (prev ? { ...prev, metadata: newMeta } : null));
-                onToggleMetadata(false);
-              }}
-              onCancel={() => onToggleMetadata(false)}
-            />
+      {isEditing && isMetadataOpen && schema.length > 0 && (
+        <tr key={`${tx.id}-metadata`} className="bg-amber-50/50 border-b border-amber-200">
+          <td colSpan={totalColumns} className="px-3 py-1 bg-amber-50/30 border-b border-amber-100">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                <Tag size={12} /> Metadata:
+              </span>
+              <DynamicMetadataForm
+                schema={schema}
+                values={currentDraft ? currentDraft.metadata : tx.metadata}
+                onChange={(newMeta) => {
+                  onChangeDraft((prev) => (prev ? { ...prev, metadata: newMeta } : null));
+                }}
+                onKeyDown={(e, isLastField) => onEditKeyDown(e, isLastField)}
+                className="flex items-center gap-2.5 overflow-x-auto py-0.5 min-w-0 flex-1 bg-transparent border-none p-0"
+              />
+            </div>
           </td>
         </tr>
       )}

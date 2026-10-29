@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   type TransactionGroup,
+  type TransactionType,
   TRANSACTION_GROUPS,
   type TransactionWithBalances,
   inferTransactionGroup,
@@ -18,7 +19,6 @@ import {
   BulkTypeModal,
 } from "../components/daily-transactions/BulkActionModals";
 import type {
-  ActiveMetadataRowIndex,
   DraftRow,
   SortColumn,
 } from "../components/daily-transactions/daily-transaction.types";
@@ -108,9 +108,8 @@ export default function DailyTransactionsPage() {
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editingRowState, setEditingRowState] = useState<DraftRow | null>(null);
 
-  // Active inline metadata form index
-  const [activeMetadataRowIndex, setActiveMetadataRowIndex] =
-    useState<ActiveMetadataRowIndex>(null);
+  // Collapsed inline metadata rows (open by default for rows with metadata)
+  const [collapsedMetadataRows, setCollapsedMetadataRows] = useState<Set<string>>(new Set());
 
   // View mode
   const [viewMode, setViewMode] = useState<"cards" | "table">(() => {
@@ -617,12 +616,26 @@ export default function DailyTransactionsPage() {
     ];
     const rows = listToExport.map((tx) => {
       const type = typeById.get(tx.transactionTypeId);
-      const metaStr =
-        tx.metadata && typeof tx.metadata === "object"
-          ? Object.entries(tx.metadata)
-              .map(([k, v]) => `${k}=${v}`)
-              .join("; ")
-          : "";
+      const schema = type?.metadataSchema || [];
+      const meta = (tx.metadata || {}) as Record<string, any>;
+      const metaParts: string[] = [];
+      const visited = new Set<string>();
+      if (schema.length > 0) {
+        for (const f of schema) {
+          visited.add(f.key);
+          if (f.type === "boolean") {
+            metaParts.push(`${f.label || f.key}=${meta[f.key] ? "Ya" : "Tidak"}`);
+          } else if (meta[f.key] !== undefined && meta[f.key] !== null && meta[f.key] !== "") {
+            metaParts.push(`${f.label || f.key}=${meta[f.key]}`);
+          }
+        }
+      }
+      for (const [k, v] of Object.entries(meta)) {
+        if (!visited.has(k) && v !== undefined && v !== null && v !== "") {
+          metaParts.push(`${k}=${typeof v === "boolean" ? (v ? "Ya" : "Tidak") : v}`);
+        }
+      }
+      const metaStr = metaParts.join("; ");
       return [
         tx.transactionDate,
         `"${(type?.name || tx.transactionTypeName || "").replace(/"/g, '""')}"`,
@@ -730,6 +743,21 @@ export default function DailyTransactionsPage() {
     },
   });
 
+  function buildInitialMetadata(
+    type: TransactionType | undefined,
+    existing: Record<string, any> = {},
+  ): Record<string, any> {
+    const meta: Record<string, any> = { ...existing };
+    if (type?.metadataSchema) {
+      for (const f of type.metadataSchema) {
+        if (f.type === "boolean" && meta[f.key] === undefined) {
+          meta[f.key] = false;
+        }
+      }
+    }
+    return meta;
+  }
+
   function addNewRow() {
     let defaultType = transactionTypes[0];
     if (selectedGroup !== "all") {
@@ -745,10 +773,10 @@ export default function DailyTransactionsPage() {
     const lastShift =
       draftRows.find((r) => r.metadata?.shift)?.metadata?.shift ||
       filteredTransactionsList.find((t) => t.metadata?.shift)?.metadata?.shift;
-    const initialMeta =
-      lastShift && defaultType?.metadataSchema?.some((f) => f.key === "shift")
-        ? { shift: lastShift }
-        : {};
+    const initialMeta = buildInitialMetadata(defaultType);
+    if (lastShift && defaultType?.metadataSchema?.some((f) => f.key === "shift")) {
+      initialMeta.shift = lastShift;
+    }
     const newDraft: DraftRow = {
       isNew: true,
       id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -798,10 +826,10 @@ export default function DailyTransactionsPage() {
 
     const lastShift =
       targetTx.metadata?.shift || draftRows.find((r) => r.metadata?.shift)?.metadata?.shift;
-    const initialMeta =
-      lastShift && defaultType?.metadataSchema?.some((f) => f.key === "shift")
-        ? { shift: lastShift }
-        : {};
+    const initialMeta = buildInitialMetadata(defaultType);
+    if (lastShift && defaultType?.metadataSchema?.some((f) => f.key === "shift")) {
+      initialMeta.shift = lastShift;
+    }
 
     const newDraft: DraftRow = {
       isNew: true,
@@ -820,6 +848,7 @@ export default function DailyTransactionsPage() {
   }
 
   function startEditExisting(tx: TransactionWithBalances) {
+    const curType = typeById.get(tx.transactionTypeId);
     setEditingRowId(tx.id);
     setEditingRowState({
       id: tx.id,
@@ -827,7 +856,13 @@ export default function DailyTransactionsPage() {
       transactionTypeId: tx.transactionTypeId,
       amount: senToRupiah(tx.amount).toFixed(2),
       pic: tx.pic || "",
-      metadata: tx.metadata || {},
+      metadata: buildInitialMetadata(curType, tx.metadata || {}),
+    });
+    setCollapsedMetadataRows((prev) => {
+      if (!prev.has(tx.id)) return prev;
+      const next = new Set(prev);
+      next.delete(tx.id);
+      return next;
     });
   }
 
@@ -855,13 +890,14 @@ export default function DailyTransactionsPage() {
       transactionTypeId: defaultType ? defaultType.id : "",
       amount: "",
       pic: "",
-      metadata: {},
+      metadata: buildInitialMetadata(defaultType),
     };
     setMobileModalDraft(newDraft);
     setMobileModalOpen(true);
   }
 
   function openMobileEditTransaction(tx: TransactionWithBalances) {
+    const curType = typeById.get(tx.transactionTypeId);
     setMobileModalDraft({
       id: tx.id,
       isNew: false,
@@ -869,7 +905,7 @@ export default function DailyTransactionsPage() {
       transactionTypeId: tx.transactionTypeId,
       amount: senToRupiah(tx.amount).toFixed(2),
       pic: tx.pic || "",
-      metadata: tx.metadata || {},
+      metadata: buildInitialMetadata(curType, tx.metadata || {}),
     });
     setMobileModalOpen(true);
   }
@@ -882,28 +918,60 @@ export default function DailyTransactionsPage() {
     }
   }
 
+  function validateDraft(draft: DraftRow): string | null {
+    if (!draft.transactionTypeId) {
+      return "Pilih tipe transaksi terlebih dahulu.";
+    }
+    const curType = typeById.get(draft.transactionTypeId);
+    const schema = curType?.metadataSchema || [];
+    for (const field of schema) {
+      if (field.required) {
+        const val = draft.metadata?.[field.key];
+        if (
+          val === undefined ||
+          val === null ||
+          val === "" ||
+          (Array.isArray(val) && val.length === 0)
+        ) {
+          return `Metadata wajib belum diisi: ${field.label}`;
+        }
+      }
+    }
+    return null;
+  }
+
+  function handleSaveDraft(draft: DraftRow) {
+    const error = validateDraft(draft);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    if (!createMutation.isPending) {
+      createMutation.mutate(draft);
+    }
+  }
+
+  function handleSaveEdit(id: string, draft: DraftRow) {
+    const error = validateDraft(draft);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    if (!updateMutation.isPending) {
+      updateMutation.mutate({ id, draft });
+    }
+  }
+
   function handleDraftKeyDown(e: React.KeyboardEvent, draft: DraftRow, isLastField = false) {
     if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.key.toLowerCase() === "s")) {
       e.preventDefault();
-      if (!draft.transactionTypeId) {
-        toast.error("Pilih tipe transaksi terlebih dahulu.");
-        return;
-      }
-      if (!createMutation.isPending) {
-        createMutation.mutate(draft);
-      }
+      handleSaveDraft(draft);
       return;
     }
 
     if (isLastField && e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!draft.transactionTypeId) {
-        toast.error("Pilih tipe transaksi terlebih dahulu.");
-        return;
-      }
-      if (!createMutation.isPending) {
-        createMutation.mutate(draft);
-      }
+      handleSaveDraft(draft);
       return;
     }
 
@@ -921,25 +989,13 @@ export default function DailyTransactionsPage() {
   ) {
     if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.key.toLowerCase() === "s")) {
       e.preventDefault();
-      if (!draft.transactionTypeId) {
-        toast.error("Pilih tipe transaksi terlebih dahulu.");
-        return;
-      }
-      if (!updateMutation.isPending) {
-        updateMutation.mutate({ id: txId, draft });
-      }
+      handleSaveEdit(txId, draft);
       return;
     }
 
     if (isLastField && e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!draft.transactionTypeId) {
-        toast.error("Pilih tipe transaksi terlebih dahulu.");
-        return;
-      }
-      if (!updateMutation.isPending) {
-        updateMutation.mutate({ id: txId, draft });
-      }
+      handleSaveEdit(txId, draft);
       return;
     }
 
@@ -947,6 +1003,19 @@ export default function DailyTransactionsPage() {
       e.preventDefault();
       cancelEditExisting();
     }
+  }
+
+  function handleToggleMetadata(_isDraft: boolean, idOrIndex: string | number) {
+    const id = String(idOrIndex);
+    setCollapsedMetadataRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }
 
   const { isKeyTipsActive, isHelpOpen, setIsHelpOpen } = useKeyTips({
@@ -960,16 +1029,11 @@ export default function DailyTransactionsPage() {
     onSaveCurrentRow: () => {
       if (draftRows.length > 0) {
         const first = draftRows[0];
-        if (first && first.transactionTypeId && !createMutation.isPending) {
-          createMutation.mutate(first);
+        if (first) {
+          handleSaveDraft(first);
         }
-      } else if (
-        editingRowId &&
-        editingRowState &&
-        editingRowState.transactionTypeId &&
-        !updateMutation.isPending
-      ) {
-        updateMutation.mutate({ id: editingRowId, draft: editingRowState });
+      } else if (editingRowId && editingRowState) {
+        handleSaveEdit(editingRowId, editingRowState);
       }
     },
     canSaveCurrentRow: Boolean(
@@ -1246,7 +1310,7 @@ export default function DailyTransactionsPage() {
           selectedTxIds={selectedTxIds}
           editingRowId={editingRowId}
           editingRowState={editingRowState}
-          activeMetadataRowIndex={activeMetadataRowIndex}
+          collapsedMetadataIds={collapsedMetadataRows}
           transactionTypes={transactionTypes}
           typeById={typeById}
           accountById={accountById}
@@ -1257,15 +1321,13 @@ export default function DailyTransactionsPage() {
             setDraftRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
           }
           onDeleteDraft={(id) => setDraftRows((prev) => prev.filter((r) => r.id !== id))}
-          onSaveDraft={(draft) => createMutation.mutate(draft)}
-          onToggleMetadata={(isDraft, idOrIndex) =>
-            setActiveMetadataRowIndex(idOrIndex ? { isDraft, idOrIndex } : null)
-          }
+          onSaveDraft={handleSaveDraft}
+          onToggleMetadata={handleToggleMetadata}
           onDraftKeyDown={handleDraftKeyDown}
           onToggleRowSelect={handleToggleRowSelect}
           onChangeEditingDraft={setEditingRowState}
           onEditKeyDown={handleEditKeyDown}
-          onSaveEdit={(id, draft) => updateMutation.mutate({ id, draft })}
+          onSaveEdit={handleSaveEdit}
           onCancelEdit={cancelEditExisting}
           onStartEdit={startEditExisting}
           onDeleteTx={(id) => {

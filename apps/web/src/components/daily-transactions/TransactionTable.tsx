@@ -3,7 +3,7 @@ import type { TransactionType } from "@keuangan-apotek/shared";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Account } from "../../lib/queries";
 import { ColumnFilterSortPopover, type FilterOption } from "./ColumnFilterSortPopover";
-import type { ActiveMetadataRowIndex, DraftRow, SortColumn } from "./daily-transaction.types";
+import type { DraftRow, SortColumn } from "./daily-transaction.types";
 import { GoogleSheetsSummaryPill } from "./GoogleSheetsSummaryPill";
 import { TransactionDraftRow } from "./TransactionDraftRow";
 import { TransactionTableRow } from "./TransactionTableRow";
@@ -41,7 +41,7 @@ export type TransactionTableProps = {
   selectedTxIds: Set<string>;
   editingRowId: string | null;
   editingRowState: DraftRow | null;
-  activeMetadataRowIndex: ActiveMetadataRowIndex;
+  collapsedMetadataIds?: Set<string>;
   transactionTypes: TransactionType[];
   typeById: Map<string, TransactionType>;
   accountById: Map<string, Account>;
@@ -106,7 +106,7 @@ export function TransactionTable({
   selectedTxIds,
   editingRowId,
   editingRowState,
-  activeMetadataRowIndex,
+  collapsedMetadataIds,
   transactionTypes,
   typeById,
   accountById,
@@ -257,29 +257,33 @@ export function TransactionTable({
 
           <tbody className="divide-y divide-slate-100">
             {/* Top Draft Rows */}
-            {topDraftRows.map((draft, idx) => (
-              <TransactionDraftRow
-                key={draft.id}
-                draft={draft}
-                transactionTypes={transactionTypes}
-                typeById={typeById}
-                accountById={accountById}
-                selectedAccounts={selectedAccounts}
-                totalColumns={totalColumns}
-                isMetadataOpen={
-                  activeMetadataRowIndex?.isDraft === true &&
-                  activeMetadataRowIndex.idOrIndex === draft.id
-                }
-                isKeyTipsActive={isKeyTipsActive}
-                isFirstDraft={idx === 0}
-                isSubmitting={isSubmitting}
-                onUpdateDraft={onUpdateDraft}
-                onDeleteDraft={onDeleteDraft}
-                onSaveDraft={onSaveDraft}
-                onToggleMetadata={(open) => onToggleMetadata(true, open ? draft.id : "")}
-                onDraftKeyDown={onDraftKeyDown}
-              />
-            ))}
+            {topDraftRows.map((draft, idx) => {
+              const curType = typeById.get(draft.transactionTypeId);
+              const hasSchema = (curType?.metadataSchema?.length ?? 0) > 0;
+              const isMetadataOpen =
+                hasSchema && (!collapsedMetadataIds ? true : !collapsedMetadataIds.has(draft.id));
+
+              return (
+                <TransactionDraftRow
+                  key={draft.id}
+                  draft={draft}
+                  transactionTypes={transactionTypes}
+                  typeById={typeById}
+                  accountById={accountById}
+                  selectedAccounts={selectedAccounts}
+                  totalColumns={totalColumns}
+                  isMetadataOpen={isMetadataOpen}
+                  isKeyTipsActive={isKeyTipsActive}
+                  isFirstDraft={idx === 0}
+                  isSubmitting={isSubmitting}
+                  onUpdateDraft={onUpdateDraft}
+                  onDeleteDraft={onDeleteDraft}
+                  onSaveDraft={onSaveDraft}
+                  onToggleMetadata={() => onToggleMetadata(true, draft.id)}
+                  onDraftKeyDown={onDraftKeyDown}
+                />
+              );
+            })}
 
             {/* Transactions List */}
             {isLoading ? (
@@ -320,9 +324,14 @@ export function TransactionTable({
               filteredTransactionsList.map((tx, txIdx) => {
                 const isEditing = editingRowId === tx.id;
                 const currentDraft = isEditing ? editingRowState : null;
+                const curType = typeById.get(
+                  currentDraft ? currentDraft.transactionTypeId : tx.transactionTypeId,
+                );
+                const hasSchema = (curType?.metadataSchema?.length ?? 0) > 0;
                 const isMetadataOpen =
-                  activeMetadataRowIndex?.isDraft === false &&
-                  activeMetadataRowIndex?.idOrIndex === tx.id;
+                  isEditing &&
+                  hasSchema &&
+                  (!collapsedMetadataIds ? true : !collapsedMetadataIds.has(tx.id));
 
                 const beforeDrafts = beforeDraftsMap.get(tx.id) || [];
                 const afterDrafts = afterDraftsMap.get(tx.id) || [];
@@ -330,29 +339,34 @@ export function TransactionTable({
                 return (
                   <React.Fragment key={tx.id}>
                     {/* Before Drafts */}
-                    {beforeDrafts.map((d) => (
-                      <TransactionDraftRow
-                        key={d.id}
-                        draft={d}
-                        transactionTypes={transactionTypes}
-                        typeById={typeById}
-                        accountById={accountById}
-                        selectedAccounts={selectedAccounts}
-                        totalColumns={totalColumns}
-                        isMetadataOpen={
-                          activeMetadataRowIndex?.isDraft === true &&
-                          activeMetadataRowIndex.idOrIndex === d.id
-                        }
-                        isKeyTipsActive={isKeyTipsActive}
-                        isFirstDraft={false}
-                        isSubmitting={isSubmitting}
-                        onUpdateDraft={onUpdateDraft}
-                        onDeleteDraft={onDeleteDraft}
-                        onSaveDraft={onSaveDraft}
-                        onToggleMetadata={(open) => onToggleMetadata(true, open ? d.id : "")}
-                        onDraftKeyDown={onDraftKeyDown}
-                      />
-                    ))}
+                    {beforeDrafts.map((d) => {
+                      const dType = typeById.get(d.transactionTypeId);
+                      const dHasSchema = (dType?.metadataSchema?.length ?? 0) > 0;
+                      const dMetadataOpen =
+                        dHasSchema &&
+                        (!collapsedMetadataIds ? true : !collapsedMetadataIds.has(d.id));
+
+                      return (
+                        <TransactionDraftRow
+                          key={d.id}
+                          draft={d}
+                          transactionTypes={transactionTypes}
+                          typeById={typeById}
+                          accountById={accountById}
+                          selectedAccounts={selectedAccounts}
+                          totalColumns={totalColumns}
+                          isMetadataOpen={dMetadataOpen}
+                          isKeyTipsActive={isKeyTipsActive}
+                          isFirstDraft={false}
+                          isSubmitting={isSubmitting}
+                          onUpdateDraft={onUpdateDraft}
+                          onDeleteDraft={onDeleteDraft}
+                          onSaveDraft={onSaveDraft}
+                          onToggleMetadata={() => onToggleMetadata(true, d.id)}
+                          onDraftKeyDown={onDraftKeyDown}
+                        />
+                      );
+                    })}
 
                     <TransactionTableRow
                       tx={tx}
@@ -378,33 +392,38 @@ export function TransactionTable({
                       onStartEdit={() => onStartEdit(tx)}
                       onDelete={() => onDeleteTx(tx.id)}
                       onInsertRelative={(pos) => onInsertRelative(tx, pos)}
-                      onToggleMetadata={(open) => onToggleMetadata(false, open ? tx.id : "")}
+                      onToggleMetadata={() => onToggleMetadata(false, tx.id)}
                     />
 
                     {/* After Drafts */}
-                    {afterDrafts.map((d) => (
-                      <TransactionDraftRow
-                        key={d.id}
-                        draft={d}
-                        transactionTypes={transactionTypes}
-                        typeById={typeById}
-                        accountById={accountById}
-                        selectedAccounts={selectedAccounts}
-                        totalColumns={totalColumns}
-                        isMetadataOpen={
-                          activeMetadataRowIndex?.isDraft === true &&
-                          activeMetadataRowIndex.idOrIndex === d.id
-                        }
-                        isKeyTipsActive={isKeyTipsActive}
-                        isFirstDraft={false}
-                        isSubmitting={isSubmitting}
-                        onUpdateDraft={onUpdateDraft}
-                        onDeleteDraft={onDeleteDraft}
-                        onSaveDraft={onSaveDraft}
-                        onToggleMetadata={(open) => onToggleMetadata(true, open ? d.id : "")}
-                        onDraftKeyDown={onDraftKeyDown}
-                      />
-                    ))}
+                    {afterDrafts.map((d) => {
+                      const dType = typeById.get(d.transactionTypeId);
+                      const dHasSchema = (dType?.metadataSchema?.length ?? 0) > 0;
+                      const dMetadataOpen =
+                        dHasSchema &&
+                        (!collapsedMetadataIds ? true : !collapsedMetadataIds.has(d.id));
+
+                      return (
+                        <TransactionDraftRow
+                          key={d.id}
+                          draft={d}
+                          transactionTypes={transactionTypes}
+                          typeById={typeById}
+                          accountById={accountById}
+                          selectedAccounts={selectedAccounts}
+                          totalColumns={totalColumns}
+                          isMetadataOpen={dMetadataOpen}
+                          isKeyTipsActive={isKeyTipsActive}
+                          isFirstDraft={false}
+                          isSubmitting={isSubmitting}
+                          onUpdateDraft={onUpdateDraft}
+                          onDeleteDraft={onDeleteDraft}
+                          onSaveDraft={onSaveDraft}
+                          onToggleMetadata={() => onToggleMetadata(true, d.id)}
+                          onDraftKeyDown={onDraftKeyDown}
+                        />
+                      );
+                    })}
                   </React.Fragment>
                 );
               })

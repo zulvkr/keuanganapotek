@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import type { TransactionType } from "@keuangan-apotek/shared";
-import { Check, Trash2 } from "lucide-react";
+import { Check, Tag, Trash2 } from "lucide-react";
 import type { Account } from "../../lib/queries";
 import { DynamicMetadataForm } from "../metadata/DynamicMetadataForm";
 import { formatAmountInput, type DraftRow } from "./daily-transaction.types";
@@ -25,7 +25,7 @@ export type TransactionDraftRowProps = {
   onDeleteDraft: (id: string) => void;
   onSaveDraft: (draft: DraftRow) => void;
   onToggleMetadata: (open: boolean) => void;
-  onDraftKeyDown: (e: React.KeyboardEvent, draft: DraftRow) => void;
+  onDraftKeyDown: (e: React.KeyboardEvent, draft: DraftRow, isLastField?: boolean) => void;
 };
 
 export function TransactionDraftRow({
@@ -78,10 +78,24 @@ export function TransactionDraftRow({
                 const newType = transactionTypes.find((t) => t.id === newTypeId);
                 const hasShift = newType?.metadataSchema?.some((f) => f.key === "shift");
                 const lastShift = draft.metadata?.shift;
+                const newMeta: Record<string, any> = {};
+                if (newType?.metadataSchema) {
+                  for (const f of newType.metadataSchema) {
+                    if (f.type === "boolean") {
+                      newMeta[f.key] =
+                        draft.metadata?.[f.key] !== undefined
+                          ? Boolean(draft.metadata[f.key])
+                          : false;
+                    }
+                  }
+                }
+                if (hasShift && lastShift) {
+                  newMeta.shift = lastShift;
+                }
                 onUpdateDraft({
                   ...draft,
                   transactionTypeId: newTypeId,
-                  metadata: hasShift && lastShift ? { shift: lastShift } : {},
+                  metadata: newMeta,
                 });
               }}
               transactionTypes={transactionTypes}
@@ -176,18 +190,23 @@ export function TransactionDraftRow({
       </tr>
 
       {/* Expandable Inline Sub-row for Draft Metadata */}
-      {isMetadataOpen && (
+      {isMetadataOpen && schema.length > 0 && (
         <tr key={`${draft.id}-metadata`} className="bg-blue-50/50 border-b border-blue-200">
-          <td colSpan={totalColumns} className="px-2 py-1 bg-blue-50/30 border-b border-blue-100">
-            <DynamicMetadataForm
-              schema={schema}
-              initialValues={draft.metadata}
-              onSave={(newMeta) => {
-                onUpdateDraft({ ...draft, metadata: newMeta });
-                onToggleMetadata(false);
-              }}
-              onCancel={() => onToggleMetadata(false)}
-            />
+          <td colSpan={totalColumns} className="px-3 py-1 bg-blue-50/30 border-b border-blue-100">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                <Tag size={12} /> Metadata:
+              </span>
+              <DynamicMetadataForm
+                schema={schema}
+                values={draft.metadata}
+                onChange={(newMeta) => {
+                  onUpdateDraft({ ...draft, metadata: newMeta });
+                }}
+                onKeyDown={(e, isLastField) => onDraftKeyDown(e, draft, isLastField)}
+                className="flex items-center gap-2.5 overflow-x-auto py-0.5 min-w-0 flex-1 bg-transparent border-none p-0"
+              />
+            </div>
           </td>
         </tr>
       )}

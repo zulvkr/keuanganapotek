@@ -10,6 +10,8 @@ services:
       API_PORT: 3000
       DATABASE_PATH: /app/data/keuangan-apotek.sqlite
       AUTH_SECRET: ${AUTH_SECRET:-}
+      SEED_DEFAULT_COA: ${SEED_DEFAULT_COA:-}
+      SEED_DEFAULT_USERS: ${SEED_DEFAULT_USERS:-}
     volumes:
       - apotek_data:/app/data
     networks:

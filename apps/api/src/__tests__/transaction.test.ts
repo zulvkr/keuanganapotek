@@ -988,4 +988,52 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(listJson[1].id).toBe(txMiddle.id);
     expect(listJson[2].id).toBe(txB.id);
   });
+
+  it("preserves user-created transaction types and retains deactivated status across seedTransactionTypes calls", () => {
+    const { client } = setup();
+
+    // 1. User creates a custom transaction type
+    client.db
+      .insert(transactionTypes)
+      .values({
+        id: "type-trx-custom-99",
+        code: "TRX-CUSTOM-99",
+        name: "Penjualan Event Khusus",
+        group: "penjualan",
+        debitAccountId: "coa-1102",
+        creditAccountId: "coa-4101",
+        description: "Custom type",
+        metadataSchema: "[]",
+        isActive: true,
+      })
+      .run();
+
+    // 2. User deactivates an existing standard type (e.g. TRX-10 GrabMart)
+    client.db
+      .update(transactionTypes)
+      .set({ isActive: false })
+      .where(eq(transactionTypes.code, "TRX-10"))
+      .run();
+
+    // 3. Re-seed runs
+    seedTransactionTypes(client);
+
+    // 4. Custom type remains active and intact
+    const custom = client.db
+      .select()
+      .from(transactionTypes)
+      .where(eq(transactionTypes.code, "TRX-CUSTOM-99"))
+      .get();
+    expect(custom).toBeDefined();
+    expect(custom?.isActive).toBe(true);
+
+    // 5. Deactivated standard type remains deactivated
+    const deactivated = client.db
+      .select()
+      .from(transactionTypes)
+      .where(eq(transactionTypes.code, "TRX-10"))
+      .get();
+    expect(deactivated).toBeDefined();
+    expect(deactivated?.isActive).toBe(false);
+  });
 });
