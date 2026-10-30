@@ -133,7 +133,13 @@ export const transactionTypes = sqliteTable(
 
 export const transactionGroupConfigs = sqliteTable("transaction_group_configs", {
   group: text("group").primaryKey().notNull(),
+  label: text("label"),
+  badgeLabel: text("badge_label"),
+  description: text("description"),
+  badgeClass: text("badge_class"),
   metadataSchema: text("metadata_schema").notNull().default("[]"),
+  sortOrder: real("sort_order").notNull().default(0),
+  isSystem: integer("is_system", { mode: "boolean" }).notNull().default(false),
   updatedAt: text("updated_at").notNull().default("(datetime('now'))"),
 });
 
@@ -176,7 +182,7 @@ export const users = sqliteTable(
     passwordHash: text("password_hash").notNull(),
     salt: text("salt").notNull(),
     name: text("name").notNull(),
-    role: text("role").notNull(), // 'admin' | 'asisten'
+    role: text("role").notNull(), // 'admin' | 'asisten' | 'kasir' | 'auditor'
     allowedCoaCodes: text("allowed_coa_codes").notNull().default("[]"),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     createdAt: text("created_at").notNull().default("(datetime('now'))"),

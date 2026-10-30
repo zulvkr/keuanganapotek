@@ -1036,4 +1036,72 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     expect(deactivated).toBeDefined();
     expect(deactivated?.isActive).toBe(false);
   });
+
+  it("supports dynamic transaction group management: create, reorder, update, and delete with fallback", async () => {
+    const { client, api } = setup();
+
+    // 1. Create custom group "promosi_event"
+    const createRes = await api.request("http://localhost/api/transaction-groups", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        key: "promosi_event",
+        label: "Promosi & Event",
+        badgeLabel: "Promosi",
+        description: "Biaya promosi bazar dan diskon sponsorship",
+        badgeClass: "bg-purple-50 text-purple-800 border-purple-200",
+        metadataSchema: [],
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const createdGroup = (await createRes.json()).data;
+    expect(createdGroup.key).toBe("promosi_event");
+    expect(createdGroup.isSystem).toBe(false);
+
+    // 2. Link a transaction type to this custom group
+    const types = client.db.select().from(transactionTypes).all();
+    const targetType = types[0]!;
+    client.db
+      .update(transactionTypes)
+      .set({ group: "promosi_event" })
+      .where(eq(transactionTypes.id, targetType.id))
+      .run();
+
+    // 3. Reorder groups
+    const groupsRes = await api.request("http://localhost/api/transaction-groups");
+    const allGroups = (await groupsRes.json()).data;
+    const reorderedKeys = [
+      "promosi_event",
+      ...allGroups.filter((g: any) => g.key !== "promosi_event").map((g: any) => g.key),
+    ];
+    const reorderRes = await api.request("http://localhost/api/transaction-groups/reorder", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ keys: reorderedKeys }),
+    });
+    expect(reorderRes.status).toBe(200);
+    const groupsAfterReorder = (await reorderRes.json()).data;
+    expect(groupsAfterReorder[0].key).toBe("promosi_event");
+
+    // 4. Attempt to delete system group -> 400 or 500 error expected (protected)
+    const delSystemRes = await api.request("http://localhost/api/transaction-groups/omzet", {
+      method: "DELETE",
+    });
+    expect(delSystemRes.status).toBeGreaterThanOrEqual(400);
+
+    // 5. Delete custom group -> succeeds and moves targetType to 'tidak_terkategori'
+    const delRes = await api.request("http://localhost/api/transaction-groups/promosi_event", {
+      method: "DELETE",
+    });
+    expect(delRes.status).toBe(200);
+    const delData = (await delRes.json()).data;
+    expect(delData.affectedTypesCount).toBe(1);
+
+    const updatedType = client.db
+      .select()
+      .from(transactionTypes)
+      .where(eq(transactionTypes.id, targetType.id))
+      .get()!;
+    expect(updatedType.group).toBe("tidak_terkategori");
+  });
 });

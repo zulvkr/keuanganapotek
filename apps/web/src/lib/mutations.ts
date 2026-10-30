@@ -73,18 +73,56 @@ export function deleteTransactionType(id: string) {
   });
 }
 
+export function createTransactionGroup(input: {
+  key: string;
+  label: string;
+  badgeLabel?: string;
+  description?: string;
+  badgeClass?: string;
+  metadataSchema?: MetadataFieldDefinition[];
+}) {
+  return requestJson<TransactionGroupDetail>("/api/transaction-groups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
 export function updateTransactionGroup(
   groupKey: string,
-  metadataSchema: MetadataFieldDefinition[],
+  input: {
+    label?: string;
+    badgeLabel?: string;
+    description?: string;
+    badgeClass?: string;
+    metadataSchema?: MetadataFieldDefinition[];
+  },
 ) {
   return requestJson<TransactionGroupDetail>(
     `/api/transaction-groups/${encodeURIComponent(groupKey)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ metadataSchema }),
+      body: JSON.stringify(input),
     },
   );
+}
+
+export function deleteTransactionGroup(groupKey: string) {
+  return requestJson<{ success: boolean; affectedTypesCount: number }>(
+    `/api/transaction-groups/${encodeURIComponent(groupKey)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function reorderTransactionGroups(keys: string[]) {
+  return requestJson<TransactionGroupDetail[]>("/api/transaction-groups/reorder", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keys }),
+  });
 }
 
 export function resetTransactionGroup(groupKey: string) {

@@ -13,6 +13,17 @@ import {
   Menu,
   X,
 } from "lucide-react";
+import {
+  useFloating,
+  autoUpdate,
+  offset,
+  flip,
+  shift,
+  useClick,
+  useDismiss,
+  useInteractions,
+  FloatingPortal,
+} from "@floating-ui/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SetupStatusResponse, SourceModule } from "@keuangan-apotek/shared";
 import DailyTransactionsPage from "./pages/DailyTransactionsPage";
@@ -29,8 +40,8 @@ import { toast } from "./lib/toast";
 const foundationSourceModule: SourceModule = "GENERAL";
 
 const modules = [
-  { label: "Buku Transaksi", icon: Table, minRole: "asisten" },
-  { label: "Laporan Keuangan", icon: BarChart3, minRole: "admin" },
+  { label: "Buku Transaksi", icon: Table, minRole: "kasir" },
+  { label: "Laporan Keuangan", icon: BarChart3, minRole: "auditor" },
   { label: "Advanced", icon: SlidersHorizontal, minRole: "admin" },
 ];
 
@@ -141,7 +152,27 @@ function App() {
   }
 
   const { module: activeModule, advancedTab: activeAdvancedTab } = route;
-  const isAsisten = user.role === "asisten";
+  const isKasir = user.role === "kasir" || user.role === "asisten";
+  const isAuditor = user.role === "auditor";
+  const isAdmin = user.role === "admin";
+
+  const { refs, floatingStyles, context } = useFloating({
+    open: showUserDropdown,
+    onOpenChange: setShowUserDropdown,
+    placement: "bottom-end",
+    whileElementsMounted: autoUpdate,
+    middleware: [offset(4), flip(), shift({ padding: 8 })],
+  });
+
+  const click = useClick(context);
+  const dismiss = useDismiss(context);
+  const { getReferenceProps, getFloatingProps } = useInteractions([click, dismiss]);
+
+  function isModuleRestricted(minRole: string): boolean {
+    if (minRole === "admin") return !isAdmin;
+    if (minRole === "auditor") return isKasir;
+    return false;
+  }
 
   function handleLogout() {
     setShowUserDropdown(false);
@@ -178,7 +209,7 @@ function App() {
             </p>
           )}
           {modules.map(({ label, icon: Icon, minRole }) => {
-            const isRestricted = isAsisten && minRole === "admin";
+            const isRestricted = isModuleRestricted(minRole);
             return (
               <button
                 aria-label={sidebarCollapsed ? label : undefined}
@@ -256,7 +287,12 @@ function App() {
         <div className="border-b border-slate-100 bg-slate-50/70 p-2.5">
           <div className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-full bg-slate-200 text-slate-700">
-              <Shield size={14} className={isAsisten ? "text-amber-600" : "text-purple-600"} />
+              <Shield
+                size={14}
+                className={
+                  isKasir ? "text-amber-600" : isAuditor ? "text-sky-600" : "text-purple-600"
+                }
+              />
             </div>
             <div className="min-w-0">
               <p className="font-bold text-slate-800 truncate text-xs">{user.name}</p>
@@ -266,12 +302,18 @@ function App() {
           <div className="mt-1.5">
             <span
               className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                isAsisten
+                isKasir
                   ? "bg-amber-100 text-amber-800 border border-amber-200"
-                  : "bg-purple-100 text-purple-800 border border-purple-200"
+                  : isAuditor
+                    ? "bg-sky-100 text-sky-800 border border-sky-200"
+                    : "bg-purple-100 text-purple-800 border border-purple-200"
               }`}
             >
-              {isAsisten ? "Role: Asisten (Non-Gaji)" : "Role: Admin (Lengkap)"}
+              {isKasir
+                ? "Role: Kasir (Khusus Input)"
+                : isAuditor
+                  ? "Role: Auditor (Buku Transaksi & LapKeu)"
+                  : "Role: Admin (Lengkap)"}
             </span>
           </div>
         </div>
@@ -282,7 +324,7 @@ function App() {
             Menu Utama
           </p>
           {modules.map(({ label, icon: Icon, minRole }) => {
-            const isRestricted = isAsisten && minRole === "admin";
+            const isRestricted = isModuleRestricted(minRole);
             const isActive = activeModule === label;
             return (
               <button
@@ -373,71 +415,112 @@ function App() {
               <span className="hidden sm:inline">Sistem Aktif</span>
             </span>
 
-            {/* Role & User Badge */}
+            {/* Role & User Badge Button */}
             <button
+              ref={refs.setReference}
+              {...getReferenceProps()}
               type="button"
-              onClick={() => setShowUserDropdown((prev) => !prev)}
               className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-semibold transition ${
-                isAsisten
+                isKasir
                   ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-                  : "border-purple-200 bg-purple-50 text-purple-900 hover:bg-purple-100"
+                  : isAuditor
+                    ? "border-sky-300 bg-sky-50 text-sky-900 hover:bg-sky-100"
+                    : "border-purple-200 bg-purple-50 text-purple-900 hover:bg-purple-100"
               }`}
             >
-              <Shield size={12} className={isAsisten ? "text-amber-600" : "text-purple-600"} />
-              <span className="font-bold">{isAsisten ? "Asisten" : "Admin"}</span>
+              <Shield
+                size={12}
+                className={
+                  isKasir ? "text-amber-600" : isAuditor ? "text-sky-600" : "text-purple-600"
+                }
+              />
+              <span className="font-bold">
+                {isKasir ? "Kasir" : isAuditor ? "Auditor" : "Admin"}
+              </span>
               <span className="text-[10px] opacity-75 font-normal hidden sm:inline">
                 ({user.username})
               </span>
             </button>
 
-            {/* User Dropdown */}
+            {/* User Dropdown with FloatingPortal (no z-index clipping) */}
             {showUserDropdown && (
-              <div className="absolute right-0 top-8 z-50 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2.5 space-y-2 text-xs">
-                <div className="border-b border-slate-100 pb-2">
-                  <p className="font-bold text-slate-800">{user.name}</p>
-                  <p className="text-[11px] text-slate-500 font-mono">@{user.username}</p>
-                  <div className="mt-1">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.2 text-[10px] font-bold ${
-                        isAsisten
-                          ? "bg-amber-100 text-amber-800 border border-amber-200"
-                          : "bg-purple-100 text-purple-800 border border-purple-200"
-                      }`}
+              <FloatingPortal>
+                <div
+                  ref={refs.setFloating}
+                  style={floatingStyles}
+                  {...getFloatingProps()}
+                  className="z-[9999] w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2.5 space-y-2 text-xs"
+                >
+                  <div className="border-b border-slate-100 pb-2">
+                    <p className="font-bold text-slate-800">{user.name}</p>
+                    <p className="text-[11px] text-slate-500 font-mono">@{user.username}</p>
+                    <div className="mt-1">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.2 text-[10px] font-bold ${
+                          isKasir
+                            ? "bg-amber-100 text-amber-800 border border-amber-200"
+                            : isAuditor
+                              ? "bg-sky-100 text-sky-800 border border-sky-200"
+                              : "bg-purple-100 text-purple-800 border border-purple-200"
+                        }`}
+                      >
+                        {isKasir
+                          ? "Role: Kasir (Khusus Input Transaksi)"
+                          : isAuditor
+                            ? "Role: Auditor (Pemeriksaan & Edit LapKeu)"
+                            : "Role: Admin (Akses Lengkap)"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 transition"
                     >
-                      {isAsisten
-                        ? "Role: Asisten (Akses Terbatas: Non-Gaji)"
-                        : "Role: Admin (Akses Lengkap)"}
-                    </span>
+                      <LogOut size={13} className="text-rose-500" />
+                      <span>Keluar dari Akun</span>
+                    </button>
                   </div>
                 </div>
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 transition"
-                  >
-                    <LogOut size={13} className="text-rose-500" />
-                    <span>Keluar dari Akun</span>
-                  </button>
-                </div>
-              </div>
+              </FloatingPortal>
             )}
           </div>
         </header>
 
         <div className="p-2 space-y-1.5 max-w-full">
-          {/* If Asisten attempts to open restricted module */}
-          {isAsisten && activeModule !== "Buku Transaksi" ? (
-            <div className="rounded border border-amber-200 bg-amber-50/80 p-8 text-center space-y-3 max-w-lg mx-auto my-8">
-              <ShieldAlert size={40} className="mx-auto text-amber-600" />
+          {/* If unauthorized user attempts to open restricted module */}
+          {activeModule === "Advanced" && !isAdmin ? (
+            <div className="rounded border border-purple-200 bg-purple-50/80 p-8 text-center space-y-3 max-w-lg mx-auto my-8">
+              <ShieldAlert size={40} className="mx-auto text-purple-600" />
               <h2 className="text-sm font-bold text-slate-800">
                 Akses Terbatas — Khusus Admin Apotek
               </h2>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Modul <strong>{activeModule}</strong> hanya dapat diakses oleh Admin. Akun ber-role{" "}
-                <strong>Asisten</strong> hanya memiliki akses ke <strong>Buku Transaksi</strong>{" "}
-                dengan CoA yang telah diizinkan (transaksi sensitif seperti Gaji disembunyikan).
+                Modul <strong>Advanced</strong> (Master Transaksi, Jurnal Umum, CoA, dan Pengaturan)
+                hanya dapat diakses oleh Administrator Sistem.
+              </p>
+              <div className="pt-2 flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigateTo(modulePaths["Buku Transaksi"]!)}
+                  className="rounded bg-brand px-3.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+                >
+                  Buka Buku Transaksi
+                </button>
+              </div>
+            </div>
+          ) : activeModule === "Laporan Keuangan" && isKasir ? (
+            <div className="rounded border border-amber-200 bg-amber-50/80 p-8 text-center space-y-3 max-w-lg mx-auto my-8">
+              <ShieldAlert size={40} className="mx-auto text-amber-600" />
+              <h2 className="text-sm font-bold text-slate-800">
+                Akses Terbatas — Khusus Admin & Auditor
+              </h2>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Modul <strong>Laporan Keuangan</strong> hanya dapat diakses oleh Auditor dan Admin.
+                Akun ber-role <strong>Kasir</strong> hanya memiliki hak akses untuk menginput
+                transaksi kas operasional apotek.
               </p>
               <div className="pt-2 flex justify-center gap-2">
                 <button

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, Calendar, User, Tag, X } from "lucide-react";
 import { senToRupiah, todayIsoDate, type TransactionType } from "@keuangan-apotek/shared";
 import type { Account } from "../../lib/queries";
@@ -32,12 +33,12 @@ export function BulkDeleteModal({
 }: BulkDeleteModalProps) {
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="bulk-delete-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
     >
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
         <div className="flex items-start gap-3">
@@ -78,7 +79,8 @@ export function BulkDeleteModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

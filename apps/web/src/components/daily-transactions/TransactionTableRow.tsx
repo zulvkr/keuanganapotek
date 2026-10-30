@@ -37,6 +37,7 @@ export type TransactionTableRowProps = {
   accountById: Map<string, Account>;
   totalColumns: number;
   isKeyTipsActive: boolean;
+  canEdit?: boolean;
   onToggleSelect: (shiftKey: boolean) => void;
   onChangeDraft: (updater: (prev: DraftRow | null) => DraftRow | null) => void;
   onEditKeyDown: (e: React.KeyboardEvent, isPicField?: boolean) => void;
@@ -62,6 +63,7 @@ export function TransactionTableRow({
   accountById,
   totalColumns,
   isKeyTipsActive,
+  canEdit = true,
   onToggleSelect,
   onChangeDraft,
   onEditKeyDown,
@@ -83,6 +85,7 @@ export function TransactionTableRow({
   return (
     <>
       <tr
+        onDoubleClick={canEdit ? onStartEdit : undefined}
         className={`transition ${
           isEditing
             ? "bg-amber-100/70"
@@ -95,17 +98,21 @@ export function TransactionTableRow({
       >
         {/* Checkbox */}
         <td className="px-2 py-1 border-r border-slate-200 text-center">
-          <input
-            type="checkbox"
-            aria-label={`Pilih transaksi ${tx.id}`}
-            checked={isSelected}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => {
-              const nativeEvent = e.nativeEvent as MouseEvent;
-              onToggleSelect(nativeEvent.shiftKey);
-            }}
-            className="rounded border-slate-300 text-brand focus:ring-brand/20 cursor-pointer h-3.5 w-3.5"
-          />
+          {canEdit ? (
+            <input
+              type="checkbox"
+              aria-label={`Pilih transaksi ${tx.id}`}
+              checked={isSelected}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const nativeEvent = e.nativeEvent as MouseEvent;
+                onToggleSelect(nativeEvent.shiftKey);
+              }}
+              className="rounded border-slate-300 text-brand focus:ring-brand/20 cursor-pointer h-3.5 w-3.5"
+            />
+          ) : (
+            <span className="text-[10px] text-slate-300 font-mono">#{txIdx + 1}</span>
+          )}
         </td>
 
         {/* Tanggal */}
@@ -309,22 +316,26 @@ export function TransactionTableRow({
               >
                 <ArrowDownToLine size={12} />
               </button>
-              <button
-                type="button"
-                onClick={onStartEdit}
-                className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
-                title="Edit transaksi"
-              >
-                <Pencil size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={onDelete}
-                className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
-                title="Hapus transaksi"
-              >
-                <Trash2 size={12} />
-              </button>
+              {canEdit && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onStartEdit}
+                    className="rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-brand transition"
+                    title="Edit transaksi"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                    title="Hapus transaksi"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </>
+              )}
             </div>
           )}
         </td>

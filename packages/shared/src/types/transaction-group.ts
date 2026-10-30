@@ -15,15 +15,18 @@ export type TransactionGroup =
   | "pembayaran_hutang"
   | "pembelian_persediaan"
   | "transfer_antar_akun"
-  | "tidak_terkategori";
+  | "tidak_terkategori"
+  | (string & {});
 
 export type TransactionGroupConfig = {
-  key: TransactionGroup;
+  key: string;
   label: string;
   badgeLabel: string;
   description: string;
   badgeClass: string;
   metadataSchema: MetadataFieldDefinition[];
+  sortOrder?: number;
+  isSystem?: boolean;
 };
 
 export type TransactionGroupDetail = TransactionGroupConfig & {

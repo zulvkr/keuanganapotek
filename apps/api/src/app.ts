@@ -14,8 +14,9 @@ import {
   nowIsoInstant,
   SaveOpeningBalancesSchema,
   TransactionTypeSchema,
-  TransactionGroupSchema,
+  CreateTransactionGroupSchema,
   UpdateTransactionGroupSchema,
+  ReorderTransactionGroupsSchema,
   TransactionEntrySchema,
   BulkDeleteTransactionsSchema,
   BulkUpdateTransactionsSchema,
@@ -70,11 +71,14 @@ import {
   getTransactionTypeById,
   getTransactionsSummary,
   listTransactionGroups,
+  createTransactionGroup,
+  updateTransactionGroup,
+  deleteTransactionGroup,
+  reorderTransactionGroups,
   listTransactionTypes,
   listTransactions,
   resetTransactionGroupSchema,
   updateTransaction,
-  updateTransactionGroupSchema,
   updateTransactionType,
 } from "./services/transaction.service.js";
 import {
@@ -221,29 +225,50 @@ export function createApiApp(client: SqliteClient) {
     }
 
     const roleHeader = context.req.header("x-user-role");
-    if (roleHeader === "asisten") {
-      const asisten = getUserByUsername(client.db, "asisten");
-      if (asisten) {
+    if (roleHeader === "kasir" || roleHeader === "asisten") {
+      const kasir =
+        getUserByUsername(client.db, "kasir") || getUserByUsername(client.db, "asisten");
+      if (kasir) {
         let allowedCoaCodes: string[] = [];
         try {
-          allowedCoaCodes = JSON.parse(asisten.allowedCoaCodes || "[]");
+          allowedCoaCodes = JSON.parse(kasir.allowedCoaCodes || "[]");
         } catch {
           allowedCoaCodes = DEFAULT_ASSISTANT_ALLOWED_COA_CODES;
         }
         return {
-          id: asisten.id,
-          username: asisten.username,
-          name: asisten.name,
-          role: "asisten",
+          id: kasir.id,
+          username: kasir.username,
+          name: kasir.name,
+          role: "kasir",
           allowedCoaCodes,
         };
       }
       return {
-        id: "asisten-user",
-        username: "asisten",
-        name: "Asisten Apotek",
-        role: "asisten",
+        id: "kasir-user",
+        username: "kasir",
+        name: "Kasir Apotek",
+        role: "kasir",
         allowedCoaCodes: DEFAULT_ASSISTANT_ALLOWED_COA_CODES,
+      };
+    }
+
+    if (roleHeader === "auditor") {
+      const auditor = getUserByUsername(client.db, "auditor");
+      if (auditor) {
+        return {
+          id: auditor.id,
+          username: auditor.username,
+          name: auditor.name,
+          role: "auditor",
+          allowedCoaCodes: [],
+        };
+      }
+      return {
+        id: "auditor-user",
+        username: "auditor",
+        name: "Auditor Keuangan",
+        role: "auditor",
+        allowedCoaCodes: [],
       };
     }
 
@@ -273,9 +298,9 @@ export function createApiApp(client: SqliteClient) {
 
   const drillDownHandler = (context: Context) => {
     const user = getAuthUser(context);
-    if (user.role === "asisten") {
+    if (user.role === "kasir" || user.role === "asisten") {
       return context.json(
-        { error: "Akses ditolak: Laporan drill-down hanya dapat diakses oleh Admin" },
+        { error: "Akses ditolak: Laporan drill-down hanya dapat diakses oleh Admin atau Auditor" },
         403,
       );
     }
@@ -296,9 +321,9 @@ export function createApiApp(client: SqliteClient) {
   const reportRoutes = new Hono()
     .use("*", async (context, next) => {
       const user = getAuthUser(context);
-      if (user.role === "asisten") {
+      if (user.role === "kasir" || user.role === "asisten") {
         return context.json(
-          { error: "Akses ditolak: Laporan Keuangan hanya dapat diakses oleh Admin" },
+          { error: "Akses ditolak: Laporan Keuangan hanya dapat diakses oleh Admin atau Auditor" },
           403,
         );
       }
@@ -540,7 +565,7 @@ export function createApiApp(client: SqliteClient) {
     .get("/api/accounts/tree", async (context) => {
       const user = getAuthUser(context);
       const accountsList = await listAccounts(client.db);
-      if (user.role === "asisten") {
+      if (user.role === "kasir" || user.role === "asisten") {
         const allowedSet = new Set(user.allowedCoaCodes);
         return context.json({
           data: accountsList.filter((a) => a.isGroup || allowedSet.has(a.code)),
@@ -805,7 +830,7 @@ export function createApiApp(client: SqliteClient) {
 
     .get("/api/journals", validateQuery(JournalListQuerySchema), (context) => {
       const user = getAuthUser(context);
-      if (user.role === "asisten") {
+      if (user.role !== "admin") {
         return context.json(
           { error: "Akses ditolak: Jurnal Umum hanya dapat diakses oleh Admin" },
           403,
@@ -833,7 +858,7 @@ export function createApiApp(client: SqliteClient) {
 
     .get("/api/journals/:id", (context) => {
       const user = getAuthUser(context);
-      if (user.role === "asisten") {
+      if (user.role !== "admin") {
         return context.json(
           { error: "Akses ditolak: Jurnal Umum hanya dapat diakses oleh Admin" },
           403,
@@ -910,36 +935,86 @@ export function createApiApp(client: SqliteClient) {
       return context.json({ data: listTransactionGroups(client.db) });
     })
 
+    .post(
+      "/api/transaction-groups",
+      validateJson(CreateTransactionGroupSchema),
+      async (context) => {
+        if (!requireAdmin(context)) {
+          return context.json(
+            { error: "Akses ditolak: Hanya Admin yang dapat membuat grup transaksi" },
+            403,
+          );
+        }
+        try {
+          const body = context.req.valid("json");
+          const user = getAuthUser(context);
+          const created = createTransactionGroup(client.db, body, user.username);
+          return context.json({ data: created }, 201);
+        } catch (error) {
+          return errorResponse(context, error);
+        }
+      },
+    )
+
+    .put(
+      "/api/transaction-groups/reorder",
+      validateJson(ReorderTransactionGroupsSchema),
+      async (context) => {
+        if (!requireAdmin(context)) {
+          return context.json(
+            { error: "Akses ditolak: Hanya Admin yang dapat mengubah urutan grup transaksi" },
+            403,
+          );
+        }
+        try {
+          const body = context.req.valid("json");
+          const user = getAuthUser(context);
+          const reordered = reorderTransactionGroups(client.db, body.keys, user.username);
+          return context.json({ data: reordered });
+        } catch (error) {
+          return errorResponse(context, error);
+        }
+      },
+    )
+
     .put(
       "/api/transaction-groups/:groupKey",
       validateJson(UpdateTransactionGroupSchema),
       async (context) => {
         if (!requireAdmin(context)) {
           return context.json(
-            { error: "Akses ditolak: Hanya Admin yang dapat mengubah skema metadata grup" },
+            { error: "Akses ditolak: Hanya Admin yang dapat mengubah grup transaksi" },
             403,
           );
         }
-        const groupKeyParam = context.req.param("groupKey");
-        const parsedKey = TransactionGroupSchema.safeParse(groupKeyParam);
-        if (!parsedKey.success) {
-          return context.json({ error: `Grup transaksi ${groupKeyParam} tidak valid` }, 400);
-        }
+        const groupKey = context.req.param("groupKey")!;
         try {
           const body = context.req.valid("json");
           const user = getAuthUser(context);
-          const updated = updateTransactionGroupSchema(
-            client.db,
-            parsedKey.data,
-            body.metadataSchema,
-            user.username,
-          );
+          const updated = updateTransactionGroup(client.db, groupKey, body, user.username);
           return context.json({ data: updated });
         } catch (error) {
           return errorResponse(context, error);
         }
       },
     )
+
+    .delete("/api/transaction-groups/:groupKey", async (context) => {
+      if (!requireAdmin(context)) {
+        return context.json(
+          { error: "Akses ditolak: Hanya Admin yang dapat menghapus grup transaksi" },
+          403,
+        );
+      }
+      const groupKey = context.req.param("groupKey")!;
+      try {
+        const user = getAuthUser(context);
+        const result = deleteTransactionGroup(client.db, groupKey, user.username);
+        return context.json({ data: result });
+      } catch (error) {
+        return errorResponse(context, error);
+      }
+    })
 
     .post("/api/transaction-groups/:groupKey/reset", async (context) => {
       if (!requireAdmin(context)) {
@@ -948,14 +1023,10 @@ export function createApiApp(client: SqliteClient) {
           403,
         );
       }
-      const groupKeyParam = context.req.param("groupKey");
-      const parsedKey = TransactionGroupSchema.safeParse(groupKeyParam);
-      if (!parsedKey.success) {
-        return context.json({ error: `Grup transaksi ${groupKeyParam} tidak valid` }, 400);
-      }
+      const groupKey = context.req.param("groupKey")!;
       try {
         const user = getAuthUser(context);
-        const reset = resetTransactionGroupSchema(client.db, parsedKey.data, user.username);
+        const reset = resetTransactionGroupSchema(client.db, groupKey, user.username);
         return context.json({ data: reset });
       } catch (error) {
         return errorResponse(context, error);
@@ -965,7 +1036,8 @@ export function createApiApp(client: SqliteClient) {
     // Transaction Types endpoints
     .get("/api/transaction-types", (context) => {
       const user = getAuthUser(context);
-      const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
+      const allowedCodes =
+        user.role === "kasir" || user.role === "asisten" ? user.allowedCoaCodes : undefined;
       const includeInactive = context.req.query("includeInactive") === "true";
       return context.json({
         data: listTransactionTypes(client.db, { includeInactive }, allowedCodes),
@@ -976,7 +1048,7 @@ export function createApiApp(client: SqliteClient) {
       const item = getTransactionTypeById(client.db, context.req.param("id"));
       if (!item) return context.json({ error: "Tipe transaksi tidak ditemukan" }, 404);
       const user = getAuthUser(context);
-      if (user.role === "asisten") {
+      if (user.role === "kasir" || user.role === "asisten") {
         const allowedSet = new Set(user.allowedCoaCodes);
         const debitAcc = client.db
           .select()
@@ -1054,13 +1126,15 @@ export function createApiApp(client: SqliteClient) {
     // Transactions endpoints
     .get("/api/transactions/summary", (context) => {
       const user = getAuthUser(context);
-      const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
+      const allowedCodes =
+        user.role === "kasir" || user.role === "asisten" ? user.allowedCoaCodes : undefined;
       return context.json({ data: getTransactionsSummary(client.db, allowedCodes) });
     })
 
     .get("/api/transactions", validateQuery(TransactionListQuerySchema), (context) => {
       const user = getAuthUser(context);
-      const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
+      const allowedCodes =
+        user.role === "kasir" || user.role === "asisten" ? user.allowedCoaCodes : undefined;
       const startDate = context.req.query("startDate");
       const endDate = context.req.query("endDate");
       return context.json({
@@ -1071,7 +1145,8 @@ export function createApiApp(client: SqliteClient) {
     .post("/api/transactions", validateJson(TransactionEntrySchema), async (context) => {
       try {
         const user = getAuthUser(context);
-        const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
+        const allowedCodes =
+          user.role === "kasir" || user.role === "asisten" ? user.allowedCoaCodes : undefined;
         const body = context.req.valid("json");
         const idempotencyKey =
           body.idempotencyKey || context.req.header("x-idempotency-key") || undefined;
@@ -1090,6 +1165,12 @@ export function createApiApp(client: SqliteClient) {
       async (context) => {
         try {
           const user = getAuthUser(context);
+          if (user.role === "kasir") {
+            return context.json(
+              { error: "Akses ditolak: Kasir tidak memiliki wewenang untuk mengubah transaksi" },
+              403,
+            );
+          }
           const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
           const body = context.req.valid("json");
           return context.json({
@@ -1107,6 +1188,12 @@ export function createApiApp(client: SqliteClient) {
       (context) => {
         try {
           const user = getAuthUser(context);
+          if (user.role === "kasir") {
+            return context.json(
+              { error: "Akses ditolak: Kasir tidak memiliki wewenang untuk menghapus transaksi" },
+              403,
+            );
+          }
           const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
           const body = context.req.valid("json");
           const result = bulkDeleteTransactions(client.db, body.ids, allowedCodes);
@@ -1123,6 +1210,12 @@ export function createApiApp(client: SqliteClient) {
       (context) => {
         try {
           const user = getAuthUser(context);
+          if (user.role === "kasir") {
+            return context.json(
+              { error: "Akses ditolak: Kasir tidak memiliki wewenang untuk mengubah transaksi" },
+              403,
+            );
+          }
           const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
           const body = context.req.valid("json");
           const result = bulkUpdateTransactions(client.db, body, allowedCodes);
@@ -1136,6 +1229,12 @@ export function createApiApp(client: SqliteClient) {
     .delete("/api/transactions/:id", (context) => {
       try {
         const user = getAuthUser(context);
+        if (user.role === "kasir") {
+          return context.json(
+            { error: "Akses ditolak: Kasir tidak memiliki wewenang untuk menghapus transaksi" },
+            403,
+          );
+        }
         const allowedCodes = user.role === "asisten" ? user.allowedCoaCodes : undefined;
         deleteTransaction(client.db, context.req.param("id")!, allowedCodes);
         return context.body(null, 204);

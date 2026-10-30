@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -12,6 +13,9 @@ import {
   Layers,
   CheckCircle2,
   RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  Settings2,
 } from "lucide-react";
 import {
   inferTransactionGroup,
@@ -30,9 +34,12 @@ import {
   type SaveTransactionTypeInput,
 } from "../lib/queries";
 import {
+  createTransactionGroup,
   createTransactionType,
+  deleteTransactionGroup,
   deleteTransactionType,
   invalidateAccountingQueries,
+  reorderTransactionGroups,
   resetTransactionGroup,
   updateTransactionGroup,
   updateTransactionType,
@@ -140,10 +147,28 @@ export default function MasterTransactionPage() {
   const [editingGroup, setEditingGroup] = useState<TransactionGroupDetail | null>(null);
   const [groupSchemaDraft, setGroupSchemaDraft] = useState<MetadataFieldDefinition[]>([]);
 
+  // State for Group Manager Modal
+  const [showGroupManagerModal, setShowGroupManagerModal] = useState(false);
+  const [showAddGroupModal, setShowAddGroupModal] = useState(false);
+  const [newGroupKey, setNewGroupKey] = useState("");
+  const [newGroupLabel, setNewGroupLabel] = useState("");
+  const [newGroupBadge, setNewGroupBadge] = useState("");
+  const [newGroupDesc, setNewGroupDesc] = useState("");
+  const [newGroupClass, setNewGroupClass] = useState(
+    "bg-purple-50 text-purple-800 border-purple-200",
+  );
+
+  // State for Editing Group Identity
+  const [groupToEdit, setGroupToEdit] = useState<TransactionGroupDetail | null>(null);
+  const [editGroupLabel, setEditGroupLabel] = useState("");
+  const [editGroupBadge, setEditGroupBadge] = useState("");
+  const [editGroupDesc, setEditGroupDesc] = useState("");
+  const [editGroupClass, setEditGroupClass] = useState("");
+
   const saveGroupMutation = useMutation({
     mutationFn: async () => {
       if (!editingGroup) return;
-      return updateTransactionGroup(editingGroup.key, groupSchemaDraft);
+      return updateTransactionGroup(editingGroup.key, { metadataSchema: groupSchemaDraft });
     },
     onSuccess: async () => {
       toast.success(`Skema metadata grup ${editingGroup?.label} berhasil diperbarui.`);
@@ -154,6 +179,94 @@ export default function MasterTransactionPage() {
       toast.error(err instanceof Error ? err.message : "Gagal memperbarui skema grup");
     },
   });
+
+  const createGroupMutation = useMutation({
+    mutationFn: async (data: {
+      key: string;
+      label: string;
+      badgeLabel: string;
+      description: string;
+      badgeClass: string;
+    }) => createTransactionGroup(data),
+    onSuccess: async () => {
+      toast.success("Grup transaksi baru berhasil dibuat.");
+      setShowAddGroupModal(false);
+      setNewGroupKey("");
+      setNewGroupLabel("");
+      setNewGroupBadge("");
+      setNewGroupDesc("");
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal membuat grup transaksi");
+    },
+  });
+
+  const updateGroupInfoMutation = useMutation({
+    mutationFn: async (data: {
+      key: string;
+      label: string;
+      badgeLabel: string;
+      description: string;
+      badgeClass: string;
+    }) =>
+      updateTransactionGroup(data.key, {
+        label: data.label,
+        badgeLabel: data.badgeLabel,
+        description: data.description,
+        badgeClass: data.badgeClass,
+      }),
+    onSuccess: async () => {
+      toast.success("Informasi grup transaksi berhasil diperbarui.");
+      setGroupToEdit(null);
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal memperbarui grup transaksi");
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (groupKey: string) => deleteTransactionGroup(groupKey),
+    onSuccess: async (res) => {
+      toast.success(
+        `Grup berhasil dihapus. ${res.affectedTypesCount} tipe transaksi dialihkan ke "Tidak Terkategori".`,
+      );
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus grup transaksi");
+    },
+  });
+
+  const reorderGroupsMutation = useMutation({
+    mutationFn: async (keys: string[]) => reorderTransactionGroups(keys),
+    onSuccess: async () => {
+      toast.success("Urutan grup transaksi berhasil diperbarui.");
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal mengubah urutan grup");
+    },
+  });
+
+  function moveGroup(index: number, direction: "up" | "down") {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= transactionGroups.length) return;
+    const nextList = [...transactionGroups];
+    const [moved] = nextList.splice(index, 1);
+    nextList.splice(targetIndex, 0, moved!);
+    const keys = nextList.map((g) => g.key);
+    reorderGroupsMutation.mutate(keys);
+  }
+
+  function openEditGroupInfo(grp: TransactionGroupDetail) {
+    setGroupToEdit(grp);
+    setEditGroupLabel(grp.label);
+    setEditGroupBadge(grp.badgeLabel || grp.label);
+    setEditGroupDesc(grp.description || "");
+    setEditGroupClass(grp.badgeClass || "bg-purple-50 text-purple-800 border-purple-200");
+  }
 
   const resetGroupMutation = useMutation({
     mutationFn: async (groupKey: string) => {
@@ -313,6 +426,16 @@ export default function MasterTransactionPage() {
               className="h-8 rounded-lg border border-slate-200 bg-white pl-7 pr-2.5 py-1 text-xs outline-none focus:border-brand shadow-sm w-44 sm:w-56"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowGroupManagerModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition"
+            title="Kelola daftar grup, urutan, dan grup kustom"
+          >
+            <Settings2 size={13} className="text-slate-500" />
+            <span>Kelola Grup</span>
+          </button>
 
           <button
             type="button"
@@ -528,7 +651,7 @@ export default function MasterTransactionPage() {
                                     title={`Skema seragam grup: ${grp.metadataSchema!.map((f) => f.label).join(", ")}. Klik untuk melihat atau mengubah.`}
                                   >
                                     <CheckCircle2 size={11} className="text-blue-600 shrink-0" />
-                                    <span>Mewarisi Grup ({grp.metadataSchema!.length} field)</span>
+                                    <span>{grp.metadataSchema!.length} field</span>
                                   </button>
                                 ) : (
                                   <button
@@ -983,6 +1106,423 @@ export default function MasterTransactionPage() {
           </div>
         </div>
       )}
+      {/* Modal Kelola Seluruh Grup Transaksi */}
+      {showGroupManagerModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
+            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 bg-slate-50/70">
+                <div className="flex items-center gap-2">
+                  <div className="grid h-7 w-7 place-items-center rounded-lg bg-blue-100 text-brand">
+                    <Settings2 size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Kelola Grup Transaksi</h3>
+                    <p className="text-[11px] text-slate-500">
+                      Atur urutan tampilan, edit informasi grup, atau buat grup kustom baru
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGroupManagerModal(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-600">
+                    Daftar Grup ({transactionGroups.length} grup)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddGroupModal(true)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition"
+                  >
+                    <Plus size={13} /> Tambah Grup Kustom
+                  </button>
+                </div>
+
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                  {transactionGroups.map((grp, idx) => {
+                    const isSystem = grp.isSystem;
+                    const count = transactionTypes.filter((t) => {
+                      const g =
+                        t.group ||
+                        inferTransactionGroup(
+                          accountById.get(t.debitAccountId),
+                          accountById.get(t.creditAccountId),
+                        );
+                      return g === grp.key;
+                    }).length;
+
+                    return (
+                      <div
+                        key={grp.key}
+                        className="flex items-center justify-between gap-3 p-3 hover:bg-slate-50/70 transition"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          {/* Reorder Buttons */}
+                          <div className="flex flex-col gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={idx === 0 || reorderGroupsMutation.isPending}
+                              onClick={() => moveGroup(idx, "up")}
+                              className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
+                              title="Pindahkan ke atas"
+                            >
+                              <ArrowUp size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={
+                                idx === transactionGroups.length - 1 ||
+                                reorderGroupsMutation.isPending
+                              }
+                              onClick={() => moveGroup(idx, "down")}
+                              className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
+                              title="Pindahkan ke bawah"
+                            >
+                              <ArrowDown size={12} />
+                            </button>
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${grp.badgeClass}`}
+                              >
+                                {grp.badgeLabel || grp.label}
+                              </span>
+                              <span className="font-bold text-slate-800 text-xs truncate">
+                                {grp.label}
+                              </span>
+                              {isSystem ? (
+                                <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[9px] font-semibold text-slate-500">
+                                  Sistem
+                                </span>
+                              ) : (
+                                <span className="rounded bg-purple-100 px-1.5 py-0.2 text-[9px] font-semibold text-purple-700">
+                                  Kustom
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                              {grp.description || "Tidak ada deskripsi"} · {count} tipe transaksi
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openEditGroupInfo(grp)}
+                            className="p-1.5 rounded-lg border border-slate-200 hover:bg-blue-50 hover:text-brand text-slate-600 transition"
+                            title="Edit identitas & warna grup"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          {!isSystem && (
+                            <button
+                              type="button"
+                              disabled={deleteGroupMutation.isPending}
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    `Hapus grup "${grp.label}"? Seluruh tipe transaksi di dalamnya akan otomatis dialihkan ke "Tidak Terkategori".`,
+                                  )
+                                ) {
+                                  deleteGroupMutation.mutate(grp.key);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg border border-slate-200 hover:bg-rose-50 hover:text-rose-600 text-slate-400 transition"
+                              title="Hapus grup kustom ini"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 px-5 py-3 bg-slate-50/50 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowGroupManagerModal(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition shadow-xs"
+                >
+                  Selesai
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* Modal Tambah Grup Kustom */}
+      {showAddGroupModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <h4 className="text-sm font-bold text-slate-900">Tambah Grup Transaksi Baru</h4>
+                <button
+                  type="button"
+                  onClick={() => setShowAddGroupModal(false)}
+                  className="rounded p-1 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Kunci Slug (ID Grup) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newGroupKey}
+                    onChange={(e) =>
+                      setNewGroupKey(
+                        e.target.value
+                          .toLowerCase()
+                          .replace(/[^a-z0-9_-]/g, "_")
+                          .replace(/_+/g, "_"),
+                      )
+                    }
+                    placeholder="misal: promo_event"
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 font-mono text-xs outline-none focus:border-brand"
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Hanya huruf kecil, angka, dan garis bawah.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Nama / Label Grup <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newGroupLabel}
+                    onChange={(e) => {
+                      setNewGroupLabel(e.target.value);
+                      if (!newGroupBadge) setNewGroupBadge(e.target.value);
+                    }}
+                    placeholder="misal: Promosi & Event"
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Label Singkat Badge
+                  </label>
+                  <input
+                    type="text"
+                    value={newGroupBadge}
+                    onChange={(e) => setNewGroupBadge(e.target.value)}
+                    placeholder="misal: Promo"
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Deskripsi Grup
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newGroupDesc}
+                    onChange={(e) => setNewGroupDesc(e.target.value)}
+                    placeholder="Penjelasan tujuan grup transaksi ini..."
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Pilihan Warna Badge
+                  </label>
+                  <select
+                    value={newGroupClass}
+                    onChange={(e) => setNewGroupClass(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand bg-white"
+                  >
+                    <option value="bg-purple-50 text-purple-800 border-purple-200">
+                      Ungu / Purple
+                    </option>
+                    <option value="bg-indigo-50 text-indigo-800 border-indigo-200">
+                      Indigo / Nila
+                    </option>
+                    <option value="bg-cyan-50 text-cyan-800 border-cyan-200">
+                      Cyan / Biru Laut
+                    </option>
+                    <option value="bg-emerald-50 text-emerald-800 border-emerald-200">
+                      Hijau / Emerald
+                    </option>
+                    <option value="bg-amber-50 text-amber-800 border-amber-200">
+                      Kuning / Amber
+                    </option>
+                    <option value="bg-rose-50 text-rose-800 border-rose-200">Merah / Rose</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddGroupModal(false)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !newGroupKey.trim() || !newGroupLabel.trim() || createGroupMutation.isPending
+                  }
+                  onClick={() =>
+                    createGroupMutation.mutate({
+                      key: newGroupKey.trim(),
+                      label: newGroupLabel.trim(),
+                      badgeLabel: newGroupBadge.trim() || newGroupLabel.trim(),
+                      description: newGroupDesc.trim(),
+                      badgeClass: newGroupClass,
+                    })
+                  }
+                  className="rounded-lg bg-brand px-4 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {createGroupMutation.isPending ? "Menyimpan..." : "Buat Grup"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* Modal Edit Informasi Grup */}
+      {groupToEdit &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <h4 className="text-sm font-bold text-slate-900">
+                  Ubah Identitas Grup: {groupToEdit.label}
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setGroupToEdit(null)}
+                  className="rounded p-1 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Label Nama Grup <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editGroupLabel}
+                    onChange={(e) => setEditGroupLabel(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Label Singkat Badge
+                  </label>
+                  <input
+                    type="text"
+                    value={editGroupBadge}
+                    onChange={(e) => setEditGroupBadge(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Deskripsi
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editGroupDesc}
+                    onChange={(e) => setEditGroupDesc(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Pilihan Warna Badge
+                  </label>
+                  <select
+                    value={editGroupClass}
+                    onChange={(e) => setEditGroupClass(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-brand bg-white"
+                  >
+                    <option value="bg-emerald-50 text-emerald-800 border-emerald-200">
+                      Hijau / Emerald
+                    </option>
+                    <option value="bg-rose-50 text-rose-800 border-rose-200">Merah / Rose</option>
+                    <option value="bg-sky-50 text-sky-800 border-sky-200">Biru / Sky</option>
+                    <option value="bg-amber-50 text-amber-800 border-amber-200">
+                      Kuning / Amber
+                    </option>
+                    <option value="bg-purple-50 text-purple-800 border-purple-200">
+                      Ungu / Purple
+                    </option>
+                    <option value="bg-teal-50 text-teal-800 border-teal-200">Toska / Teal</option>
+                    <option value="bg-slate-100 text-slate-700 border-slate-200">
+                      Abu-abu / Slate
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setGroupToEdit(null)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={!editGroupLabel.trim() || updateGroupInfoMutation.isPending}
+                  onClick={() =>
+                    updateGroupInfoMutation.mutate({
+                      key: groupToEdit.key,
+                      label: editGroupLabel.trim(),
+                      badgeLabel: editGroupBadge.trim() || editGroupLabel.trim(),
+                      description: editGroupDesc.trim(),
+                      badgeClass: editGroupClass,
+                    })
+                  }
+                  className="rounded-lg bg-brand px-4 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {updateGroupInfoMutation.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

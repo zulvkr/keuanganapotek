@@ -9,7 +9,7 @@ import {
   seedTransactionTypes,
   seedUsers,
 } from "../db/seed.js";
-import { createToken, listUsers } from "../services/auth.service.js";
+import { createToken, createUser, listUsers } from "../services/auth.service.js";
 
 const clients: Array<ReturnType<typeof createSqliteClient>> = [];
 
@@ -306,6 +306,132 @@ describe("Authentication & RBAC with CoA-level Access Control", () => {
     );
     expect(reportRes.status).toBe(403);
 
+    const journalRes = await api.request("http://localhost/api/journals", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(journalRes.status).toBe(403);
+  });
+
+  it("enforces Kasir restrictions: can create transaction, but rejected from editing or deleting", async () => {
+    const { api, client } = await setup();
+    const kasirUser = createUser(client.db, {
+      username: "kasir1",
+      password: "password123",
+      name: "Kasir Toko",
+      role: "kasir",
+      allowedCoaCodes: ["1101", "1102", "4101"],
+    });
+    const token = createToken({
+      id: kasirUser.id,
+      username: kasirUser.username,
+      role: "kasir",
+    });
+
+    // Find TRX-01 (or first type)
+    const typesRes = await api.request("http://localhost/api/transaction-types");
+    const allTypes = (await typesRes.json()).data;
+    const trx01 = allTypes.find((t: any) => t.code === "TRX-01") || allTypes[0];
+    expect(trx01).toBeDefined();
+
+    // 1. Kasir creates a transaction -> 201 Created
+    const createRes = await api.request("http://localhost/api/transactions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        transactionDate: "2026-08-20",
+        transactionTypeId: trx01.id,
+        amount: "50000",
+        pic: "KASIR",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const createdTx = (await createRes.json()).data;
+
+    // 2. Kasir attempts to update -> 403 Forbidden
+    const updateRes = await api.request(`http://localhost/api/transactions/${createdTx.id}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ amount: "60000" }),
+    });
+    expect(updateRes.status).toBe(403);
+
+    // 3. Kasir attempts to delete -> 403 Forbidden
+    const deleteRes = await api.request(`http://localhost/api/transactions/${createdTx.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(deleteRes.status).toBe(403);
+
+    // 4. Kasir attempts bulk operations -> 403 Forbidden
+    const bulkDeleteRes = await api.request("http://localhost/api/transactions/bulk-delete", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ids: [createdTx.id] }),
+    });
+    expect(bulkDeleteRes.status).toBe(403);
+  });
+
+  it("allows Auditor to view reports and edit transactions, but blocks journal access", async () => {
+    const { api, client } = await setup();
+    const auditorUser = createUser(client.db, {
+      username: "auditor1",
+      password: "password123",
+      name: "Auditor Utama",
+      role: "auditor",
+      allowedCoaCodes: [],
+    });
+    const token = createToken({
+      id: auditorUser.id,
+      username: auditorUser.username,
+      role: "auditor",
+    });
+
+    // 1. Auditor accesses financial report -> 200 OK
+    const reportRes = await api.request(
+      "http://localhost/api/reports/income-statement?startDate=2026-08-01&endDate=2026-08-31",
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    expect(reportRes.status).toBe(200);
+
+    // 2. Auditor accesses drilldown -> 200 OK
+    const accountsRes = await api.request("http://localhost/api/accounts/tree", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const accList = (await accountsRes.json()).data;
+    const cashAcc = accList.find((a: any) => !a.isGroup);
+    const drilldownRes = await api.request(
+      `http://localhost/api/reports/accounts/${cashAcc.id}/journal-drill-down?startDate=2026-08-01&endDate=2026-08-31`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    expect(drilldownRes.status).toBe(200);
+
+    // 3. Auditor updates a transaction -> 200 OK
+    const txList = await (await api.request("http://localhost/api/transactions")).json();
+    const targetTx = txList.data[0];
+    const updateRes = await api.request(`http://localhost/api/transactions/${targetTx.id}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ pic: "AUDIT" }),
+    });
+    expect(updateRes.status).toBe(200);
+
+    // 4. Auditor attempts to access general journal -> 403 Forbidden
     const journalRes = await api.request("http://localhost/api/journals", {
       headers: { Authorization: `Bearer ${token}` },
     });

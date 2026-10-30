@@ -48,6 +48,7 @@ export type TransactionTableProps = {
   accountRunningMaps: Map<string, Map<string, { balance: number; mutation: number }>>;
   isKeyTipsActive: boolean;
   isSubmitting: boolean;
+  canEdit?: boolean;
   // Handlers
   onUpdateDraft: (draft: DraftRow) => void;
   onDeleteDraft: (id: string) => void;
@@ -113,6 +114,7 @@ export function TransactionTable({
   accountRunningMaps,
   isKeyTipsActive,
   isSubmitting,
+  canEdit = true,
   onUpdateDraft,
   onDeleteDraft,
   onSaveDraft,
@@ -382,6 +384,7 @@ export function TransactionTable({
                       accountById={accountById}
                       totalColumns={totalColumns}
                       isKeyTipsActive={isKeyTipsActive}
+                      canEdit={canEdit}
                       onToggleSelect={(shiftKey) => onToggleRowSelect(tx.id, shiftKey)}
                       onChangeDraft={onChangeEditingDraft}
                       onEditKeyDown={(e, isPicField) =>

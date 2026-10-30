@@ -58,7 +58,7 @@ export default function SettingsPage() {
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState<"admin" | "asisten">("asisten");
+  const [newRole, setNewRole] = useState<"admin" | "kasir" | "auditor">("kasir");
 
   // Mutations
   const permissionsMutation = useMutation({
@@ -80,8 +80,8 @@ export default function SettingsPage() {
       username: string;
       password: string;
       name: string;
-      role: "admin" | "asisten";
-    }) => createUser(data),
+      role: "admin" | "kasir" | "auditor";
+    }) => createUser(data as any),
     onSuccess: () => {
       toast.success("Pengguna baru berhasil ditambahkan.");
       queryClient.invalidateQueries({ queryKey: queryKeys.users });
@@ -89,7 +89,7 @@ export default function SettingsPage() {
       setNewUsername("");
       setNewPassword("");
       setNewName("");
-      setNewRole("asisten");
+      setNewRole("kasir");
     },
     onError: (err: Error) => {
       toast.error(`Gagal membuat pengguna: ${err.message}`);
@@ -195,6 +195,8 @@ export default function SettingsPage() {
               <tbody className="divide-y divide-slate-100">
                 {usersList.map((u) => {
                   const isAdmin = u.role === "admin";
+                  const isAuditor = u.role === "auditor";
+                  const isKasir = u.role === "kasir" || u.role === "asisten";
                   const allowedCount = (u.allowedCoaCodes || []).length;
                   const isCurrent = currentUser?.username === u.username;
 
@@ -223,18 +225,20 @@ export default function SettingsPage() {
                           className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
                             isAdmin
                               ? "bg-purple-100 text-purple-800 border border-purple-200"
-                              : "bg-amber-100 text-amber-800 border border-amber-200"
+                              : isAuditor
+                                ? "bg-sky-100 text-sky-800 border border-sky-200"
+                                : "bg-amber-100 text-amber-800 border border-amber-200"
                           }`}
                         >
                           <Shield size={10} />
-                          {isAdmin ? "Admin" : "Asisten"}
+                          {isAdmin ? "Admin" : isAuditor ? "Auditor" : "Kasir"}
                         </span>
                       </td>
                       <td className="px-2.5 py-1.5 text-slate-600">
-                        {isAdmin ? (
+                        {isAdmin || isAuditor ? (
                           <span className="inline-flex items-center gap-1 text-slate-700 font-semibold text-[11px]">
                             <Lock size={11} className="text-emerald-600" /> Semua CoA (Akses Penuh
-                            Termasuk Gaji & Modal)
+                            {isAdmin ? " & Advanced" : " & Laporan Keuangan"})
                           </span>
                         ) : (
                           <div className="flex items-center gap-2">
@@ -248,7 +252,7 @@ export default function SettingsPage() {
                         )}
                       </td>
                       <td className="px-2.5 py-1.5 text-right space-x-1.5">
-                        {!isAdmin && (
+                        {isKasir && (
                           <button
                             type="button"
                             onClick={() => openPermissionsModal(u)}
@@ -682,11 +686,14 @@ export default function SettingsPage() {
                 </label>
                 <select
                   value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as "admin" | "asisten")}
+                  onChange={(e) => setNewRole(e.target.value as "admin" | "kasir" | "auditor")}
                   className="w-full rounded border border-slate-300 px-2 py-1 text-xs outline-none focus:border-brand focus:ring-1 focus:ring-brand bg-white"
                 >
-                  <option value="asisten">Asisten (Hanya CoA Operasional, Gaji Tersembunyi)</option>
-                  <option value="admin">Admin (Akses Penuh Seluruh Laporan & Akun)</option>
+                  <option value="kasir">Kasir (Hanya Input Transaksi Baru, Non-Gaji)</option>
+                  <option value="auditor">
+                    Auditor (Buku Transaksi, Bisa Edit, & Laporan Keuangan)
+                  </option>
+                  <option value="admin">Admin (Akses Penuh Seluruh Modul & Akun)</option>
                 </select>
               </div>
 

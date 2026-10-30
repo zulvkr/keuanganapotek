@@ -152,32 +152,31 @@ export const MetadataFieldSchema = z.object({
   helpText: z.string().trim().optional(),
 });
 
-export const TransactionGroupSchema = z.enum([
-  "omzet",
-  "biaya_operasional",
-  "pelunasan_piutang",
-  "pembayaran_hutang",
-  "pembelian_persediaan",
-  "transfer_antar_akun",
-  "tidak_terkategori",
-]);
+export const TransactionGroupSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .regex(/^[a-z0-9_-]+$/, "Kunci grup hanya boleh huruf kecil, angka, garis bawah atau strip");
 
-export const TransactionTypeSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().trim().min(1),
-  code: z.string().trim().min(1),
-  group: TransactionGroupSchema.default("tidak_terkategori"),
-  category: z.string().optional(),
-  posSyncCategory: z.string().optional(),
-  debitAccountId: z.string().min(1),
-  creditAccountId: z.string().min(1),
+export const CreateTransactionGroupSchema = z.object({
+  key: TransactionGroupSchema,
+  label: z.string().trim().min(1, "Label nama grup wajib diisi"),
+  badgeLabel: z.string().trim().optional(),
   description: z.string().trim().optional(),
+  badgeClass: z.string().trim().optional(),
   metadataSchema: z.array(MetadataFieldSchema).default([]),
-  isActive: z.boolean().default(true),
 });
 
 export const UpdateTransactionGroupSchema = z.object({
-  metadataSchema: z.array(MetadataFieldSchema),
+  label: z.string().trim().min(1, "Label nama grup wajib diisi").optional(),
+  badgeLabel: z.string().trim().optional(),
+  description: z.string().trim().optional(),
+  badgeClass: z.string().trim().optional(),
+  metadataSchema: z.array(MetadataFieldSchema).optional(),
+});
+
+export const ReorderTransactionGroupsSchema = z.object({
+  keys: z.array(z.string().min(1)).min(1, "Daftar urutan grup tidak boleh kosong"),
 });
 
 export const TransactionEntrySchema = z.object({
@@ -244,18 +243,34 @@ export const LoginInputSchema = z.object({
   password: z.string().min(1, "Password wajib diisi"),
 });
 
+export const TransactionTypeSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(1),
+  code: z.string().trim().min(1),
+  group: TransactionGroupSchema.default("tidak_terkategori"),
+  category: z.string().optional(),
+  posSyncCategory: z.string().optional(),
+  debitAccountId: z.string().min(1),
+  creditAccountId: z.string().min(1),
+  description: z.string().trim().optional(),
+  metadataSchema: z.array(MetadataFieldSchema).default([]),
+  isActive: z.boolean().default(true),
+});
+
+export const UserRoleSchema = z.enum(["admin", "asisten", "kasir", "auditor"]);
+
 export const CreateUserInputSchema = z.object({
   username: z.string().trim().min(3, "Username minimal 3 karakter"),
   password: z.string().min(4, "Password minimal 4 karakter"),
   name: z.string().trim().min(1, "Nama wajib diisi"),
-  role: z.enum(["admin", "asisten"]),
+  role: UserRoleSchema,
   allowedCoaCodes: z.array(z.string()).default([]),
 });
 
 export const UpdateUserInputSchema = z.object({
   name: z.string().trim().min(1).optional(),
   password: z.string().min(4).optional(),
-  role: z.enum(["admin", "asisten"]).optional(),
+  role: UserRoleSchema.optional(),
   allowedCoaCodes: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
 });

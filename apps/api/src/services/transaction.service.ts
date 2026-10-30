@@ -48,16 +48,14 @@ function amountToSen(value: string | number): number {
     : rupiahToSen(normalized);
 }
 
-export function getCustomGroupSchemas(
-  db: Executor,
-): Map<TransactionGroup, MetadataFieldDefinition[]> {
+export function getCustomGroupSchemas(db: Executor): Map<string, MetadataFieldDefinition[]> {
   try {
     const rows = db.select().from(transactionGroupConfigs).all();
-    const map = new Map<TransactionGroup, MetadataFieldDefinition[]>();
+    const map = new Map<string, MetadataFieldDefinition[]>();
     for (const r of rows) {
       try {
         const schema = JSON.parse(r.metadataSchema || "[]") as MetadataFieldDefinition[];
-        map.set(r.group as TransactionGroup, schema);
+        map.set(r.group, schema);
       } catch {
         // ignore JSON parse error
       }
@@ -69,8 +67,8 @@ export function getCustomGroupSchemas(
 }
 
 export function getEffectiveGroupSchema(
-  group: TransactionGroup,
-  customSchemas?: Map<TransactionGroup, MetadataFieldDefinition[]>,
+  group: string,
+  customSchemas?: Map<string, MetadataFieldDefinition[]>,
 ): MetadataFieldDefinition[] {
   if (customSchemas?.has(group)) {
     return customSchemas.get(group)!;
@@ -80,42 +78,195 @@ export function getEffectiveGroupSchema(
 }
 
 export function listTransactionGroups(db: Executor): TransactionGroupDetail[] {
-  const customSchemas = getCustomGroupSchemas(db);
-  return TRANSACTION_GROUPS.map((grp) => {
-    const isCustomized = customSchemas.has(grp.key);
-    const metadataSchema = isCustomized ? customSchemas.get(grp.key)! : grp.metadataSchema;
-    return {
+  try {
+    const rows = db
+      .select()
+      .from(transactionGroupConfigs)
+      .orderBy(asc(transactionGroupConfigs.sortOrder))
+      .all();
+    if (rows.length === 0) {
+      // Seed default 7 system groups with initial sort orders
+      const now = nowIsoInstant();
+      TRANSACTION_GROUPS.forEach((grp, idx) => {
+        db.insert(transactionGroupConfigs)
+          .values({
+            group: grp.key,
+            label: grp.label,
+            badgeLabel: grp.badgeLabel,
+            description: grp.description,
+            badgeClass: grp.badgeClass,
+            metadataSchema: JSON.stringify(grp.metadataSchema),
+            sortOrder: idx,
+            isSystem: true,
+            updatedAt: now,
+          })
+          .run();
+      });
+      return TRANSACTION_GROUPS.map((grp, idx) => ({
+        ...grp,
+        sortOrder: idx,
+        isSystem: true,
+        isCustomized: false,
+      }));
+    }
+
+    return rows.map((r) => {
+      let schema: MetadataFieldDefinition[] = [];
+      try {
+        schema = JSON.parse(r.metadataSchema || "[]");
+      } catch {
+        schema = [];
+      }
+      return {
+        key: r.group,
+        label: r.label || r.group,
+        badgeLabel: r.badgeLabel || r.label || r.group,
+        description: r.description || "",
+        badgeClass: r.badgeClass || "bg-slate-100 text-slate-700 border-slate-200",
+        metadataSchema: schema,
+        sortOrder: r.sortOrder ?? 0,
+        isSystem: Boolean(r.isSystem),
+        isCustomized: true,
+      };
+    });
+  } catch {
+    return TRANSACTION_GROUPS.map((grp, idx) => ({
       ...grp,
-      metadataSchema,
-      isCustomized,
-    };
-  });
+      sortOrder: idx,
+      isSystem: true,
+      isCustomized: false,
+    }));
+  }
 }
 
-export function updateTransactionGroupSchema(
+export function createTransactionGroup(
   db: Executor,
-  groupKey: TransactionGroup,
-  metadataSchema: MetadataFieldDefinition[],
+  input: {
+    key: string;
+    label: string;
+    badgeLabel?: string;
+    description?: string;
+    badgeClass?: string;
+    metadataSchema?: MetadataFieldDefinition[];
+  },
   actor = "system",
 ): TransactionGroupDetail {
-  const exists = TRANSACTION_GROUPS.find((g) => g.key === groupKey);
-  if (!exists) {
-    throw new Error(`Grup transaksi ${groupKey} tidak valid`);
+  const existing = db
+    .select()
+    .from(transactionGroupConfigs)
+    .where(eq(transactionGroupConfigs.group, input.key))
+    .get();
+  if (existing) {
+    throw new Error(`Grup transaksi dengan kunci '${input.key}' sudah ada`);
   }
+
+  // Get max sortOrder
+  const allGroups = listTransactionGroups(db);
+  const nextOrder =
+    allGroups.length > 0 ? Math.max(...allGroups.map((g) => g.sortOrder ?? 0)) + 1 : 0;
   const now = nowIsoInstant();
+  const schema = input.metadataSchema || [];
+
   db.insert(transactionGroupConfigs)
     .values({
-      group: groupKey,
-      metadataSchema: JSON.stringify(metadataSchema),
+      group: input.key,
+      label: input.label,
+      badgeLabel: input.badgeLabel || input.label,
+      description: input.description || "",
+      badgeClass: input.badgeClass || "bg-blue-50 text-blue-800 border-blue-200",
+      metadataSchema: JSON.stringify(schema),
+      sortOrder: nextOrder,
+      isSystem: false,
       updatedAt: now,
     })
-    .onConflictDoUpdate({
-      target: transactionGroupConfigs.group,
-      set: {
-        metadataSchema: JSON.stringify(metadataSchema),
-        updatedAt: now,
-      },
-    })
+    .run();
+
+  recordAudit(db, {
+    entityType: "TRANSACTION_GROUP",
+    entityId: input.key,
+    action: "CREATE",
+    actor,
+    after: input,
+  });
+
+  return {
+    key: input.key,
+    label: input.label,
+    badgeLabel: input.badgeLabel || input.label,
+    description: input.description || "",
+    badgeClass: input.badgeClass || "bg-blue-50 text-blue-800 border-blue-200",
+    metadataSchema: schema,
+    sortOrder: nextOrder,
+    isSystem: false,
+    isCustomized: true,
+  };
+}
+
+export function updateTransactionGroup(
+  db: Executor,
+  groupKey: string,
+  input: {
+    label?: string;
+    badgeLabel?: string;
+    description?: string;
+    badgeClass?: string;
+    metadataSchema?: MetadataFieldDefinition[];
+  },
+  actor = "system",
+): TransactionGroupDetail {
+  const existing = db
+    .select()
+    .from(transactionGroupConfigs)
+    .where(eq(transactionGroupConfigs.group, groupKey))
+    .get();
+
+  const now = nowIsoInstant();
+  if (!existing) {
+    // If it's a default group that hasn't been saved to DB yet
+    const defaultConf = TRANSACTION_GROUPS.find((g) => g.key === groupKey);
+    if (!defaultConf) {
+      throw new Error(`Grup transaksi '${groupKey}' tidak ditemukan`);
+    }
+    const created = {
+      group: groupKey,
+      label: input.label ?? defaultConf.label,
+      badgeLabel: input.badgeLabel ?? defaultConf.badgeLabel,
+      description: input.description ?? defaultConf.description,
+      badgeClass: input.badgeClass ?? defaultConf.badgeClass,
+      metadataSchema: JSON.stringify(input.metadataSchema ?? defaultConf.metadataSchema),
+      sortOrder: 0,
+      isSystem: true,
+      updatedAt: now,
+    };
+    db.insert(transactionGroupConfigs).values(created).run();
+    return {
+      key: groupKey,
+      label: created.label,
+      badgeLabel: created.badgeLabel,
+      description: created.description,
+      badgeClass: created.badgeClass,
+      metadataSchema: JSON.parse(created.metadataSchema),
+      sortOrder: 0,
+      isSystem: true,
+      isCustomized: true,
+    };
+  }
+
+  const updatedValues = {
+    label: input.label !== undefined ? input.label : existing.label,
+    badgeLabel: input.badgeLabel !== undefined ? input.badgeLabel : existing.badgeLabel,
+    description: input.description !== undefined ? input.description : existing.description,
+    badgeClass: input.badgeClass !== undefined ? input.badgeClass : existing.badgeClass,
+    metadataSchema:
+      input.metadataSchema !== undefined
+        ? JSON.stringify(input.metadataSchema)
+        : existing.metadataSchema,
+    updatedAt: now,
+  };
+
+  db.update(transactionGroupConfigs)
+    .set(updatedValues)
+    .where(eq(transactionGroupConfigs.group, groupKey))
     .run();
 
   recordAudit(db, {
@@ -123,26 +274,126 @@ export function updateTransactionGroupSchema(
     entityId: groupKey,
     action: "UPDATE",
     actor,
-    after: { group: groupKey, metadataSchema },
+    after: { group: groupKey, ...updatedValues },
   });
 
   return {
-    ...exists,
-    metadataSchema,
+    key: groupKey,
+    label: updatedValues.label || groupKey,
+    badgeLabel: updatedValues.badgeLabel || updatedValues.label || groupKey,
+    description: updatedValues.description || "",
+    badgeClass: updatedValues.badgeClass || "bg-slate-100 text-slate-700 border-slate-200",
+    metadataSchema: JSON.parse(updatedValues.metadataSchema),
+    sortOrder: existing.sortOrder ?? 0,
+    isSystem: Boolean(existing.isSystem),
     isCustomized: true,
   };
 }
 
+export function deleteTransactionGroup(
+  db: Executor,
+  groupKey: string,
+  actor = "system",
+): { success: boolean; affectedTypesCount: number } {
+  const existing = db
+    .select()
+    .from(transactionGroupConfigs)
+    .where(eq(transactionGroupConfigs.group, groupKey))
+    .get();
+
+  if (!existing) {
+    throw new Error(`Grup transaksi '${groupKey}' tidak ditemukan`);
+  }
+  if (existing.isSystem) {
+    throw new Error(`Grup sistem bawaan '${existing.label || groupKey}' tidak boleh dihapus`);
+  }
+
+  // Fallback transaction types belonging to this group to 'tidak_terkategori'
+  const matchingTypes = db
+    .select()
+    .from(transactionTypes)
+    .where(eq(transactionTypes.group, groupKey))
+    .all();
+
+  const affectedTypesCount = matchingTypes.length;
+  if (affectedTypesCount > 0) {
+    db.update(transactionTypes)
+      .set({ group: "tidak_terkategori", updatedAt: nowIsoInstant() })
+      .where(eq(transactionTypes.group, groupKey))
+      .run();
+  }
+
+  db.delete(transactionGroupConfigs).where(eq(transactionGroupConfigs.group, groupKey)).run();
+
+  recordAudit(db, {
+    entityType: "TRANSACTION_GROUP",
+    entityId: groupKey,
+    action: "DELETE",
+    actor,
+    before: existing,
+    after: { fallbackGroup: "tidak_terkategori", affectedTypesCount },
+  });
+
+  return { success: true, affectedTypesCount };
+}
+
+export function reorderTransactionGroups(
+  db: Executor,
+  orderedKeys: string[],
+  actor = "system",
+): TransactionGroupDetail[] {
+  // Ensure groups exist in DB
+  listTransactionGroups(db);
+
+  const now = nowIsoInstant();
+  orderedKeys.forEach((key, idx) => {
+    db.update(transactionGroupConfigs)
+      .set({ sortOrder: idx, updatedAt: now })
+      .where(eq(transactionGroupConfigs.group, key))
+      .run();
+  });
+
+  recordAudit(db, {
+    entityType: "TRANSACTION_GROUP",
+    entityId: "REORDER",
+    action: "UPDATE",
+    actor,
+    after: { orderedKeys },
+  });
+
+  return listTransactionGroups(db);
+}
+
+export function updateTransactionGroupSchema(
+  db: Executor,
+  groupKey: string,
+  metadataSchema: MetadataFieldDefinition[],
+  actor = "system",
+): TransactionGroupDetail {
+  return updateTransactionGroup(db, groupKey, { metadataSchema }, actor);
+}
+
 export function resetTransactionGroupSchema(
   db: Executor,
-  groupKey: TransactionGroup,
+  groupKey: string,
   actor = "system",
 ): TransactionGroupDetail {
   const exists = TRANSACTION_GROUPS.find((g) => g.key === groupKey);
   if (!exists) {
     throw new Error(`Grup transaksi ${groupKey} tidak valid`);
   }
-  db.delete(transactionGroupConfigs).where(eq(transactionGroupConfigs.group, groupKey)).run();
+  const now = nowIsoInstant();
+  db.update(transactionGroupConfigs)
+    .set({
+      label: exists.label,
+      badgeLabel: exists.badgeLabel,
+      description: exists.description,
+      badgeClass: exists.badgeClass,
+      metadataSchema: JSON.stringify(exists.metadataSchema),
+      updatedAt: now,
+    })
+    .where(eq(transactionGroupConfigs.group, groupKey))
+    .run();
 
   recordAudit(db, {
     entityType: "TRANSACTION_GROUP",

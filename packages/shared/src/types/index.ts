@@ -66,7 +66,7 @@ export type HealthResponse = {
   timestamp: string;
 };
 
-export type UserRole = "admin" | "asisten";
+export type UserRole = "admin" | "asisten" | "kasir" | "auditor";
 
 export type AuthUser = {
   id: string;

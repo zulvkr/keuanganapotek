@@ -1184,18 +1184,32 @@ export default function DailyTransactionsPage() {
 
   return (
     <div className="space-y-1.5 text-xs">
-      {/* Assistant RBAC Mode Banner */}
-      {user?.role === "asisten" && (
+      {/* Role Notice Banner */}
+      {(user?.role === "kasir" || user?.role === "asisten") && (
         <div className="flex items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-900">
           <div className="flex items-center gap-1.5">
             <Shield size={13} className="text-amber-600 shrink-0" />
             <span>
-              <strong>Mode Asisten Aktif:</strong> Anda hanya dapat melihat & menginput transaksi
-              dengan CoA yang diizinkan. Transaksi sensitif (seperti Gaji & Modal) disembunyikan.
+              <strong>Mode Kasir Aktif:</strong> Anda dapat melihat & menginput transaksi harian.
+              Transaksi yang sudah tersimpan tidak dapat diubah atau dihapus.
             </span>
           </div>
           <span className="font-bold text-amber-800 text-[10px] bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
-            RBAC Terproteksi
+            Khusus Input
+          </span>
+        </div>
+      )}
+      {user?.role === "auditor" && (
+        <div className="flex items-center justify-between gap-2 rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] text-sky-900">
+          <div className="flex items-center gap-1.5">
+            <Shield size={13} className="text-sky-600 shrink-0" />
+            <span>
+              <strong>Mode Auditor Aktif:</strong> Anda memiliki akses penuh ke Buku Transaksi
+              (dapat memeriksa & mengoreksi/mengedit transaksi) serta modul Laporan Keuangan.
+            </span>
+          </div>
+          <span className="font-bold text-sky-800 text-[10px] bg-sky-100 border border-sky-200 px-1.5 py-0.5 rounded shrink-0">
+            Pemeriksaan & Koreksi
           </span>
         </div>
       )}
@@ -1283,7 +1297,8 @@ export default function DailyTransactionsPage() {
           tableWrapperRef={tableWrapperRef}
           tableBodyHeight={tableBodyHeight}
           showNeracaFilter={showNeracaFilter}
-          isAssistant={user?.role === "asisten"}
+          isAssistant={user?.role === "asisten" || user?.role === "kasir"}
+          canEdit={user?.role !== "kasir"}
           isAllSelected={isAllSelected}
           isSomeSelected={isSomeSelected}
           onToggleSelectAll={handleToggleSelectAll}

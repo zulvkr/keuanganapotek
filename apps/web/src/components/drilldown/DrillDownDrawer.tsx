@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 type DrillDownEntry = {
@@ -29,23 +30,19 @@ type Props = {
 
 export default function DrillDownDrawer({ data, loading, error, onClose, formatMoney }: Props) {
   const visible = Boolean(data || loading || error);
-  return (
+  if (!visible) return null;
+
+  return createPortal(
     <>
       <div
         aria-hidden="true"
-        className={
-          "fixed inset-0 z-30 bg-slate-900/25 transition-opacity " +
-          (visible ? "opacity-100" : "pointer-events-none opacity-0")
-        }
+        className="fixed inset-0 z-[9998] bg-slate-900/40 backdrop-blur-xs transition-opacity"
         onClick={onClose}
       />
       <aside
         aria-label="Rincian jurnal akun"
         aria-modal="true"
-        className={
-          "fixed inset-y-0 right-0 z-40 flex w-full max-w-xl flex-col bg-white shadow-2xl transition-transform " +
-          (visible ? "translate-x-0" : "translate-x-full")
-        }
+        className="fixed inset-y-0 right-0 z-[9999] flex w-full max-w-xl flex-col bg-white shadow-2xl transition-transform translate-x-0"
         role="dialog"
       >
         <header className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-1.5">
@@ -142,6 +139,7 @@ export default function DrillDownDrawer({ data, loading, error, onClose, formatM
           </>
         )}
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }

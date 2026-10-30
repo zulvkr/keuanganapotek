@@ -1,4 +1,5 @@
 import { type TransactionType, todayIsoDate } from "@keuangan-apotek/shared";
+import { createPortal } from "react-dom";
 import { Check, Tag, X } from "lucide-react";
 import type { Account } from "../../lib/queries";
 import { toast } from "../../lib/toast";
@@ -37,8 +38,8 @@ export function TransactionMobileModal({
   const credAcc = curType ? accountById.get(curType.creditAccountId) : null;
   const schema = curType?.metadataSchema || [];
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
       <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-4 shadow-2xl space-y-3.5 my-auto max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
@@ -226,6 +227,7 @@ export function TransactionMobileModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
