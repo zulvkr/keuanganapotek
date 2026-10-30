@@ -69,6 +69,7 @@ export type TransactionTableProps = {
   onDeleteTx: (id: string) => void;
   onInsertRelative: (tx: any, pos: "above" | "below") => void;
   onClearAccountFilters: () => void;
+  onQuickUpdateTransaction?: (id: string, patch: Record<string, any>) => void;
   // Bottom Bar
   groupTabsRef: React.Ref<HTMLDivElement>;
   scrollGroupTabs: (amount: number) => void;
@@ -129,6 +130,7 @@ export function TransactionTable({
   onDeleteTx,
   onInsertRelative,
   onClearAccountFilters,
+  onQuickUpdateTransaction,
   groupTabsRef,
   scrollGroupTabs,
   groupPillsNode,
@@ -396,6 +398,7 @@ export function TransactionTable({
                       onDelete={() => onDeleteTx(tx.id)}
                       onInsertRelative={(pos) => onInsertRelative(tx, pos)}
                       onToggleMetadata={() => onToggleMetadata(false, tx.id)}
+                      onQuickUpdate={(patch) => onQuickUpdateTransaction?.(tx.id, patch)}
                     />
 
                     {/* After Drafts */}

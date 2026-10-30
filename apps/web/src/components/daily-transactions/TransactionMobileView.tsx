@@ -32,6 +32,7 @@ export type TransactionMobileViewProps = {
   onOpenNewTransaction: () => void;
   onOpenEditTransaction: (tx: any) => void;
   onDeleteTransaction: (id: string) => void;
+  onQuickUpdateTransaction?: (id: string, patch: Record<string, any>) => void;
 };
 
 export function TransactionMobileView({
@@ -56,6 +57,7 @@ export function TransactionMobileView({
   onOpenNewTransaction,
   onOpenEditTransaction,
   onDeleteTransaction,
+  onQuickUpdateTransaction,
 }: TransactionMobileViewProps) {
   return (
     <div className="space-y-2">
@@ -272,6 +274,10 @@ export function TransactionMobileView({
                       schema={schema}
                       isEditing={false}
                       onOpenEditor={() => {}}
+                      onQuickUpdate={(key, val) => {
+                        const nextMeta = { ...tx.metadata, [key]: val };
+                        onQuickUpdateTransaction?.(tx.id, { metadata: nextMeta });
+                      }}
                     />
                   </div>
                 )}

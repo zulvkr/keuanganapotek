@@ -701,6 +701,30 @@ export default function DailyTransactionsPage() {
     },
   });
 
+  const quickUpdateMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Record<string, any> }) =>
+      updateTransaction(id, patch),
+    onSuccess: async () => {
+      toast.success("Transaksi diperbarui.");
+      await invalidateAccountingQueries(queryClient);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Gagal memperbarui transaksi");
+    },
+  });
+
+  function handleQuickUpdateTransaction(id: string, patch: Record<string, any>) {
+    if (patch.amount !== undefined && typeof patch.amount === "string") {
+      try {
+        parseRupiahToSen(patch.amount);
+      } catch {
+        toast.error("Format nominal tidak valid");
+        return;
+      }
+    }
+    quickUpdateMutation.mutate({ id, patch });
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteTransaction(id),
     onSuccess: async () => {
@@ -1288,6 +1312,7 @@ export default function DailyTransactionsPage() {
               deleteMutation.mutate(id);
             }
           }}
+          onQuickUpdateTransaction={handleQuickUpdateTransaction}
         />
       )}
 
@@ -1352,6 +1377,7 @@ export default function DailyTransactionsPage() {
           }}
           onInsertRelative={insertRowRelative}
           onClearAccountFilters={() => setSelectedAccountIds([])}
+          onQuickUpdateTransaction={handleQuickUpdateTransaction}
           groupTabsRef={groupTabsRef}
           scrollGroupTabs={scrollGroupTabs}
           groupPillsNode={renderGroupPills()}

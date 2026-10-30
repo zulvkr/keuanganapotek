@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   useFloating,
+  autoUpdate,
   offset,
   flip,
   shift,
@@ -81,10 +82,11 @@ export function GoogleSheetsSummaryPill({ summaryStats }: GoogleSheetsSummaryPil
 
   const [isOpen, setIsOpen] = useState(false);
 
-  const { refs, floatingStyles, context } = useFloating({
+  const { refs, floatingStyles, context, isPositioned } = useFloating({
     open: isOpen,
     onOpenChange: setIsOpen,
     placement: "top-end",
+    whileElementsMounted: autoUpdate,
     middleware: [offset(4), flip(), shift({ padding: 6 })],
   });
 
@@ -144,7 +146,9 @@ export function GoogleSheetsSummaryPill({ summaryStats }: GoogleSheetsSummaryPil
             ref={refs.setFloating}
             style={floatingStyles}
             {...getFloatingProps()}
-            className="z-50 min-w-[210px] rounded-lg border border-slate-200 bg-white py-1 shadow-xl text-xs font-sans text-slate-800 animate-in fade-in zoom-in-95 duration-100"
+            className={`z-50 min-w-[210px] rounded-lg border border-slate-200 bg-white py-1 shadow-xl text-xs font-sans text-slate-800 transition-opacity duration-100 ${
+              isPositioned ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
           >
             <div className="py-0.5">
               {METRIC_DEFINITIONS.map((metric) => {

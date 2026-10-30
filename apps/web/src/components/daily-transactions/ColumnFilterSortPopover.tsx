@@ -57,7 +57,7 @@ export function ColumnFilterSortPopover({
 
   const isCurrentSort = activeSortColumn === columnKey;
 
-  const { refs, floatingStyles, context } = useFloating({
+  const { refs, floatingStyles, context, isPositioned } = useFloating({
     open: isOpen,
     onOpenChange: (open) => {
       setIsOpen(open);
@@ -160,7 +160,9 @@ export function ColumnFilterSortPopover({
             ref={refs.setFloating}
             style={floatingStyles}
             {...getFloatingProps()}
-            className="z-[9999] w-64 rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xl text-xs space-y-2.5 text-slate-700"
+            className={`z-[9999] w-64 rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xl text-xs space-y-2.5 text-slate-700 transition-opacity duration-100 ${
+              isPositioned ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
           >
             {/* Header / Title */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">

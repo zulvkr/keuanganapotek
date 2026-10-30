@@ -3,25 +3,253 @@ import {
   type TransactionType,
   TRANSACTION_GROUPS,
   inferTransactionGroup,
+  senToRupiah,
 } from "@keuangan-apotek/shared";
-import {
-  ArrowDownToLine,
-  ArrowUpToLine,
-  Check,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Tag,
-  Trash2,
-} from "lucide-react";
+import { Check, Pencil, Plus, RotateCcw, Tag, Trash2 } from "lucide-react";
 import type { Account } from "../../lib/queries";
 import { DynamicMetadataForm } from "../metadata/DynamicMetadataForm";
+import { CellEditPopover } from "./CellEditPopover";
 import { formatAmountInput, formatSen, type DraftRow } from "./daily-transaction.types";
 import { IsoDateInput } from "./IsoDateInput";
 import { KeyTipBadge } from "./KeyboardTipsOverlay";
 import { MetadataCellDisplay } from "./MetadataCellDisplay";
 import { SearchableTransactionTypeSelect } from "./SearchableTransactionTypeSelect";
 import { TransactionTypeInfoTooltip } from "./TransactionTypeInfoTooltip";
+
+function DateQuickEditor({
+  initialDate,
+  onSave,
+  onCancel,
+}: {
+  initialDate: string;
+  onSave: (date: string) => void;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = React.useState(initialDate);
+  const inputRef = React.useRef<any>(null);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 20);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="space-y-2">
+      <IsoDateInput
+        ref={inputRef}
+        autoFocus
+        value={date}
+        onChange={(val) => setDate(val)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSave(date);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+      />
+      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded px-2 py-0.5 text-[11px] text-slate-500 hover:bg-slate-100"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          onClick={() => onSave(date)}
+          className="inline-flex items-center gap-1 rounded bg-brand px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-blue-700 shadow-2xs"
+        >
+          <Check size={11} /> Simpan
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TransactionTypeQuickEditor({
+  currentTypeId,
+  transactionTypes,
+  accountById,
+  onSave,
+  onCancel,
+}: {
+  currentTypeId: string;
+  transactionTypes: TransactionType[];
+  accountById: Map<string, Account>;
+  onSave: (typeId: string) => void;
+  onCancel: () => void;
+}) {
+  const [typeId, setTypeId] = React.useState(currentTypeId);
+
+  return (
+    <div className="space-y-2">
+      <SearchableTransactionTypeSelect
+        value={typeId}
+        autoFocus
+        onChange={(newId) => {
+          setTypeId(newId);
+          onSave(newId);
+        }}
+        transactionTypes={transactionTypes}
+        accountById={accountById}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+      />
+      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded px-2 py-0.5 text-[11px] text-slate-500 hover:bg-slate-100"
+        >
+          Batal
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AmountQuickEditor({
+  initialAmount,
+  onSave,
+  onCancel,
+}: {
+  initialAmount: string;
+  onSave: (amount: string) => void;
+  onCancel: () => void;
+}) {
+  const [amount, setAmount] = React.useState(initialAmount);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }, 20);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleSave = () => {
+    const formatted = formatAmountInput(amount);
+    onSave(formatted);
+  };
+
+  return (
+    <div className="space-y-2">
+      <input
+        ref={inputRef}
+        type="text"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        onBlur={() => {
+          setAmount(formatAmountInput(amount));
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            handleSave();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        placeholder="0,00"
+        className="w-full h-7 rounded border border-slate-300 px-2 py-1 text-right font-mono text-xs tabular-nums outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+      />
+      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded px-2 py-0.5 text-[11px] text-slate-500 hover:bg-slate-100"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          className="inline-flex items-center gap-1 rounded bg-brand px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-blue-700 shadow-2xs"
+        >
+          <Check size={11} /> Simpan
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PicQuickEditor({
+  initialPic,
+  onSave,
+  onCancel,
+}: {
+  initialPic: string;
+  onSave: (pic: string) => void;
+  onCancel: () => void;
+}) {
+  const [pic, setPic] = React.useState(initialPic);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }, 20);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="space-y-2">
+      <input
+        ref={inputRef}
+        type="text"
+        value={pic}
+        maxLength={10}
+        placeholder="PIC"
+        onChange={(e) => setPic(e.target.value.toUpperCase())}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSave(pic.trim());
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        className="w-full h-7 text-center uppercase font-mono rounded border border-slate-300 px-2 py-1 text-xs outline-none focus:border-brand focus:ring-1 focus:ring-brand/20"
+      />
+      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded px-2 py-0.5 text-[11px] text-slate-500 hover:bg-slate-100"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          onClick={() => onSave(pic.trim())}
+          className="inline-flex items-center gap-1 rounded bg-brand px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-blue-700 shadow-2xs"
+        >
+          <Check size={11} /> Simpan
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export type TransactionTableRowProps = {
   tx: any;
@@ -47,6 +275,7 @@ export type TransactionTableRowProps = {
   onDelete: () => void;
   onInsertRelative: (pos: "above" | "below") => void;
   onToggleMetadata: (open: boolean) => void;
+  onQuickUpdate?: (patch: Record<string, any>) => void;
 };
 
 export function TransactionTableRow({
@@ -73,6 +302,7 @@ export function TransactionTableRow({
   onDelete,
   onInsertRelative,
   onToggleMetadata,
+  onQuickUpdate,
 }: TransactionTableRowProps) {
   const selectedType = typeById.get(
     isEditing ? currentDraft!.transactionTypeId : tx.transactionTypeId,
@@ -125,6 +355,29 @@ export function TransactionTableRow({
               }
               onKeyDown={(e) => onEditKeyDown(e)}
             />
+          ) : canEdit && onQuickUpdate ? (
+            <CellEditPopover
+              title="Edit Tanggal"
+              trigger={
+                <span
+                  className="hover:bg-blue-50 hover:text-brand px-1 py-0.5 -mx-1 rounded cursor-pointer transition font-mono"
+                  title="Klik untuk edit tanggal"
+                >
+                  {tx.transactionDate}
+                </span>
+              }
+            >
+              {({ close }) => (
+                <DateQuickEditor
+                  initialDate={tx.transactionDate}
+                  onSave={(newDate) => {
+                    onQuickUpdate({ transactionDate: newDate });
+                    close();
+                  }}
+                  onCancel={close}
+                />
+              )}
+            </CellEditPopover>
           ) : (
             tx.transactionDate
           )}
@@ -187,12 +440,40 @@ export function TransactionTableRow({
                     </span>
                   ) : null;
                 })()}
-                <span
-                  className="font-semibold text-slate-900 truncate"
-                  title={tx.transactionTypeName || "Tipe Transaksi"}
-                >
-                  {tx.transactionTypeName || "Tipe Transaksi"}
-                </span>
+                {canEdit && onQuickUpdate ? (
+                  <CellEditPopover
+                    title="Ganti Tipe Transaksi"
+                    widthClass="w-80"
+                    trigger={
+                      <span
+                        className="font-semibold text-slate-900 truncate hover:text-brand hover:underline cursor-pointer transition"
+                        title={`${tx.transactionTypeName || "Tipe Transaksi"} (Klik untuk ganti tipe)`}
+                      >
+                        {tx.transactionTypeName || "Tipe Transaksi"}
+                      </span>
+                    }
+                  >
+                    {({ close }) => (
+                      <TransactionTypeQuickEditor
+                        currentTypeId={tx.transactionTypeId}
+                        transactionTypes={transactionTypes}
+                        accountById={accountById}
+                        onSave={(newTypeId) => {
+                          onQuickUpdate({ transactionTypeId: newTypeId });
+                          close();
+                        }}
+                        onCancel={close}
+                      />
+                    )}
+                  </CellEditPopover>
+                ) : (
+                  <span
+                    className="font-semibold text-slate-900 truncate"
+                    title={tx.transactionTypeName || "Tipe Transaksi"}
+                  >
+                    {tx.transactionTypeName || "Tipe Transaksi"}
+                  </span>
+                )}
               </div>
               <TransactionTypeInfoTooltip
                 debitCode={tx.debitAccountCode}
@@ -220,6 +501,30 @@ export function TransactionTableRow({
               onKeyDown={(e) => onEditKeyDown(e)}
               className="w-full h-6 rounded border border-slate-200 px-1.5 py-0.5 text-right font-mono text-xs tabular-nums outline-none focus:border-brand"
             />
+          ) : canEdit && onQuickUpdate ? (
+            <CellEditPopover
+              title="Edit Nominal (Rp)"
+              placement="bottom-end"
+              trigger={
+                <span
+                  className="font-semibold text-slate-900 hover:bg-blue-50 hover:text-brand px-1 py-0.5 -mx-1 rounded cursor-pointer transition inline-block text-right"
+                  title="Klik untuk edit nominal"
+                >
+                  Rp {formatSen(tx.amount)}
+                </span>
+              }
+            >
+              {({ close }) => (
+                <AmountQuickEditor
+                  initialAmount={senToRupiah(tx.amount).toFixed(2)}
+                  onSave={(newAmount) => {
+                    onQuickUpdate({ amount: newAmount });
+                    close();
+                  }}
+                  onCancel={close}
+                />
+              )}
+            </CellEditPopover>
           ) : (
             <span className="font-semibold text-slate-900">Rp {formatSen(tx.amount)}</span>
           )}
@@ -239,6 +544,31 @@ export function TransactionTableRow({
               onKeyDown={(e) => onEditKeyDown(e, true)}
               className="w-full h-6 text-center uppercase font-mono rounded border border-slate-200 px-1 py-0.5 text-xs outline-none focus:border-brand"
             />
+          ) : canEdit && onQuickUpdate ? (
+            <CellEditPopover
+              title="Edit PIC"
+              placement="bottom"
+              widthClass="w-48"
+              trigger={
+                <span
+                  className="font-mono text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-brand px-1.5 py-0.5 rounded cursor-pointer transition inline-block"
+                  title="Klik untuk edit PIC"
+                >
+                  {tx.pic || "—"}
+                </span>
+              }
+            >
+              {({ close }) => (
+                <PicQuickEditor
+                  initialPic={tx.pic || ""}
+                  onSave={(newPic) => {
+                    onQuickUpdate({ pic: newPic || null });
+                    close();
+                  }}
+                  onCancel={close}
+                />
+              )}
+            </CellEditPopover>
           ) : (
             <span className="font-mono text-xs font-semibold text-slate-700">{tx.pic || "—"}</span>
           )}
@@ -250,6 +580,21 @@ export function TransactionTableRow({
             metadata={isEditing ? currentDraft!.metadata : tx.metadata}
             schema={schema}
             isEditing={isEditing}
+            canEdit={canEdit}
+            onQuickUpdate={(key, val) => {
+              if (isEditing) {
+                onChangeDraft((prev) => {
+                  if (!prev) return null;
+                  return {
+                    ...prev,
+                    metadata: { ...prev.metadata, [key]: val },
+                  };
+                });
+              } else {
+                const nextMeta = { ...tx.metadata, [key]: val };
+                onQuickUpdate?.({ metadata: nextMeta });
+              }
+            }}
             onOpenEditor={() => onToggleMetadata(!isMetadataOpen)}
           />
         </td>
@@ -276,7 +621,7 @@ export function TransactionTableRow({
           );
         })}
 
-        {/* Action buttons */}
+        {/* Action buttons: Hapus tombol sisipkan di aksi, sisakan Edit & Hapus */}
         <td className="px-2 py-1 text-center sticky right-0 bg-white/95">
           {isEditing ? (
             <div className="flex items-center justify-center gap-1">
@@ -300,22 +645,6 @@ export function TransactionTableRow({
             </div>
           ) : (
             <div className="flex items-center justify-center gap-0.5">
-              <button
-                type="button"
-                onClick={() => onInsertRelative("above")}
-                className="rounded p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 transition"
-                title="Sisipkan baris baru di atas transaksi ini"
-              >
-                <ArrowUpToLine size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onInsertRelative("below")}
-                className="rounded p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 transition"
-                title="Sisipkan baris baru di bawah transaksi ini"
-              >
-                <ArrowDownToLine size={12} />
-              </button>
               {canEdit && (
                 <>
                   <button
