@@ -84,39 +84,65 @@ export function listTransactionGroups(db: Executor): TransactionGroupDetail[] {
       .from(transactionGroupConfigs)
       .orderBy(asc(transactionGroupConfigs.sortOrder))
       .all();
-    if (rows.length === 0) {
-      // Seed default 7 system groups with initial sort orders
-      const now = nowIsoInstant();
-      TRANSACTION_GROUPS.forEach((grp, idx) => {
+
+    const existingMap = new Map(rows.map((r) => [r.group, r]));
+    const now = nowIsoInstant();
+    let mutated = false;
+
+    // Ensure all standard system groups exist and have complete attributes (backfill if null from older migration)
+    TRANSACTION_GROUPS.forEach((defaultGrp, idx) => {
+      const existing = existingMap.get(defaultGrp.key);
+      if (!existing) {
         db.insert(transactionGroupConfigs)
           .values({
-            group: grp.key,
-            label: grp.label,
-            badgeLabel: grp.badgeLabel,
-            description: grp.description,
-            badgeClass: grp.badgeClass,
-            metadataSchema: JSON.stringify(grp.metadataSchema),
+            group: defaultGrp.key,
+            label: defaultGrp.label,
+            badgeLabel: defaultGrp.badgeLabel,
+            description: defaultGrp.description,
+            badgeClass: defaultGrp.badgeClass,
+            metadataSchema: JSON.stringify(defaultGrp.metadataSchema),
             sortOrder: idx,
             isSystem: true,
             updatedAt: now,
           })
           .run();
-      });
-      return TRANSACTION_GROUPS.map((grp, idx) => ({
-        ...grp,
-        sortOrder: idx,
-        isSystem: true,
-        isCustomized: false,
-      }));
-    }
+        mutated = true;
+      } else if (!existing.label || !existing.badgeLabel) {
+        // Backfill legacy record that was inserted before migration 0007
+        db.update(transactionGroupConfigs)
+          .set({
+            label: existing.label || defaultGrp.label,
+            badgeLabel: existing.badgeLabel || defaultGrp.badgeLabel,
+            description: existing.description || defaultGrp.description,
+            badgeClass: existing.badgeClass || defaultGrp.badgeClass,
+            isSystem: true,
+            sortOrder: existing.sortOrder ?? idx,
+            updatedAt: now,
+          })
+          .where(eq(transactionGroupConfigs.group, defaultGrp.key))
+          .run();
+        mutated = true;
+      }
+    });
 
-    return rows.map((r) => {
+    const finalRows = mutated
+      ? db
+          .select()
+          .from(transactionGroupConfigs)
+          .orderBy(asc(transactionGroupConfigs.sortOrder))
+          .all()
+      : rows;
+
+    return finalRows.map((r) => {
       let schema: MetadataFieldDefinition[] = [];
       try {
         schema = JSON.parse(r.metadataSchema || "[]");
       } catch {
         schema = [];
       }
+      const defaultGrp = TRANSACTION_GROUPS.find((g) => g.key === r.group);
+      const isCustomized =
+        !defaultGrp || JSON.stringify(schema) !== JSON.stringify(defaultGrp.metadataSchema);
       return {
         key: r.group,
         label: r.label || r.group,
@@ -126,7 +152,7 @@ export function listTransactionGroups(db: Executor): TransactionGroupDetail[] {
         metadataSchema: schema,
         sortOrder: r.sortOrder ?? 0,
         isSystem: Boolean(r.isSystem),
-        isCustomized: true,
+        isCustomized,
       };
     });
   } catch {

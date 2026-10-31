@@ -9,6 +9,7 @@ import {
   journalLines,
   journals,
   openingBalances,
+  transactionGroupConfigs,
   transactionTypes,
   transactions,
 } from "../db/schema/index.js";
@@ -1103,5 +1104,44 @@ describe("Transaction Types and Daily Transactions Engine", () => {
       .where(eq(transactionTypes.id, targetType.id))
       .get()!;
     expect(updatedType.group).toBe("tidak_terkategori");
+  });
+
+  it("backfills all default system groups if only partial groups exist in transaction_group_configs", async () => {
+    const { api, client } = setup();
+
+    // Clear all except omzet to simulate a legacy database where only omzet had a customized schema
+    client.db.delete(transactionGroupConfigs).run();
+    client.db
+      .insert(transactionGroupConfigs)
+      .values({
+        group: "omzet",
+        metadataSchema: JSON.stringify([
+          { key: "test", label: "Test", type: "text", required: false },
+        ]),
+        updatedAt: new Date().toISOString(),
+      })
+      .run();
+
+    // Now call GET /api/transaction-groups
+    const res = await api.request("http://localhost/api/transaction-groups");
+    expect(res.status).toBe(200);
+    const groups = (await res.json()).data as Array<{
+      key: string;
+      label: string;
+      isSystem: boolean;
+    }>;
+
+    // Must have all standard system groups backfilled
+    const keys = groups.map((g) => g.key);
+    expect(keys).toContain("omzet");
+    expect(keys).toContain("biaya_operasional");
+    expect(keys).toContain("pelunasan_piutang");
+    expect(keys).toContain("pembayaran_hutang");
+    expect(keys).toContain("pembelian_persediaan");
+    expect(keys).toContain("transfer_antar_akun");
+    expect(keys).toContain("tidak_terkategori");
+
+    const omzetGroup = groups.find((g) => g.key === "omzet");
+    expect(omzetGroup?.label).toBe("Omzet & Penjualan");
   });
 });
