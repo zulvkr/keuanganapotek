@@ -1426,6 +1426,7 @@ export function listTransactions(
       createdAt: transactions.createdAt,
       updatedAt: transactions.updatedAt,
       transactionTypeName: transactionTypes.name,
+      transactionTypeGroup: transactionTypes.group,
     })
     .from(transactions)
     .leftJoin(transactionTypes, eq(transactionTypes.id, transactions.transactionTypeId))
@@ -1475,7 +1476,9 @@ export function listTransactions(
       transactionDate: row.transactionDate,
       transactionTypeId: row.transactionTypeId,
       transactionTypeName: row.transactionTypeName ?? undefined,
-      group: inferTransactionGroup(debitAccount, creditAccount),
+      group:
+        (row.transactionTypeGroup as TransactionGroup) ||
+        inferTransactionGroup(debitAccount, creditAccount),
       amount: row.amount,
       debitAccountId: row.debitAccountId,
       creditAccountId: row.creditAccountId,

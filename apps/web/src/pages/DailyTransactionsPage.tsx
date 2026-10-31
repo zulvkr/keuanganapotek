@@ -314,7 +314,9 @@ export default function DailyTransactionsPage() {
 
     counts.all = filteredByAccount.length;
     for (const tx of filteredByAccount) {
+      const txType = typeById.get(tx.transactionTypeId);
       const txGroup =
+        txType?.group ||
         tx.group ||
         inferTransactionGroup(
           accountById.get(tx.debitAccountId) ?? {
@@ -331,7 +333,7 @@ export default function DailyTransactionsPage() {
       }
     }
     return counts;
-  }, [transactionsList, selectedAccountIds, accountById, transactionGroups]);
+  }, [transactionsList, selectedAccountIds, accountById, transactionGroups, typeById]);
 
   // Base transactions list
   const baseTransactionsList = useMemo(() => {
@@ -345,7 +347,9 @@ export default function DailyTransactionsPage() {
     }
     if (selectedGroup !== "all") {
       list = list.filter((tx) => {
+        const txType = typeById.get(tx.transactionTypeId);
         const txGroup =
+          txType?.group ||
           tx.group ||
           inferTransactionGroup(
             accountById.get(tx.debitAccountId) ?? {
@@ -361,7 +365,7 @@ export default function DailyTransactionsPage() {
       });
     }
     return list;
-  }, [transactionsList, selectedAccountIds, selectedGroup, accountById]);
+  }, [transactionsList, selectedAccountIds, selectedGroup, accountById, typeById]);
 
   // Filter options for column popovers
   const dateFilterOptions = useMemo(() => {
@@ -643,7 +647,7 @@ export default function DailyTransactionsPage() {
       return [
         tx.transactionDate,
         `"${(type?.name || tx.transactionTypeName || "").replace(/"/g, '""')}"`,
-        `"${(tx.group || "").replace(/"/g, '""')}"`,
+        `"${(type?.group || tx.group || "").replace(/"/g, '""')}"`,
         `"${(tx.debitAccountCode ? `${tx.debitAccountCode} - ${tx.debitAccountName}` : "").replace(/"/g, '""')}"`,
         `"${(tx.creditAccountCode ? `${tx.creditAccountCode} - ${tx.creditAccountName}` : "").replace(/"/g, '""')}"`,
         senToRupiah(tx.amount),

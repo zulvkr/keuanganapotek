@@ -422,7 +422,9 @@ export function TransactionTableRow({
             <div className="flex items-center justify-between gap-1.5 min-w-0">
               <div className="flex items-center gap-1.5 min-w-0 truncate">
                 {(() => {
+                  const txType = typeById.get(tx.transactionTypeId);
                   const txGroup =
+                    txType?.group ||
                     tx.group ||
                     inferTransactionGroup(
                       accountById.get(tx.debitAccountId) ?? {
@@ -440,7 +442,7 @@ export function TransactionTableRow({
                     <span
                       className={`shrink-0 inline-flex items-center rounded px-1.5 py-0 text-[10px] font-semibold border ${gConf.badgeClass}`}
                     >
-                      {gConf.badgeLabel}
+                      {gConf.badgeLabel || gConf.label}
                     </span>
                   ) : null;
                 })()}

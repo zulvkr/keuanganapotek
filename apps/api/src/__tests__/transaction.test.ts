@@ -415,7 +415,7 @@ describe("Transaction Types and Daily Transactions Engine", () => {
   });
 
   it("returns inferred transaction group for transaction types and transactions", async () => {
-    const { api } = setup();
+    const { api, client } = setup();
 
     const typeRes = await api.request("http://localhost/api/transaction-types");
     const types = (
@@ -465,6 +465,22 @@ describe("Transaction Types and Daily Transactions Engine", () => {
     ).data;
     expect(txs.length).toBeGreaterThanOrEqual(1);
     expect(txs[0]?.group).toBe("omzet");
+
+    // Update trx01 to a custom non-default group 'promosi_spesial'
+    client.db
+      .update(transactionTypes)
+      .set({ group: "promosi_spesial" })
+      .where(eq(transactionTypes.id, trx01!.id))
+      .run();
+
+    const txRes2 = await api.request("http://localhost/api/transactions");
+    const txs2 = (
+      (await txRes2.json()) as {
+        data: Array<{ transactionTypeId: string; group?: string }>;
+      }
+    ).data;
+    const customTx = txs2.find((t) => t.transactionTypeId === trx01!.id);
+    expect(customTx?.group).toBe("promosi_spesial");
   });
 
   it("handles idempotent transaction creation with X-Idempotency-Key", async () => {

@@ -194,6 +194,7 @@ export function TransactionMobileView({
             const selectedType = typeById.get(tx.transactionTypeId);
             const schema = selectedType?.metadataSchema || [];
             const txGroup =
+              selectedType?.group ||
               tx.group ||
               inferTransactionGroup(
                 accountById.get(tx.debitAccountId) ?? {
@@ -240,7 +241,7 @@ export function TransactionMobileView({
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0 text-[10px] font-semibold border shrink-0 ${gConf.badgeClass}`}
                     >
-                      {gConf.badgeLabel}
+                      {gConf.badgeLabel || gConf.label}
                     </span>
                   )}
                 </div>
