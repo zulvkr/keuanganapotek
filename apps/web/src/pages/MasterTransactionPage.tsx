@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import {
   inferTransactionGroup,
-  TRANSACTION_GROUPS,
   type MetadataFieldDefinition,
   type TransactionGroup,
   type TransactionGroupDetail,
@@ -27,7 +26,6 @@ import {
 } from "@keuangan-apotek/shared";
 import {
   getAccounts,
-  getTransactionGroups,
   getTransactionTypes,
   queryKeys,
   type Account,
@@ -46,6 +44,7 @@ import {
 } from "../lib/mutations";
 import { MetadataSchemaBuilder } from "../components/metadata/MetadataSchemaBuilder";
 import { toast } from "../lib/toast";
+import { useDynamicTransactionGroups } from "../lib/useTransactionGroups";
 
 function getNextTransactionCode(items: TransactionType[]): string {
   let maxNum = 0;
@@ -136,55 +135,10 @@ export default function MasterTransactionPage() {
     },
   });
 
-  const groupsQuery = useQuery({
-    queryKey: queryKeys.transactionGroups,
-    queryFn: getTransactionGroups,
+  const { transactionGroups, groupByKey } = useDynamicTransactionGroups({
+    transactionTypes,
+    accountById,
   });
-
-  // Merge server groups with default system groups and any orphan group discovered from transaction types
-  // to ensure 100% of master transaction items are always visible and never lost
-  const serverGroups = groupsQuery.data ?? [];
-  const knownServerKeys = new Set(serverGroups.map((g) => g.key));
-  const missingDefaultGroups = TRANSACTION_GROUPS.filter((g) => !knownServerKeys.has(g.key)).map(
-    (g, idx) => ({
-      ...g,
-      sortOrder: serverGroups.length + idx,
-      isSystem: true,
-      isCustomized: false,
-    }),
-  );
-
-  const combinedKnownKeys = new Set([
-    ...serverGroups.map((g) => g.key),
-    ...missingDefaultGroups.map((g) => g.key),
-  ]);
-  const discoveredGroups: TransactionGroupDetail[] = [];
-  transactionTypes.forEach((t) => {
-    const debitAcc = accountById.get(t.debitAccountId);
-    const creditAcc = accountById.get(t.creditAccountId);
-    const g = t.group || inferTransactionGroup(debitAcc, creditAcc);
-    if (g && !combinedKnownKeys.has(g)) {
-      combinedKnownKeys.add(g);
-      discoveredGroups.push({
-        key: g,
-        label: g.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-        badgeLabel: g,
-        description: `Grup ${g}`,
-        badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
-        metadataSchema: [],
-        sortOrder: 999,
-        isSystem: false,
-        isCustomized: true,
-      });
-    }
-  });
-
-  const transactionGroups: TransactionGroupDetail[] = [
-    ...serverGroups,
-    ...missingDefaultGroups,
-    ...discoveredGroups,
-  ].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  const groupByKey = new Map(transactionGroups.map((g) => [g.key, g]));
 
   const [editingGroup, setEditingGroup] = useState<TransactionGroupDetail | null>(null);
   const [groupSchemaDraft, setGroupSchemaDraft] = useState<MetadataFieldDefinition[]>([]);

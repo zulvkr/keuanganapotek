@@ -12,14 +12,9 @@ import {
   FloatingFocusManager,
 } from "@floating-ui/react";
 import { Search, ChevronDown, Check, X } from "lucide-react";
-import {
-  type TransactionType,
-  type TransactionGroup,
-  TRANSACTION_GROUPS,
-  TRANSACTION_GROUP_LABELS,
-  inferTransactionGroup,
-} from "@keuangan-apotek/shared";
+import { type TransactionType, inferTransactionGroup } from "@keuangan-apotek/shared";
 import type { Account } from "../../lib/queries";
+import { useDynamicTransactionGroups } from "../../lib/useTransactionGroups";
 
 export interface SearchableTransactionTypeSelectProps {
   value: string;
@@ -88,6 +83,11 @@ export const SearchableTransactionTypeSelect = forwardRef<
     const role = useRole(context, { role: "listbox" });
     const { getReferenceProps, getFloatingProps } = useInteractions([dismiss, role]);
 
+    const { transactionGroups, groupByKey } = useDynamicTransactionGroups({
+      transactionTypes,
+      accountById,
+    });
+
     // Filter transaction types based on search query
     const filteredTypes = useMemo(() => {
       const q = searchQuery.toLowerCase().trim();
@@ -97,7 +97,8 @@ export const SearchableTransactionTypeSelect = forwardRef<
         const debitAcc = accountById.get(t.debitAccountId);
         const creditAcc = accountById.get(t.creditAccountId);
         const group = t.group || inferTransactionGroup(debitAcc, creditAcc);
-        const groupLabel = (TRANSACTION_GROUP_LABELS[group] || "").toLowerCase();
+        const groupConf = groupByKey.get(group);
+        const groupLabel = (groupConf?.label || group).toLowerCase();
 
         const matchCode = t.code.toLowerCase().includes(q);
         const matchName = t.name.toLowerCase().includes(q);
@@ -119,12 +120,12 @@ export const SearchableTransactionTypeSelect = forwardRef<
           matchGroup
         );
       });
-    }, [transactionTypes, searchQuery, accountById]);
+    }, [transactionTypes, searchQuery, accountById, groupByKey]);
 
     // Group the filtered items for visual sections
     const groupedResults = useMemo(() => {
-      const map = new Map<TransactionGroup, TransactionType[]>();
-      for (const grp of TRANSACTION_GROUPS) {
+      const map = new Map<string, TransactionType[]>();
+      for (const grp of transactionGroups) {
         map.set(grp.key, []);
       }
       for (const t of filteredTypes) {
@@ -140,19 +141,19 @@ export const SearchableTransactionTypeSelect = forwardRef<
         map.set(targetGroup, list);
       }
       return map;
-    }, [filteredTypes, accountById]);
+    }, [filteredTypes, accountById, transactionGroups]);
 
     // Flatten grouped items strictly in the order they are rendered on screen
     const flatDisplayedTypes = useMemo(() => {
       const list: TransactionType[] = [];
-      for (const grp of TRANSACTION_GROUPS) {
+      for (const grp of transactionGroups) {
         const items = groupedResults.get(grp.key);
         if (items && items.length > 0) {
           list.push(...items);
         }
       }
       return list;
-    }, [groupedResults]);
+    }, [groupedResults, transactionGroups]);
 
     // Fast lookup for visual item index by id
     const typeIndexMap = useMemo(() => {
@@ -380,7 +381,7 @@ export const SearchableTransactionTypeSelect = forwardRef<
                       Tidak ditemukan tipe transaksi yang sesuai.
                     </div>
                   ) : (
-                    TRANSACTION_GROUPS.map((grp) => {
+                    transactionGroups.map((grp) => {
                       const items = groupedResults.get(grp.key) || [];
                       if (items.length === 0) return null;
 

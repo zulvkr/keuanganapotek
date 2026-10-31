@@ -1,6 +1,7 @@
 import React from "react";
 import {
   type TransactionType,
+  type TransactionGroupDetail,
   TRANSACTION_GROUPS,
   inferTransactionGroup,
   senToRupiah,
@@ -276,6 +277,7 @@ export type TransactionTableRowProps = {
   onInsertRelative: (pos: "above" | "below") => void;
   onToggleMetadata: (open: boolean) => void;
   onQuickUpdate?: (patch: Record<string, any>) => void;
+  groupByKey?: Map<string, TransactionGroupDetail>;
 };
 
 export function TransactionTableRow({
@@ -303,6 +305,7 @@ export function TransactionTableRow({
   onInsertRelative,
   onToggleMetadata,
   onQuickUpdate,
+  groupByKey,
 }: TransactionTableRowProps) {
   const selectedType = typeById.get(
     isEditing ? currentDraft!.transactionTypeId : tx.transactionTypeId,
@@ -431,7 +434,8 @@ export function TransactionTableRow({
                         name: tx.creditAccountName,
                       },
                     );
-                  const gConf = TRANSACTION_GROUPS.find((g) => g.key === txGroup);
+                  const gConf =
+                    groupByKey?.get(txGroup) || TRANSACTION_GROUPS.find((g) => g.key === txGroup);
                   return gConf ? (
                     <span
                       className={`shrink-0 inline-flex items-center rounded px-1.5 py-0 text-[10px] font-semibold border ${gConf.badgeClass}`}

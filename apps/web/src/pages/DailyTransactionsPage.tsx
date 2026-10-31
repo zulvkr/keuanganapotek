@@ -1,9 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  type TransactionGroup,
   type TransactionType,
-  TRANSACTION_GROUPS,
   type TransactionWithBalances,
   inferTransactionGroup,
   parseRupiahToSen,
@@ -33,6 +31,7 @@ import { TransactionMobileView } from "../components/daily-transactions/Transact
 import { TransactionTable } from "../components/daily-transactions/TransactionTable";
 import { TransactionToolbar } from "../components/daily-transactions/TransactionToolbar";
 import { useAuth } from "../lib/auth";
+import { useDynamicTransactionGroups } from "../lib/useTransactionGroups";
 import {
   bulkDeleteTransactions,
   bulkUpdateTransactions,
@@ -101,7 +100,7 @@ export default function DailyTransactionsPage() {
   // Neraca summary drawer filter
   const [showNeracaFilter, setShowNeracaFilter] = useState(false);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<TransactionGroup | "all">("all");
+  const [selectedGroup, setSelectedGroup] = useState<string | "all">("all");
 
   // Draft rows
   const [draftRows, setDraftRows] = useState<DraftRow[]>([]);
@@ -277,8 +276,13 @@ export default function DailyTransactionsPage() {
     [transactionTypes],
   );
 
+  const { transactionGroups, groupByKey } = useDynamicTransactionGroups({
+    transactionTypes,
+    accountById,
+  });
+
   const groupedTransactionTypes = useMemo(() => {
-    const map = new Map<TransactionGroup, typeof transactionTypes>();
+    const map = new Map<string, typeof transactionTypes>();
     for (const t of transactionTypes) {
       const g =
         t.group ||
@@ -296,7 +300,7 @@ export default function DailyTransactionsPage() {
   // Group counts
   const groupCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0 };
-    for (const g of TRANSACTION_GROUPS) {
+    for (const g of transactionGroups) {
       counts[g.key] = 0;
     }
     const filteredByAccount =
@@ -327,7 +331,7 @@ export default function DailyTransactionsPage() {
       }
     }
     return counts;
-  }, [transactionsList, selectedAccountIds, accountById]);
+  }, [transactionsList, selectedAccountIds, accountById, transactionGroups]);
 
   // Base transactions list
   const baseTransactionsList = useMemo(() => {
@@ -1086,7 +1090,7 @@ export default function DailyTransactionsPage() {
           {groupCounts.all ?? 0}
         </span>
       </button>
-      {TRANSACTION_GROUPS.map((grp) => {
+      {transactionGroups.map((grp) => {
         const isSelected = selectedGroup === grp.key;
         const count = groupCounts[grp.key] ?? 0;
         return (
@@ -1313,12 +1317,14 @@ export default function DailyTransactionsPage() {
             }
           }}
           onQuickUpdateTransaction={handleQuickUpdateTransaction}
+          groupByKey={groupByKey}
         />
       )}
 
       {/* Spreadsheet Table (Desktop view default, or toggled) */}
       {viewMode === "table" && (
         <TransactionTable
+          groupByKey={groupByKey}
           tableWrapperRef={tableWrapperRef}
           tableBodyHeight={tableBodyHeight}
           showNeracaFilter={showNeracaFilter}

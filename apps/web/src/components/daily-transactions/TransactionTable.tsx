@@ -1,5 +1,5 @@
 import React from "react";
-import type { TransactionType } from "@keuangan-apotek/shared";
+import type { TransactionType, TransactionGroupDetail } from "@keuangan-apotek/shared";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Account } from "../../lib/queries";
 import { ColumnFilterSortPopover, type FilterOption } from "./ColumnFilterSortPopover";
@@ -75,6 +75,7 @@ export type TransactionTableProps = {
   scrollGroupTabs: (amount: number) => void;
   groupPillsNode: React.ReactNode;
   summaryStats: any;
+  groupByKey?: Map<string, TransactionGroupDetail>;
 };
 
 export function TransactionTable({
@@ -135,6 +136,7 @@ export function TransactionTable({
   scrollGroupTabs,
   groupPillsNode,
   summaryStats,
+  groupByKey,
 }: TransactionTableProps) {
   return (
     <div
@@ -399,6 +401,7 @@ export function TransactionTable({
                       onInsertRelative={(pos) => onInsertRelative(tx, pos)}
                       onToggleMetadata={() => onToggleMetadata(false, tx.id)}
                       onQuickUpdate={(patch) => onQuickUpdateTransaction?.(tx.id, patch)}
+                      groupByKey={groupByKey}
                     />
 
                     {/* After Drafts */}

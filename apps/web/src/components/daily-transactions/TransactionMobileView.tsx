@@ -1,6 +1,7 @@
 import React from "react";
 import {
   type TransactionType,
+  type TransactionGroupDetail,
   TRANSACTION_GROUPS,
   inferTransactionGroup,
 } from "@keuangan-apotek/shared";
@@ -33,6 +34,7 @@ export type TransactionMobileViewProps = {
   onOpenEditTransaction: (tx: any) => void;
   onDeleteTransaction: (id: string) => void;
   onQuickUpdateTransaction?: (id: string, patch: Record<string, any>) => void;
+  groupByKey?: Map<string, TransactionGroupDetail>;
 };
 
 export function TransactionMobileView({
@@ -58,6 +60,7 @@ export function TransactionMobileView({
   onOpenEditTransaction,
   onDeleteTransaction,
   onQuickUpdateTransaction,
+  groupByKey,
 }: TransactionMobileViewProps) {
   return (
     <div className="space-y-2">
@@ -202,7 +205,8 @@ export function TransactionMobileView({
                   name: tx.creditAccountName,
                 },
               );
-            const gConf = TRANSACTION_GROUPS.find((g) => g.key === txGroup);
+            const gConf =
+              groupByKey?.get(txGroup) || TRANSACTION_GROUPS.find((g) => g.key === txGroup);
 
             return (
               <div
